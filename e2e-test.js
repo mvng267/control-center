@@ -1,0 +1,151 @@
+// E2E smoke test dashboard: mobile + desktop, console errors, PWA, shortcuts, palette, flicker
+const { chromium } = require('playwright-core');
+const URL = process.env.DASH_URL || 'http://localhost:7799/';
+const results = [];
+const ok = (name, pass, extra) => { results.push({ name, pass, extra }); console.log((pass ? 'PASS' : 'FAIL') + ' | ' + name + (extra ? ' | ' + extra : '')); };
+
+(async () => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+
+  for (const [label, vp] of [['mobile 390x844', { width: 390, height: 844 }], ['desktop 1440x900', { width: 1440, height: 900 }]]) {
+    const ctx = await browser.newContext({ viewport: vp });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+    await page.goto(URL, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(3000);
+
+    ok(label + ': console errors = 0', errors.length === 0, errors.slice(0, 3).join(' ;; '));
+
+    // PWA
+    const manifest = await page.evaluate(() => fetch('/manifest.json').then(r => r.ok));
+    const icon = await page.evaluate(() => fetch('/icon.svg').then(r => r.ok));
+    const sw = await page.evaluate(async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      return !!reg;
+    });
+    ok(label + ': manifest+icon load', manifest && icon);
+    ok(label + ': service worker registered', sw);
+
+    // layout: nav vị trí đúng (mobile: bottom bar; desktop: sidebar trái)
+    const nav = await page.locator('#sidenav').boundingBox();
+    if (vp.width < 768) {
+      ok(label + ': bottom tab bar dưới cùng', nav && nav.y > vp.height - 120 && nav.width > 300, JSON.stringify(nav));
+      // touch targets >= 44px
+      const th = await page.locator('#tabbtn-cli').boundingBox();
+      ok(label + ': tab touch target >=44px', th && th.height >= 44, th && th.height);
+    } else {
+      ok(label + ': sidebar trái', nav && nav.x < 10 && nav.height > 400, JSON.stringify(nav));
+    }
+
+    // flicker check: row đầu tiên phải là CÙNG node sau 5s SSE ticks (diff render, không rebuild)
+    const marked = await page.evaluate(() => {
+      const r = document.querySelector('#sessrows .srow');
+      if (!r) return 'no-rows';
+      r.__marker = 'x1';
+      return r.dataset.sid;
+    });
+    await page.waitForTimeout(5000);
+    // check theo data-sid: node CÙNG identity vẫn tồn tại (row có thể đổi vị trí do sort mtime — hợp lệ)
+    const still = await page.evaluate(sid => {
+      const r = document.querySelector('#sessrows .srow[data-sid="' + sid + '"]');
+      return r && r.__marker === 'x1';
+    }, marked);
+    ok(label + ': session rows KHÔNG rebuild sau 5s (no flicker)', marked === 'no-rows' || still, 'first sid=' + marked);
+
+    // ⌘1-4 switch tab
+    for (const [key, tab] of [['2', 'hermes'], ['3', 'agy'], ['4', 'stats'], ['1', 'cli']]) {
+      await page.keyboard.press('Meta+' + key);
+      await page.waitForTimeout(150);
+      const active = await page.evaluate(t => !document.getElementById('tab-' + t).classList.contains('hidden'), tab);
+      ok(label + ': Cmd+' + key + ' -> tab ' + tab, active);
+    }
+
+    // chords g a / g s / g c
+    await page.keyboard.press('g'); await page.keyboard.press('a');
+    await page.waitForTimeout(150);
+    ok(label + ': chord "g a" -> agy', await page.evaluate(() => !document.getElementById('tab-agy').classList.contains('hidden')));
+    await page.keyboard.press('g'); await page.keyboard.press('s');
+    await page.waitForTimeout(150);
+    ok(label + ': chord "g s" -> stats', await page.evaluate(() => !document.getElementById('tab-stats').classList.contains('hidden')));
+    await page.keyboard.press('g'); await page.keyboard.press('c');
+    await page.waitForTimeout(150);
+
+    // tab agy: status cards + config editor load + log panel
+    await page.keyboard.press('Meta+3');
+    await page.waitForTimeout(3500);
+    const agyStatus = await page.evaluate(() => document.getElementById('agy-status').textContent);
+    ok(label + ': agy status hiển thị', agyStatus === 'ON' || agyStatus === 'OFF', agyStatus);
+    const cfgInputs = await page.locator('#agy-config input').count();
+    ok(label + ': agy config editor có fields', cfgInputs >= 5, cfgInputs + ' inputs');
+    const logText = await page.evaluate(() => document.getElementById('agy-log').textContent.length);
+    ok(label + ': agy log panel có nội dung', logText > 50, logText + ' chars');
+    // note "chạy ngoài" phải hiện (proxy ngoài đang chạy, dashboard không sở hữu)
+    const noteShown = await page.evaluate(() => !document.getElementById('agy-note').classList.contains('hidden'));
+    ok(label + ': note "chạy ngoài dashboard" hiện', noteShown);
+    // Start disabled (đang chạy ngoài), Stop disabled (không sở hữu)
+    const btns = await page.evaluate(() => ({
+      start: document.getElementById('agy-btn-start').disabled,
+      stop: document.getElementById('agy-btn-stop').disabled,
+    }));
+    ok(label + ': Start+Stop disabled đúng khi proxy chạy ngoài', btns.start && btns.stop, JSON.stringify(btns));
+
+    // ⌘K palette + filter + navigate
+    await page.keyboard.press('Meta+1');
+    await page.keyboard.press('Meta+k');
+    await page.waitForTimeout(350);
+    ok(label + ': Cmd+K mở palette', await page.evaluate(() => document.getElementById('drawerwrap').classList.contains('open')));
+    await page.keyboard.type('loop');
+    await page.waitForTimeout(150);
+    // "loop" khớp /loop (tên) + /jobs (desc chứa "loop") — /loop phải đứng đầu và được highlight
+    const visCards = await page.evaluate(() => [...document.querySelectorAll('.palcard:not(.hidden)')].map(c => c.querySelector('.pname').textContent));
+    const activeCard = await page.evaluate(() => { const a = document.querySelector('.palcard.active .pname'); return a && a.textContent; });
+    ok(label + ': filter "loop" -> /loop đứng đầu + highlight', visCards[0] === '/loop' && activeCard === '/loop', JSON.stringify(visCards));
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(350);
+    const afterPick = await page.evaluate(() => ({
+      open: document.getElementById('drawerwrap').classList.contains('open'),
+      input: document.getElementById('taskinput').value,
+    }));
+    ok(label + ': Enter chọn /loop -> đóng palette, điền input', !afterPick.open && afterPick.input.startsWith('/loop'), JSON.stringify(afterPick));
+    await page.evaluate(() => { document.getElementById('taskinput').value = ''; });
+
+    // Esc đóng palette
+    await page.keyboard.press('Meta+k');
+    await page.waitForTimeout(250);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    ok(label + ': Esc đóng palette', await page.evaluate(() => !document.getElementById('drawerwrap').classList.contains('open')));
+
+    // hermes tab: danh sách + mở chat trực tiếp + persist localStorage
+    await page.keyboard.press('Meta+2');
+    await page.waitForTimeout(500);
+    const hRows = await page.locator('#hermesrows .srow').count();
+    ok(label + ': hermes list có conversations', hRows > 0, hRows + ' rows');
+    await page.evaluate(() => openHermesDirect());
+    await page.evaluate(() => {
+      hermesExtra['__direct__'] = [{ role: 'user', content: 'test-persist-123' }];
+      saveHermesExtra();
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(500);
+    const persisted = await page.evaluate(() => (JSON.parse(localStorage.getItem('hermesExtra') || '{}')['__direct__'] || []).some(m => m.content === 'test-persist-123'));
+    ok(label + ': hermes localStorage persist qua reload', persisted);
+    await page.evaluate(() => { localStorage.removeItem('hermesExtra'); });
+
+    // screenshot
+    await page.screenshot({ path: '/tmp/pwtest/shot-' + vp.width + '.png' });
+    ok(label + ': console errors cuối phiên = 0', errors.length === 0, errors.slice(0, 3).join(' ;; '));
+    await ctx.close();
+  }
+
+  await browser.close();
+  const fails = results.filter(r => !r.pass);
+  console.log('\n==== ' + (results.length - fails.length) + '/' + results.length + ' PASS ====');
+  process.exit(fails.length ? 1 : 0);
+})().catch(e => { console.error('SCRIPT ERROR', e); process.exit(2); });
+
+// Cách chạy: cần playwright-core + Chrome cài sẵn (không tải browser riêng):
+//   npm i --no-save playwright-core && node e2e-test.js          (test server 7799)
+//   DASH_URL=http://localhost:7801/ node e2e-test.js             (test server khác)
