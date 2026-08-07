@@ -418,11 +418,14 @@ function agyPipe(proc, tag) {
 function agyStartDev() {
   if (agyDev) return { error: 'dev server đã chạy (pid ' + agyDev.proc.pid + ')' };
   const proc = spawn('npm', ['run', 'dev'], { cwd: AGY_DIR, detached: true, env: process.env });
-  agyDev = { proc, startedAt: Date.now() };
+  const rec = { proc, startedAt: Date.now() };
+  agyDev = rec;
   agyLogPush('dev', '$ npm run dev (pid ' + proc.pid + ')');
   agyPipe(proc, 'dev');
-  proc.on('error', e => { agyLogPush('dev', '[spawn error] ' + e.message); agyDev = null; });
-  proc.on('exit', code => { agyLogPush('dev', '[exit code=' + code + ']'); agyDev = null; agyStatusCache.at = 0; });
+  // chỉ null-out khi agyDev vẫn là record này — exit muộn của proc cũ (sau Stop→Start
+  // nhanh / Restart) không được xóa record của proc MỚI
+  proc.on('error', e => { agyLogPush('dev', '[spawn error] ' + e.message); if (agyDev === rec) agyDev = null; });
+  proc.on('exit', code => { agyLogPush('dev', '[exit code=' + code + ']'); if (agyDev === rec) agyDev = null; agyStatusCache.at = 0; });
   agyStatusCache.at = 0;
   return { ok: true, pid: proc.pid };
 }
@@ -453,23 +456,26 @@ function agyRun(name) {
   try {
     proc = spawn('npm', t.args, { cwd: path.join(AGY_DIR, t.cwd), env: process.env });
   } catch (e) { return { error: e.message }; }
-  agyTask = { name, proc, startedAt: started };
+  const rec = { name, proc, startedAt: started };
+  agyTask = rec;
   agyLogPush(name, '$ npm ' + t.args.join(' ') + (t.cwd ? ' (trong ' + t.cwd + '/)' : ''));
   agyPipe(proc, name);
   const killer = setTimeout(() => { try { proc.kill('SIGTERM'); } catch {} agyLogPush(name, '[timeout 10m]'); }, 600000);
-  proc.on('error', e => {
+  // spawn fail phát CẢ 'error' lẫn 'close' -> settle đúng 1 lần, không ghi đè kết quả
+  // và không null-out agyTask của lần chạy sau
+  let settled = false;
+  const settle = (ok, code, log) => {
+    if (settled) return;
+    settled = true;
     clearTimeout(killer);
-    agyLogPush(name, '[spawn error] ' + e.message);
-    agyLast[name] = { ok: false, code: -1, at: Date.now(), ms: Date.now() - started };
-    agyTask = null;
-  });
-  proc.on('close', code => {
-    clearTimeout(killer);
-    agyLast[name] = { ok: code === 0, code, at: Date.now(), ms: Date.now() - started };
-    agyLogPush(name, '[done code=' + code + ' trong ' + Math.round((Date.now() - started) / 1000) + 's]');
-    agyTask = null;
+    agyLogPush(name, log);
+    agyLast[name] = { ok, code, at: Date.now(), ms: Date.now() - started };
+    if (agyTask === rec) agyTask = null;
     agyStatusCache.at = 0;
-  });
+  };
+  proc.on('error', e => settle(false, -1, '[spawn error] ' + e.message));
+  proc.on('close', code => settle(code === 0, code,
+    '[done code=' + code + ' trong ' + Math.round((Date.now() - started) / 1000) + 's]'));
   return { ok: true };
 }
 
@@ -548,6 +554,10 @@ function hostAllowed(req) {
     || /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
     || /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)
     || /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(host)
+    // Tailscale: CGNAT 100.64.0.0/10 + IPv6 fd7a::/16 + MagicDNS *.ts.net
+    || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}$/.test(host)
+    || /^fd7a:/i.test(host)
+    || host.endsWith('.ts.net')
     || host.endsWith('.local');
 }
 
@@ -628,10 +638,10 @@ const server = http.createServer(async (req, res) => {
 
   if ((m = p.match(/^\/api\/history\/([\w-]+)$/))) {
     const sid = m[1];
-    // user đang xem chat -> đánh dấu đã đọc (reset unread badge)
-    lastSeen.set(sid, Date.now());
     const typing = procs.has(sid);
     const file = findSessionFile(sid);
+    // user đang xem chat -> đánh dấu đã đọc (chỉ set cho session THẬT, sid rác không phình Map)
+    if (file || typing) lastSeen.set(sid, Date.now());
     if (!file) return json(res, 200, { sid, messages: [], typing, status: statusOf(sid, 0) });
     let mt = 0;
     try { mt = fs.statSync(file).mtimeMs; } catch {}
@@ -1653,6 +1663,8 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (inField) return; // các phím còn lại chỉ hoạt động ngoài input
+  // overlay đang mở -> không cho shortcut chạy "sau lưng" modal (Esc đã xử lý ở trên)
+  if (document.getElementById('overlay').style.display === 'flex') return;
 
   // chord "g h" / "g c"
   if (pendingG) {
@@ -1670,9 +1682,11 @@ document.addEventListener('keydown', e => {
     return;
   }
 
-  if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveSel(1); }
-  else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveSel(-1); }
-  else if (e.key === 'Enter') { openSelected(); }
+  // j/k/Enter: chỉ điều hướng list session khi đang thực sự ở list view tab CLI
+  const inList = activeTab === 'cli' && !currentSid;
+  if (e.key === 'j' || e.key === 'ArrowDown') { if (!inList) return; e.preventDefault(); moveSel(1); }
+  else if (e.key === 'k' || e.key === 'ArrowUp') { if (!inList) return; e.preventDefault(); moveSel(-1); }
+  else if (e.key === 'Enter') { if (inList) openSelected(); }
   else if (e.key === '/') {
     e.preventDefault();
     openPalette(''); // mở drawer command palette
@@ -2019,9 +2033,11 @@ async function exportChat() {
 
 function pollOneshot(id, cb, cbErr) {
   busy(true);
+  let settled = false; // 2 fetch in-flight cùng resolve -> callback chỉ chạy 1 lần
   const t = setInterval(async () => {
     const r = await fetch('/api/oneshot/' + id).then(r => r.json()).catch(() => null);
-    if (!r || r.status === 'running') return;
+    if (settled || !r || r.status === 'running') return;
+    settled = true;
     clearInterval(t);
     busy(false);
     if (r.status === 'done') cb(r.output.trim());
@@ -2205,10 +2221,13 @@ function backToList() {
   document.getElementById('list').classList.remove('hidden');
 }
 
+let chatBusy = false; // chống 2 refresh chồng nhau (timer + gọi tay sau send) -> duplicate bubbles
 async function refreshChat() {
-  if (!currentSid) return;
+  if (!currentSid || chatBusy) return;
+  chatBusy = true;
   const sidAtFetch = currentSid;
   const r = await fetch('/api/history/' + sidAtFetch).then(r => r.json()).catch(() => null);
+  chatBusy = false;
   if (!r || currentSid !== sidAtFetch) return;
   const st = document.getElementById('chatstatus');
   setText(st, r.status);
@@ -2574,10 +2593,15 @@ async function refreshAgyStatus() {
   }
 }
 
+let agyLogBusy = false; // chống 2 poll chồng nhau (timer + gọi tay sau agyAction) -> log double-append
 async function pollAgyLog() {
+  if (agyLogBusy) return;
+  agyLogBusy = true;
   const r = await fetch('/api/agy/log?since=' + agyLogNext).then(r => r.json()).catch(() => null);
+  agyLogBusy = false;
   if (!r) return;
-  if (r.next < agyLogNext) agyLogNext = 0; // server dashboard restart -> buffer mới, fetch lại từ đầu
+  // server dashboard restart -> buffer mới: reset về 0 và fetch lại từ đầu lượt sau
+  if (r.next < agyLogNext) { agyLogNext = 0; return; }
   if (!r.lines.length) { agyLogNext = r.next; return; }
   const box = document.getElementById('agy-log');
   if (agyLogEmpty) { box.textContent = ''; agyLogEmpty = false; }
@@ -2665,6 +2689,13 @@ if ('serviceWorker' in navigator) {
 </body>
 </html>`;
 
+server.on('error', e => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} đang bận (dashboard khác đang chạy?). Đổi port: PORT=7800 node claude-dashboard.js`);
+    process.exit(1);
+  }
+  throw e;
+});
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`claude-dashboard listening on http://localhost:${PORT}`);
 });
