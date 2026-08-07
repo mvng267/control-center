@@ -142,6 +142,29 @@ const ok = (name, pass, extra) => { results.push({ name, pass, extra }); console
     ok(label + ': hermes localStorage persist qua reload', persisted);
     await page.evaluate(() => { localStorage.removeItem('hermesExtra'); });
 
+    // command history: ↑/↓ trong taskinput gọi lại lệnh cũ từ localStorage
+    await page.keyboard.press('Meta+1');
+    await page.evaluate(() => { localStorage.setItem('hist:task', JSON.stringify(['cmd một', 'cmd hai'])); });
+    await page.focus('#taskinput');
+    await page.keyboard.press('ArrowUp');
+    const h1 = await page.evaluate(() => document.getElementById('taskinput').value);
+    await page.keyboard.press('ArrowUp');
+    const h2 = await page.evaluate(() => document.getElementById('taskinput').value);
+    await page.keyboard.press('ArrowDown');
+    const h3 = await page.evaluate(() => document.getElementById('taskinput').value);
+    ok(label + ': command history ↑/↓ trong taskinput', h1 === 'cmd hai' && h2 === 'cmd một' && h3 === 'cmd hai', JSON.stringify([h1, h2, h3]));
+    await page.evaluate(() => { document.getElementById('taskinput').value = ''; localStorage.removeItem('hist:task'); });
+    await page.keyboard.press('Escape'); // blur input
+
+    // notifications: notifyDone -> toast hiện (vibrate/beep không assert được ở headless)
+    await page.evaluate(() => notifyDone('test-notify-xyz'));
+    await page.waitForTimeout(100);
+    const toastShown = await page.evaluate(() => {
+      const t = document.getElementById('toast');
+      return t.classList.contains('show') && t.textContent === 'test-notify-xyz';
+    });
+    ok(label + ': notifyDone -> toast hiện', toastShown);
+
     // screenshot
     await page.screenshot({ path: '/tmp/pwtest/shot-' + vp.width + '.png' });
     ok(label + ': console errors cuối phiên = 0', errors.length === 0, errors.slice(0, 3).join(' ;; '));
