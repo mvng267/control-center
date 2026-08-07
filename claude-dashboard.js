@@ -828,7 +828,7 @@ const HTML = `<!doctype html>
 <html data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0f1117">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1048,6 +1048,40 @@ const HTML = `<!doctype html>
   .statlbl { font-size: 11px; font-weight: 600; letter-spacing: .6px; color: #666b7d; margin-top: 2px; }
   .chartbox { background: #171a23; border: 1px solid #262a36; border-radius: 14px; padding: 14px 16px; min-width: 0; }
 
+  /* ---- tab AGY-PROXY ---- */
+  .agybtn {
+    display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 16px;
+    background: #1a1d27; border: 1px solid #262a36; border-radius: 12px;
+    color: #e4e4e7; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .agybtn:hover:not(:disabled) { border-color: rgba(59, 130, 246, .55); background: #1e222d; }
+  .agybtn:disabled { opacity: .35; cursor: not-allowed; }
+  .agybtn-red { color: #ef4444; }
+  .agybtn-red:hover:not(:disabled) { border-color: rgba(239, 68, 68, .55); }
+  .agychip { font-size: 11px; font-weight: 600; letter-spacing: .4px; padding: 5px 11px; border-radius: 999px; background: #1e222d; color: #666b7d; }
+  .agychip.ok { background: rgba(16, 185, 129, .14); color: #34d399; }
+  .agychip.fail { background: rgba(239, 68, 68, .14); color: #f87171; }
+  .agychip.run { background: rgba(245, 158, 11, .14); color: #f59e0b; }
+  .agylog {
+    background: #0b0d13; border: 1px solid #262a36; border-radius: 10px; padding: 10px 12px;
+    height: 280px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    line-height: 1.5; color: #c9d1d9; -webkit-overflow-scrolling: touch;
+  }
+  .agycfgrow input {
+    flex: 1; min-width: 0; background: #1a1d27; border: 1px solid #262a36; border-radius: 10px;
+    padding: 10px 12px; font-size: 16px; color: #e4e4e7; outline: none; transition: border-color .15s;
+  }
+  .agycfgrow input:focus { border-color: rgba(59, 130, 246, .6); }
+  .agycfgsave {
+    min-height: 44px; min-width: 64px; padding: 0 14px; border-radius: 10px; border: 1px solid #262a36;
+    background: #1a1d27; color: #8b8fa3; font: inherit; font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: color .15s, border-color .15s;
+  }
+  .agycfgsave:hover { color: #e4e4e7; border-color: rgba(59, 130, 246, .55); }
+  .agycfgsave.dirty { color: #3b82f6; border-color: rgba(59, 130, 246, .55); }
+
   /* ---- sidebar desktop collapsible ---- */
   @media (min-width: 768px) {
     #sidenav { transition: width .2s ease; }
@@ -1087,12 +1121,15 @@ const HTML = `<!doctype html>
               border-t md:border-t-0 md:border-r border-[#262a36] bg-[#12141c] md:w-[76px] py-1 md:py-3 shrink-0"
        style="padding-bottom:env(safe-area-inset-bottom)">
     <button id="tabbtn-cli" class="tabbtn active" onclick="switchTab('cli')">
-      <i data-lucide="terminal" class="w-5 h-5"></i><span>CLI</span>
+      <i data-lucide="terminal" class="w-5 h-5"></i><span>CLAUDE</span>
       <span id="badge-cli" class="tabbadge hidden"></span>
     </button>
     <button id="tabbtn-hermes" class="tabbtn hm" onclick="switchTab('hermes')">
       <i data-lucide="bot" class="w-5 h-5"></i><span>HERMES</span>
       <span id="badge-hermes" class="tabbadge hidden"></span>
+    </button>
+    <button id="tabbtn-agy" class="tabbtn" onclick="switchTab('agy')">
+      <i data-lucide="settings" class="w-5 h-5"></i><span>AGY-PROXY</span>
     </button>
     <button id="tabbtn-stats" class="tabbtn" onclick="switchTab('stats')">
       <i data-lucide="chart-pie" class="w-5 h-5"></i><span>STATS</span>
@@ -1224,7 +1261,72 @@ const HTML = `<!doctype html>
       </div>
     </div>
 
-    <!-- ============ TAB 3: STATS (Chart.js) ============ -->
+    <!-- ============ TAB 3: AGY-PROXY CONFIG (gọi CLI, không tự implement proxy) ============ -->
+    <div id="tab-agy" class="hidden flex-1 flex-col min-h-0 overflow-y-auto">
+      <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto"
+           style="padding-bottom:calc(env(safe-area-inset-bottom) + 16px)">
+        <!-- status cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="statcard"><div id="agy-status" class="statnum text-[#8b8fa3]">–</div><div class="statlbl">STATUS</div></div>
+          <div class="statcard"><div id="agy-port" class="statnum text-[#e4e4e7]">–</div><div class="statlbl">PORT</div></div>
+          <div class="statcard"><div id="agy-accounts" class="statnum text-[#60a5fa]">–</div><div class="statlbl">ACCOUNTS</div></div>
+          <div class="statcard"><div id="agy-models" class="statnum text-[#a78bfa]">–</div><div class="statlbl">MODELS</div></div>
+        </div>
+
+        <!-- action buttons: touch >= 44px, gap >= 8px -->
+        <div class="flex flex-wrap gap-2">
+          <button id="agy-btn-start" class="agybtn" onclick="agyAction('start')">
+            <i data-lucide="play" class="w-4 h-4"></i><span>Start</span></button>
+          <button id="agy-btn-stop" class="agybtn agybtn-red" onclick="agyAction('stop')">
+            <i data-lucide="square" class="w-4 h-4"></i><span>Stop</span></button>
+          <button id="agy-btn-restart" class="agybtn" onclick="agyAction('restart')">
+            <i data-lucide="rotate-cw" class="w-4 h-4"></i><span>Restart</span></button>
+          <button id="agy-btn-build" class="agybtn" onclick="agyAction('run', 'build')">
+            <i data-lucide="hammer" class="w-4 h-4"></i><span>Build</span></button>
+          <button id="agy-btn-test" class="agybtn" onclick="agyAction('run', 'test')">
+            <i data-lucide="flask-conical" class="w-4 h-4"></i><span>Test</span></button>
+          <button id="agy-btn-typecheck" class="agybtn" onclick="agyAction('run', 'typecheck')">
+            <i data-lucide="badge-check" class="w-4 h-4"></i><span>Typecheck</span></button>
+        </div>
+        <div id="agy-note" class="hidden text-[12px] text-[#d9a441] bg-[#f59e0b]/10 border border-[#f59e0b]/25 rounded-[10px] px-3 py-2">
+          agy-proxy đang chạy NGOÀI dashboard — Stop/Restart chỉ áp dụng cho process do dashboard start.
+        </div>
+
+        <!-- kết quả lần chạy cuối -->
+        <div class="flex flex-wrap gap-2">
+          <span id="agy-last-typecheck" class="agychip">TYPECHECK: —</span>
+          <span id="agy-last-test" class="agychip">TEST: —</span>
+          <span id="agy-last-build" class="agychip">BUILD: —</span>
+        </div>
+
+        <!-- models từ gateway -->
+        <div class="chartbox">
+          <div class="text-[13px] font-semibold mb-2 text-[#a5a9b8]">Models (gateway /proxy/v1/models)</div>
+          <div id="agy-modellist" class="text-[12.5px] text-[#8b8fa3] leading-relaxed break-words">–</div>
+        </div>
+
+        <!-- config .env: chỉ field whitelist, save ghi lại file -->
+        <div class="chartbox">
+          <div class="text-[13px] font-semibold mb-1 text-[#a5a9b8]">Config (.env của agy-proxy)</div>
+          <div class="text-[11.5px] text-[#666b7d] mb-3">Lưu ý: giá trị đổi từ dashboard riêng của agy-proxy (settings DB) sẽ đè .env.</div>
+          <div id="agy-config" class="flex flex-col gap-3">
+            <div class="text-[12.5px] text-[#666b7d]">Đang tải config...</div>
+          </div>
+        </div>
+
+        <!-- log panel realtime -->
+        <div class="chartbox">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[13px] font-semibold text-[#a5a9b8]">Log (dev / build / test / typecheck)</span>
+            <button class="text-[11.5px] text-[#8b8fa3] hover:text-[#e4e4e7] border border-[#262a36] rounded-lg px-3 py-1.5 transition-colors"
+                    onclick="agyClearLog()">Clear</button>
+          </div>
+          <div id="agy-log" class="agylog">(chưa có log — bấm Start/Build/Test/Typecheck)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ TAB 4: STATS (Chart.js) ============ -->
     <div id="tab-stats" class="hidden flex-1 flex-col min-h-0 overflow-y-auto">
       <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto">
         <!-- stat cards -->
@@ -1338,13 +1440,14 @@ function toast(msg) {
 /* ================= tabs + badges ================= */
 function switchTab(t) {
   activeTab = t;
-  for (const name of ['cli', 'hermes', 'stats']) {
+  for (const name of ['cli', 'hermes', 'agy', 'stats']) {
     document.getElementById('tab-' + name).classList.toggle('hidden', t !== name);
     document.getElementById('tab-' + name).classList.toggle('flex', t === name);
     document.getElementById('tabbtn-' + name).classList.toggle('active', t === name);
   }
   if (t === 'hermes') { hermesSeenTs = hermesMaxTs; refreshHermes(); }
   if (t === 'stats') updateCharts(); // vẽ/refresh charts khi vào tab
+  if (t === 'agy') agyEnter(); else agyLeave(); // poll status+log chỉ khi đang ở tab agy
   updateBadges();
 }
 
@@ -1535,6 +1638,11 @@ document.addEventListener('keydown', e => {
     if (currentSid) backToList();
     return document.getElementById('taskinput').focus();
   }
+  // cmd+1/2/3/4: switch tab trực tiếp — hoạt động cả khi đang trong input
+  if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '4') {
+    e.preventDefault();
+    return switchTab(['cli', 'hermes', 'agy', 'stats'][+e.key - 1]);
+  }
 
   if (e.key === 'Escape') {
     if (paletteOpen()) return closePalette();
@@ -1552,6 +1660,8 @@ document.addEventListener('keydown', e => {
     clearTimeout(pendingGTimer);
     if (e.key === 'h') { switchTab('hermes'); return; }
     if (e.key === 'c') { switchTab('cli'); return; }
+    if (e.key === 'a') { switchTab('agy'); return; }
+    if (e.key === 's') { switchTab('stats'); return; }
   }
   if (e.key === 'g') {
     pendingG = true;
@@ -1606,10 +1716,13 @@ function showShortcuts() {
     ['/', 'Mở command palette (drawer)'],
     ['⌘K', 'Toggle command palette'],
     ['⌘N', 'Focus task input (giao task mới)'],
+    ['⌘1-4', 'Switch tab: Claude / Hermes / Agy-proxy / Stats'],
     ['n', 'Focus task input'],
     ['Esc', 'Đóng modal / palette / quay lại'],
     ['g h', 'Sang tab Hermes'],
     ['g c', 'Sang tab Claude CLI'],
+    ['g a', 'Sang tab Agy-proxy'],
+    ['g s', 'Sang tab Stats'],
     ['?', 'Hiện bảng shortcuts này'],
   ];
   const box = document.createElement('div');
@@ -2385,6 +2498,144 @@ function updateCharts() {
     barChart.data.labels = barLabels;
     barChart.data.datasets[0].data = barVals;
     barChart.update();
+  }
+}
+
+/* ================= TAB AGY-PROXY: gọi CLI qua server, log realtime ================= */
+let agyStatusTimer = null, agyLogTimer = null;
+let agyLogNext = 0;       // absolute index dòng log tiếp theo cần fetch
+let agyLogEmpty = true;   // còn placeholder trong panel log
+let agyCfgLoaded = false; // config editor chỉ build 1 lần
+
+function agyEnter() {
+  refreshAgyStatus();
+  pollAgyLog();
+  if (!agyCfgLoaded) loadAgyConfig();
+  clearInterval(agyStatusTimer);
+  agyStatusTimer = setInterval(refreshAgyStatus, 3000);
+  clearInterval(agyLogTimer);
+  agyLogTimer = setInterval(pollAgyLog, 2000);
+}
+function agyLeave() {
+  clearInterval(agyStatusTimer);
+  clearInterval(agyLogTimer);
+  agyStatusTimer = agyLogTimer = null;
+}
+
+function agyChip(el, name, rec, running) {
+  var label = name.toUpperCase() + ': ';
+  var cls = 'agychip';
+  if (running) { label += 'RUNNING'; cls += ' run'; }
+  else if (!rec) { label += '—'; }
+  else { label += (rec.ok ? 'PASS' : 'FAIL') + ' · ' + ago(rec.at); cls += rec.ok ? ' ok' : ' fail'; }
+  setText(el, label);
+  if (el.className !== cls) el.className = cls;
+}
+
+async function refreshAgyStatus() {
+  const r = await fetch('/api/agy/status').then(r => r.json()).catch(() => null);
+  if (!r) return;
+  const st = document.getElementById('agy-status');
+  setText(st, r.running ? 'ON' : 'OFF');
+  const stCls = 'statnum ' + (r.running ? 'text-[#34d399]' : 'text-[#ef4444]');
+  if (st.className !== stCls) st.className = stCls;
+  setText(document.getElementById('agy-port'), String(r.port));
+  setText(document.getElementById('agy-accounts'), String(r.accounts));
+  setText(document.getElementById('agy-models'), String(r.models.length));
+  setText(document.getElementById('agy-modellist'),
+    r.models.length ? r.models.join('  ·  ') : (r.running ? '(gateway chưa trả models)' : '(agy-proxy không chạy)'));
+  // chạy ngoài dashboard -> Stop/Restart không kill được, hiện note
+  document.getElementById('agy-note').classList.toggle('hidden', !(r.running && !r.dev));
+  // buttons: Start disable khi đang chạy; Stop chỉ enable khi dashboard là chủ process
+  document.getElementById('agy-btn-start').disabled = !!r.dev || r.running;
+  document.getElementById('agy-btn-stop').disabled = !r.dev;
+  const taskName = r.task ? r.task.name : null;
+  for (const name of ['build', 'test', 'typecheck']) {
+    document.getElementById('agy-btn-' + name).disabled = !!taskName;
+    agyChip(document.getElementById('agy-last-' + name), name, r.last[name], taskName === name);
+  }
+}
+
+async function pollAgyLog() {
+  const r = await fetch('/api/agy/log?since=' + agyLogNext).then(r => r.json()).catch(() => null);
+  if (!r) return;
+  if (r.next < agyLogNext) agyLogNext = 0; // server dashboard restart -> buffer mới, fetch lại từ đầu
+  if (!r.lines.length) { agyLogNext = r.next; return; }
+  const box = document.getElementById('agy-log');
+  if (agyLogEmpty) { box.textContent = ''; agyLogEmpty = false; }
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  const NL = String.fromCharCode(10);
+  box.appendChild(document.createTextNode(r.lines.join(NL) + NL)); // append-only, không rebuild
+  agyLogNext = r.next;
+  // cap DOM: quá dài thì cắt bớt đầu (log cũ đã trôi khỏi buffer server rồi)
+  if (box.textContent.length > 200000) box.textContent = box.textContent.slice(-150000);
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+function agyClearLog() {
+  document.getElementById('agy-log').textContent = '(đã clear — log mới sẽ hiện ở đây)';
+  agyLogEmpty = true;
+}
+
+// Start/Stop/Restart/Build/Test/Typecheck — server spawn npm trong folder agy-proxy
+async function agyAction(seg, cmd) {
+  busy(true);
+  const r = await fetch('/api/agy/' + seg, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cmd ? { cmd } : {}),
+  }).then(r => r.json()).catch(e => ({ error: e.message })).finally(() => busy(false));
+  if (r.error) toast('Lỗi: ' + r.error);
+  else toast(seg === 'run' ? 'Đang chạy ' + cmd + ' — xem log bên dưới' : 'OK: ' + seg);
+  refreshAgyStatus();
+  pollAgyLog();
+}
+
+// Config editor: build 1 lần từ GET /api/agy/config, mỗi row có Save riêng
+async function loadAgyConfig() {
+  const r = await fetch('/api/agy/config').then(r => r.json()).catch(() => null);
+  if (!r) return;
+  agyCfgLoaded = true;
+  const cont = document.getElementById('agy-config');
+  cont.innerHTML = '';
+  for (const f of r.fields) {
+    const row = document.createElement('div');
+    row.className = 'flex flex-col gap-1';
+    const lbl = document.createElement('div');
+    lbl.className = 'text-[12px] font-semibold text-[#a5a9b8]';
+    lbl.style.fontFamily = 'ui-monospace, Menlo, monospace';
+    lbl.textContent = f.key;
+    const desc = document.createElement('div');
+    desc.className = 'text-[11.5px] text-[#666b7d]';
+    desc.textContent = f.desc;
+    const line = document.createElement('div');
+    line.className = 'agycfgrow flex items-center gap-2';
+    const inp = document.createElement('input');
+    inp.value = f.value;
+    inp.placeholder = '(chưa đặt — dùng mặc định)';
+    inp.setAttribute('autocomplete', 'off');
+    const save = document.createElement('button');
+    save.className = 'agycfgsave';
+    save.textContent = 'Save';
+    inp.addEventListener('input', () => save.classList.toggle('dirty', inp.value.trim() !== f.value));
+    save.onclick = async () => {
+      const value = inp.value.trim();
+      const resp = await fetch('/api/agy/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: f.key, value }),
+      }).then(x => x.json()).catch(e => ({ error: e.message }));
+      if (resp.error) return toast('Lỗi: ' + resp.error);
+      f.value = value;
+      save.classList.remove('dirty');
+      toast('Đã lưu ' + f.key + (resp.restart ? ' — bấm Restart để áp dụng' : ''));
+    };
+    line.appendChild(inp);
+    line.appendChild(save);
+    row.appendChild(lbl);
+    row.appendChild(desc);
+    row.appendChild(line);
+    cont.appendChild(row);
   }
 }
 
