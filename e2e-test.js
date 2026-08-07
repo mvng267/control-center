@@ -1,5 +1,8 @@
 // E2E smoke test dashboard: mobile + desktop, console errors, PWA, shortcuts, palette, flicker
-const { chromium } = require('playwright-core');
+// resolve playwright-core: node_modules cạnh script HOẶC theo cwd (npm i --no-save ở đâu cũng chạy)
+let chromium;
+try { ({ chromium } = require('playwright-core')); }
+catch { ({ chromium } = require(require('path').join(process.cwd(), 'node_modules', 'playwright-core'))); }
 const URL = process.env.DASH_URL || 'http://localhost:7799/';
 const results = [];
 const ok = (name, pass, extra) => { results.push({ name, pass, extra }); console.log((pass ? 'PASS' : 'FAIL') + ' | ' + name + (extra ? ' | ' + extra : '')); };
@@ -79,8 +82,13 @@ const ok = (name, pass, extra) => { results.push({ name, pass, extra }); console
     ok(label + ': agy status hiển thị', agyStatus === 'ON' || agyStatus === 'OFF', agyStatus);
     const cfgInputs = await page.locator('#agy-config input').count();
     ok(label + ': agy config editor có fields', cfgInputs >= 5, cfgInputs + ' inputs');
-    const logText = await page.evaluate(() => document.getElementById('agy-log').textContent.length);
-    ok(label + ': agy log panel có nội dung', logText > 50, logText + ' chars');
+    // buffer server rỗng (dashboard mới restart) -> panel phải là placeholder; có log -> phải hiển thị
+    const logState = await page.evaluate(async () => {
+      const srv = await fetch('/api/agy/log?since=0').then(r => r.json());
+      return { srvLines: srv.lines.length, panel: document.getElementById('agy-log').textContent.length };
+    });
+    ok(label + ': agy log panel khớp buffer server',
+      logState.srvLines > 0 ? logState.panel > 50 : logState.panel > 10, JSON.stringify(logState));
     // note "chạy ngoài" phải hiện (proxy ngoài đang chạy, dashboard không sở hữu)
     const noteShown = await page.evaluate(() => !document.getElementById('agy-note').classList.contains('hidden'));
     ok(label + ': note "chạy ngoài dashboard" hiện', noteShown);
