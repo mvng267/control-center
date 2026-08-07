@@ -642,11 +642,15 @@ const server = http.createServer(async (req, res) => {
     const file = findSessionFile(sid);
     // user đang xem chat -> đánh dấu đã đọc (chỉ set cho session THẬT, sid rác không phình Map)
     if (file || typing) lastSeen.set(sid, Date.now());
-    if (!file) return json(res, 200, { sid, messages: [], typing, status: statusOf(sid, 0) });
+    if (!file) return json(res, 200, { sid, messages: [], total: 0, typing, status: statusOf(sid, 0) });
     let mt = 0;
     try { mt = fs.statSync(file).mtimeMs; } catch {}
     const messages = getHistory(sid) || [];
-    return json(res, 200, { sid, messages, typing, status: statusOf(sid, mt) });
+    // total: TỔNG message tuyệt đối (messages chỉ là window 30 cuối) — client cần để
+    // quy đổi offset /clear; thiếu total thì /clear trên session >30 msg mất message mới vĩnh viễn
+    const parsed = parseSessionFile(file);
+    const total = parsed ? parsed.msgs.length : messages.length;
+    return json(res, 200, { sid, messages, total, typing, status: statusOf(sid, mt) });
   }
 
   if ((m = p.match(/^\/api\/status\/([\w-]+)$/))) {
@@ -1447,6 +1451,40 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
 }
 
+/* ================= notifications: báo khi có reply mà không ở tab/chat đó ================= */
+// Beep nhẹ qua WebAudio — iOS không hỗ trợ navigator.vibrate nên cần fallback âm thanh.
+// AudioContext phải unlock bằng user gesture (autoplay policy) -> tạo lazy ở pointerdown/keydown đầu tiên.
+let audioCtx = null;
+function unlockAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!audioCtx && AC) { try { audioCtx = new AC(); } catch {} }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(function () {});
+}
+document.addEventListener('pointerdown', unlockAudio, { passive: true });
+document.addEventListener('keydown', unlockAudio);
+
+function beep() {
+  if (!audioCtx || audioCtx.state !== 'running') return; // chưa unlock -> im lặng, không lỗi
+  try {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.04, audioCtx.currentTime); // rất nhẹ
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.12);
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + 0.13);
+  } catch {}
+}
+
+// Toast + vibration (Android) / beep (iOS/desktop) — dùng khi reply xong mà user không nhìn thấy
+function notifyDone(msg) {
+  toast(msg);
+  if (navigator.vibrate) navigator.vibrate(30);
+  else beep();
+}
+
 /* ================= tabs + badges ================= */
 function switchTab(t) {
   activeTab = t;
@@ -1483,10 +1521,22 @@ function updateBadges() {
 
 /* ================= SSE ================= */
 const es = new EventSource('/stream');
+let prevRunning = null; // Set sid RUNNING tick trước — null = tick đầu (không notify session cũ)
 es.onmessage = e => {
   const data = JSON.parse(e.data);
   allSessions = data.sessions || [];
   allJobs = data.jobs || [];
+  // RUNNING -> hết RUNNING = Claude trả lời xong; chỉ notify khi KHÔNG đang mở chat đó
+  const nowRunning = new Set();
+  allSessions.forEach(s => { if (s.status === 'RUNNING') nowRunning.add(s.sid); });
+  if (prevRunning) {
+    for (const sid of prevRunning) {
+      if (!nowRunning.has(sid) && !(activeTab === 'cli' && currentSid === sid)) {
+        notifyDone('Claude ' + sid.slice(0, 8) + ' đã trả lời xong');
+      }
+    }
+  }
+  prevRunning = nowRunning;
   setText(document.getElementById('modeltag'), data.model || 'default');
   updateProjectOptions();
   renderList();
@@ -1732,6 +1782,7 @@ function showShortcuts() {
     ['⌘N', 'Focus task input (giao task mới)'],
     ['⌘1-4', 'Switch tab: Claude / Hermes / Agy-proxy / Stats'],
     ['n', 'Focus task input'],
+    ['↑ / ↓', 'Lịch sử lệnh trong input (task/chat/hermes)'],
     ['Esc', 'Đóng modal / palette / quay lại'],
     ['g h', 'Sang tab Hermes'],
     ['g c', 'Sang tab Claude CLI'],
@@ -1914,6 +1965,41 @@ palfilter.addEventListener('keydown', e => {
 document.getElementById('palbtn').addEventListener('click', () => openPalette(''));
 buildPalette();
 
+/* ================= command history: ↑/↓ trong input (localStorage, cap 50/input) ================= */
+function histLoad(key) {
+  try {
+    const a = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(a) ? a : [];
+  } catch { return []; }
+}
+function histPush(key, v) {
+  const a = histLoad(key);
+  if (a[a.length - 1] === v) return; // không lưu trùng liên tiếp
+  a.push(v);
+  try { localStorage.setItem(key, JSON.stringify(a.slice(-50))); } catch {} // quota đầy -> bỏ qua
+}
+// ↑ lấy lệnh cũ dần, ↓ quay về mới dần rồi trả lại draft đang gõ dở
+function attachHistory(input, key) {
+  let idx = -1, draft = ''; // idx -1 = không ở chế độ history
+  input.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    const a = histLoad(key);
+    if (!a.length) return;
+    e.preventDefault();
+    if (e.key === 'ArrowUp') {
+      if (idx === -1) { draft = input.value; idx = a.length - 1; }
+      else if (idx > 0) idx--;
+      input.value = a[idx];
+    } else {
+      if (idx === -1) return;
+      idx++;
+      if (idx >= a.length) { idx = -1; input.value = draft; }
+      else input.value = a[idx];
+    }
+  });
+  input.addEventListener('input', () => { idx = -1; }); // user gõ tay -> thoát chế độ history
+}
+
 const taskinput = document.getElementById('taskinput');
 // Gõ "/" ở đầu input -> mở drawer palette thay vì dropdown
 taskinput.addEventListener('input', () => {
@@ -1926,6 +2012,7 @@ taskinput.addEventListener('keydown', e => {
 function submitTask() {
   const v = taskinput.value.trim();
   if (!v) return;
+  histPush('hist:task', v);
   taskinput.value = '';
   closePalette();
   if (v[0] === '/') return routeSlash(v);
@@ -2236,8 +2323,13 @@ async function refreshChat() {
 
   const box = document.getElementById('bubbles');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-  const msgs = r.messages.slice(clearOffsets[currentSid] || 0);
-  chatTotal = r.messages.length;
+  // clearOffsets lưu TỔNG tuyệt đối lúc /clear; server trả window 30 cuối + total
+  // -> quy đổi về vị trí trong window (fix: session >30 msg /clear xong vẫn nhận message mới)
+  const total = r.total != null ? r.total : r.messages.length;
+  const dropped = total - r.messages.length; // số msg cũ đã trôi khỏi window 30
+  const skip = Math.max(0, (clearOffsets[currentSid] || 0) - dropped);
+  const msgs = r.messages.slice(skip);
+  chatTotal = total;
   // history co lại (hiếm: file bị cắt) -> render lại từ đầu
   if (msgs.length < chatRendered) { box.innerHTML = ''; chatRendered = 0; }
   // STABLE: chỉ append phần mới, không đụng bubble cũ
@@ -2255,6 +2347,7 @@ function submitChat() {
   const inp = document.getElementById('chatinput');
   const v = inp.value.trim();
   if (!v || !currentSid) return;
+  histPush('hist:chat', v);
   inp.value = '';
   if (v[0] === '/') return routeSlash(v);
   fetch('/api/chat/' + currentSid, {
@@ -2416,6 +2509,7 @@ function hermesSend(text) {
       saveHermesExtra();
       if (hermesOpenId === convId) renderHermesChat();
       if (!r.ok) toast('Hermes lỗi: ' + (r.error || '?'));
+      else if (activeTab !== 'hermes') notifyDone('Hermes đã trả lời'); // user đã chuyển tab trong lúc chờ
     })
     .catch(e => {
       (hermesExtra[convId] = hermesExtra[convId] || []).push({ role: 'assistant', content: 'Lỗi mạng: ' + e.message });
@@ -2431,11 +2525,17 @@ function submitHermes() {
   const inp = document.getElementById('hermes-input');
   const v = inp.value.trim();
   if (!v) return;
+  histPush('hist:hermes', v);
   inp.value = '';
   hermesSend(v);
 }
 document.getElementById('hermes-input').addEventListener('keydown', e => { if (e.key === 'Enter') submitHermes(); });
 document.getElementById('hermessendbtn').addEventListener('click', submitHermes);
+
+// history riêng cho từng input (task / chat resume / hermes)
+attachHistory(taskinput, 'hist:task');
+attachHistory(document.getElementById('chatinput'), 'hist:chat');
+attachHistory(document.getElementById('hermes-input'), 'hist:hermes');
 
 /* ================= tab STATS: Chart.js (donut + bar + stat cards) ================= */
 // Palette categorical dark đã validate (CVD-safe, contrast >= 3:1 trên nền #171a23)
@@ -2600,8 +2700,9 @@ async function pollAgyLog() {
   const r = await fetch('/api/agy/log?since=' + agyLogNext).then(r => r.json()).catch(() => null);
   agyLogBusy = false;
   if (!r) return;
-  // server dashboard restart -> buffer mới: reset về 0 và fetch lại từ đầu lượt sau
-  if (r.next < agyLogNext) { agyLogNext = 0; return; }
+  // server dashboard restart -> buffer mới: reset về 0 VÀ clear panel — không clear thì
+  // lượt sau fetch lại từ đầu sẽ append trùng toàn bộ log đang hiển thị
+  if (r.next < agyLogNext) { agyLogNext = 0; agyClearLog(); return; }
   if (!r.lines.length) { agyLogNext = r.next; return; }
   const box = document.getElementById('agy-log');
   if (agyLogEmpty) { box.textContent = ''; agyLogEmpty = false; }
