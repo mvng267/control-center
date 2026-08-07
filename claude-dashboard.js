@@ -2308,7 +2308,22 @@ function renderHermesList() {
 
 // Message local (user gửi + reply từ Hermes CLI) theo conversation id.
 // '__direct__' = chat trực tiếp không thuộc state.db.
-const hermesExtra = {};
+// Persist vào localStorage để reply KHÔNG mất khi F5 (state.db không lưu chat CLI trực tiếp).
+const hermesExtra = (function () {
+  try {
+    const j = JSON.parse(localStorage.getItem('hermesExtra') || '{}');
+    return (j && typeof j === 'object' && !Array.isArray(j)) ? j : {};
+  } catch { return {}; }
+})();
+function saveHermesExtra() {
+  try {
+    // cap: mỗi conversation giữ 60 message cuối, tránh phình localStorage
+    for (const k of Object.keys(hermesExtra)) {
+      if (hermesExtra[k].length > 60) hermesExtra[k] = hermesExtra[k].slice(-60);
+    }
+    localStorage.setItem('hermesExtra', JSON.stringify(hermesExtra));
+  } catch {} // quota đầy / private mode -> bỏ qua, chat vẫn chạy
+}
 let hermesExtraRendered = 0;
 
 function openHermesDirect() {
@@ -2365,6 +2380,7 @@ function hermesSend(text) {
   if (!hermesOpenId) openHermesDirect(); // gửi từ nơi khác -> mở chat trực tiếp
   const convId = hermesOpenId;
   (hermesExtra[convId] = hermesExtra[convId] || []).push({ role: 'user', content: text });
+  saveHermesExtra();
   renderHermesChat();
   document.getElementById('hermes-typing').classList.remove('hidden');
   busy(true);
@@ -2378,11 +2394,13 @@ function hermesSend(text) {
         role: 'assistant',
         content: r.ok ? r.reply : 'Lỗi Hermes: ' + (r.error || '?'),
       });
+      saveHermesExtra();
       if (hermesOpenId === convId) renderHermesChat();
       if (!r.ok) toast('Hermes lỗi: ' + (r.error || '?'));
     })
     .catch(e => {
       (hermesExtra[convId] = hermesExtra[convId] || []).push({ role: 'assistant', content: 'Lỗi mạng: ' + e.message });
+      saveHermesExtra();
       if (hermesOpenId === convId) renderHermesChat();
     })
     .finally(() => {
