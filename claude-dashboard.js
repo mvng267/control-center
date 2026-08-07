@@ -11,7 +11,7 @@ const os = require('os');
 const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
 
-const PORT = 7799;
+const PORT = +(process.env.PORT || 7799);
 const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 const HERMES_DB = path.join(os.homedir(), '.hermes', 'state.db');
 const HERMES_LOG = path.join(os.homedir(), '.hermes', 'logs', 'agent.log');
@@ -329,6 +329,189 @@ async function getHermesData() {
   return data;
 }
 
+/* ---------------- AGY-PROXY: điều khiển CLI qua child_process ----------------
+ * Dashboard KHÔNG implement logic proxy — chỉ spawn npm trong folder agy-proxy,
+ * capture stdout/stderr vào ring buffer để client poll hiển thị realtime. */
+
+const AGY_DIR = process.env.AGY_DIR || path.join(os.homedir(), 'Desktop', 'project', 'agy-proxy');
+const AGY_ENV = path.join(AGY_DIR, '.env');
+
+// data dir theo đúng logic paths.ts của agy-proxy: <ROOT>/data nếu tồn tại, không thì ~/.agyproxy
+function agyDataDir() {
+  const local = path.join(AGY_DIR, 'data');
+  return fs.existsSync(local) ? local : path.join(os.homedir(), '.agyproxy', 'data');
+}
+
+// CHỈ các key KHÔNG nhạy cảm mới được đọc/ghi từ dashboard (không bao giờ trả
+// DASHBOARD_PASSWORD / GATEWAY_API_KEY / OMNIROUTE_PASSWORD... về client).
+const AGY_EDIT_KEYS = {
+  PORT: { desc: 'Cổng gateway — đổi xong phải Restart', check: v => /^\d+$/.test(v) && +v >= 1 && +v <= 65535 },
+  HOST: { desc: '127.0.0.1 (chỉ máy này) | 0.0.0.0 (LAN) — cần Restart', check: v => /^[\w.:-]+$/.test(v) },
+  GATEWAY_ROTATION: {
+    desc: 'Chiến lược xoay account: round-robin | full-first | failover | highest-first | smart',
+    check: v => ['round-robin', 'full-first', 'failover', 'highest-first', 'smart'].includes(v),
+  },
+  GATEWAY_COOLDOWN_SEC: { desc: 'Cooldown (giây) khi account dính 429/hết quota', check: v => /^\d+$/.test(v) && +v >= 1 && +v <= 86400 },
+  HEADLESS: { desc: 'true/false — browser ẩn hay hiện khi login Google', check: v => v === 'true' || v === 'false' },
+  TOKEN_HEALTH_HOURS: { desc: 'Chu kỳ tự kiểm token health (giờ, 0 = tắt)', check: v => /^\d+$/.test(v) && +v <= 720 },
+};
+
+function readAgyEnv() {
+  const out = {};
+  let raw;
+  try { raw = fs.readFileSync(AGY_ENV, 'utf8'); } catch { return out; }
+  for (const line of raw.split('\n')) {
+    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line);
+    if (m) out[m[1]] = m[2];
+  }
+  return out;
+}
+
+// Ghi 1 key vào .env: thay đúng dòng KEY=..., giữ nguyên comment và các dòng khác
+function writeAgyEnv(key, value) {
+  let raw = fs.readFileSync(AGY_ENV, 'utf8');
+  const re = new RegExp('^' + key + '=.*$', 'm');
+  raw = re.test(raw)
+    ? raw.replace(re, () => key + '=' + value)
+    : raw + (raw.endsWith('\n') ? '' : '\n') + key + '=' + value + '\n';
+  fs.writeFileSync(AGY_ENV, raw);
+}
+
+// Port thực tế: settings DB của agy-proxy (đổi từ UI riêng, đè env) -> .env PORT -> 7788
+async function agyPort() {
+  const db = path.join(agyDataDir(), 'state.db');
+  if (fs.existsSync(db)) {
+    const rows = await new Promise(resolve => {
+      execFile('sqlite3', ['-readonly', '-json', db, "SELECT value FROM settings WHERE key='port';"],
+        { timeout: 4000 }, (err, out) => {
+          if (err) return resolve(null);
+          try { resolve(JSON.parse(out || '[]')); } catch { resolve(null); }
+        });
+    });
+    if (rows && rows[0] && /^\d+$/.test(String(rows[0].value))) return +rows[0].value;
+  }
+  const env = readAgyEnv();
+  return /^\d+$/.test(env.PORT || '') ? +env.PORT : 7788;
+}
+
+// ---- log ring buffer (dev + build/test/typecheck gộp chung 1 panel) ----
+const agyLogBuf = [];
+let agyLogStart = 0; // absolute index của agyLogBuf[0] — client poll bằng ?since=<abs index>
+function agyLogPush(tag, chunk) {
+  const lines = String(chunk).split('\n');
+  if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  for (const l of lines) agyLogBuf.push('[' + tag + '] ' + l);
+  const over = agyLogBuf.length - 800;
+  if (over > 0) { agyLogBuf.splice(0, over); agyLogStart += over; }
+}
+
+let agyDev = null;  // { proc, startedAt } — npm run dev do dashboard spawn
+let agyTask = null; // { name, proc, startedAt } — build/test/typecheck đang chạy (1 lúc 1 cái)
+const agyLast = {}; // name -> { ok, code, at, ms } kết quả lần chạy cuối
+let agyStatusCache = { at: 0, data: null }; // cache 3s — client poll 3s, probe HTTP không dồn dập
+
+function agyPipe(proc, tag) {
+  proc.stdout.on('data', d => agyLogPush(tag, d));
+  proc.stderr.on('data', d => agyLogPush(tag, d));
+}
+
+function agyStartDev() {
+  if (agyDev) return { error: 'dev server đã chạy (pid ' + agyDev.proc.pid + ')' };
+  const proc = spawn('npm', ['run', 'dev'], { cwd: AGY_DIR, detached: true, env: process.env });
+  agyDev = { proc, startedAt: Date.now() };
+  agyLogPush('dev', '$ npm run dev (pid ' + proc.pid + ')');
+  agyPipe(proc, 'dev');
+  proc.on('error', e => { agyLogPush('dev', '[spawn error] ' + e.message); agyDev = null; });
+  proc.on('exit', code => { agyLogPush('dev', '[exit code=' + code + ']'); agyDev = null; agyStatusCache.at = 0; });
+  agyStatusCache.at = 0;
+  return { ok: true, pid: proc.pid };
+}
+
+function agyStopDev() {
+  if (!agyDev) return { error: 'dev server không do dashboard start — nếu agy-proxy chạy ngoài, dừng thủ công' };
+  const p = agyDev.proc;
+  // detached:true -> kill cả process group (tsx watch spawn con)
+  try { process.kill(-p.pid, 'SIGTERM'); } catch { try { p.kill('SIGTERM'); } catch {} }
+  agyLogPush('dev', '[stop] SIGTERM pid ' + p.pid);
+  agyDev = null;
+  agyStatusCache.at = 0;
+  return { ok: true };
+}
+
+const AGY_TASKS = {
+  build: { args: ['run', 'build'], cwd: 'web' },      // cd web && npm run build
+  test: { args: ['test'], cwd: '' },                  // npm test
+  typecheck: { args: ['run', 'typecheck'], cwd: '' }, // tsc --noEmit
+};
+
+function agyRun(name) {
+  const t = AGY_TASKS[name];
+  if (!t) return { error: 'cmd không hợp lệ (build | test | typecheck)' };
+  if (agyTask) return { error: 'đang chạy ' + agyTask.name + ' — đợi xong đã' };
+  const started = Date.now();
+  let proc;
+  try {
+    proc = spawn('npm', t.args, { cwd: path.join(AGY_DIR, t.cwd), env: process.env });
+  } catch (e) { return { error: e.message }; }
+  agyTask = { name, proc, startedAt: started };
+  agyLogPush(name, '$ npm ' + t.args.join(' ') + (t.cwd ? ' (trong ' + t.cwd + '/)' : ''));
+  agyPipe(proc, name);
+  const killer = setTimeout(() => { try { proc.kill('SIGTERM'); } catch {} agyLogPush(name, '[timeout 10m]'); }, 600000);
+  proc.on('error', e => {
+    clearTimeout(killer);
+    agyLogPush(name, '[spawn error] ' + e.message);
+    agyLast[name] = { ok: false, code: -1, at: Date.now(), ms: Date.now() - started };
+    agyTask = null;
+  });
+  proc.on('close', code => {
+    clearTimeout(killer);
+    agyLast[name] = { ok: code === 0, code, at: Date.now(), ms: Date.now() - started };
+    agyLogPush(name, '[done code=' + code + ' trong ' + Math.round((Date.now() - started) / 1000) + 's]');
+    agyTask = null;
+    agyStatusCache.at = 0;
+  });
+  return { ok: true };
+}
+
+// GET JSON ngắn gọn có timeout — probe status + lấy models từ gateway
+function httpGetJson(urlStr, headers, timeoutMs) {
+  return new Promise(resolve => {
+    const req = http.get(urlStr, { headers, timeout: timeoutMs }, r => {
+      let buf = '';
+      r.on('data', c => { buf += c; if (buf.length > 1e6) req.destroy(); });
+      r.on('end', () => {
+        try { resolve({ code: r.statusCode, json: JSON.parse(buf) }); }
+        catch { resolve({ code: r.statusCode, json: null }); }
+      });
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(null));
+  });
+}
+
+async function getAgyStatus() {
+  if (agyStatusCache.data && Date.now() - agyStatusCache.at < 3000) return agyStatusCache.data;
+  const port = await agyPort();
+  const env = readAgyEnv();
+  const headers = env.GATEWAY_API_KEY ? { Authorization: 'Bearer ' + env.GATEWAY_API_KEY } : {};
+  const r = await httpGetJson('http://127.0.0.1:' + port + '/proxy/v1/models', headers, 1500);
+  const running = !!r; // có phản hồi HTTP (kể cả 401) = process đang listen
+  const models = (r && r.json && Array.isArray(r.json.data)) ? r.json.data.map(x => x.id) : [];
+  let accounts = 0;
+  try {
+    const csv = fs.readFileSync(path.join(agyDataDir(), 'accounts.csv'), 'utf8');
+    accounts = Math.max(0, csv.split('\n').filter(l => l.trim()).length - 1); // trừ header
+  } catch {}
+  const data = {
+    running, port, accounts, models,
+    dev: agyDev ? { pid: agyDev.proc.pid, startedAt: agyDev.startedAt } : null,
+    task: agyTask ? { name: agyTask.name, startedAt: agyTask.startedAt } : null,
+    last: agyLast,
+  };
+  agyStatusCache = { at: Date.now(), data };
+  return data;
+}
+
 /* ---------------- http helpers ---------------- */
 
 function json(res, code, obj) {
@@ -561,6 +744,48 @@ const server = http.createServer(async (req, res) => {
         json(res, 200, { ok: true, reply: (stdout || '').trim() || '(hermes không trả output)' });
       });
     return; // response trả trong callback execFile
+  }
+
+  // ---- AGY-PROXY: status / log / config / control (gọi CLI, không tự implement proxy) ----
+  if (p === '/api/agy/status' && req.method === 'GET') {
+    return json(res, 200, await getAgyStatus());
+  }
+  if (p === '/api/agy/log' && req.method === 'GET') {
+    const since = Math.max(0, +(url.searchParams.get('since') || 0) || 0);
+    const from = Math.max(0, since - agyLogStart);
+    return json(res, 200, { next: agyLogStart + agyLogBuf.length, lines: agyLogBuf.slice(from) });
+  }
+  if (p === '/api/agy/config' && req.method === 'GET') {
+    const env = readAgyEnv();
+    const fields = Object.entries(AGY_EDIT_KEYS).map(([key, s]) => ({ key, value: env[key] != null ? env[key] : '', desc: s.desc }));
+    return json(res, 200, { file: AGY_ENV, fields });
+  }
+  if (p === '/api/agy/config' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const key = String(body.key || '');
+    const value = String(body.value == null ? '' : body.value).trim();
+    const spec = AGY_EDIT_KEYS[key];
+    if (!spec) return json(res, 400, { error: 'key không cho phép edit: ' + key });
+    if (/[\r\n]/.test(value) || !spec.check(value)) return json(res, 400, { error: 'giá trị không hợp lệ cho ' + key });
+    try { writeAgyEnv(key, value); } catch (e) { return json(res, 500, { error: e.message }); }
+    return json(res, 200, { ok: true, restart: key === 'PORT' || key === 'HOST' });
+  }
+  // start/stop/restart/run: vẫn đọc body JSON (bắt buộc Content-Type JSON -> chống CSRF như các POST khác)
+  if (/^\/api\/agy\/(start|stop|restart|run)$/.test(p) && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    let r;
+    if (p === '/api/agy/start') r = agyStartDev();
+    else if (p === '/api/agy/stop') r = agyStopDev();
+    else if (p === '/api/agy/restart') {
+      if (agyDev) {
+        agyStopDev();
+        setTimeout(() => agyStartDev(), 1500); // đợi process group cũ thoát rồi mới start lại
+        r = { ok: true, restarting: true };
+      } else r = agyStartDev();
+    } else r = agyRun(String(body.cmd || ''));
+    return json(res, r.error ? 409 : 200, r);
   }
 
   json(res, 404, { error: 'not found' });
