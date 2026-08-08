@@ -5,6 +5,7 @@
 // Usage: node claude-dashboard.js   (http://localhost:7799)
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -155,7 +156,11 @@ function spawnClaude(args, sid, meta) {
     env: process.env,
   });
   proc.on('error', () => procs.delete(sid));
-  proc.on('exit', () => procs.delete(sid));
+  proc.on('exit', (code, signal) => {
+    procs.delete(sid);
+    // signal = bị kill chủ động (nút Kill) -> không báo "đã trả lời xong"
+    if (!signal) notifyPush('Claude ' + sid.slice(0, 8) + ' đã trả lời xong', sid);
+  });
   proc.unref();
   procs.set(sid, { proc, startedAt: Date.now(), ...meta });
   return proc;
@@ -562,6 +567,126 @@ function hostAllowed(req) {
     || host.endsWith('.local');
 }
 
+/* ---------------- Web Push: VAPID + RFC 8291 aes128gcm (zero deps) ---------------- */
+// Push THẬT qua push service của browser (FCM/APNs/Mozilla) — notification hiện trên
+// điện thoại kể cả khi đã đóng tab. Yêu cầu phía client: secure context (https/localhost).
+
+const PUSH_STATE_FILE = process.env.PUSH_STATE_FILE || path.join(__dirname, '.push-state.json');
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:claude@onluyen.edu.vn';
+const b64u = buf => Buffer.from(buf).toString('base64url');
+
+// Keypair ưu tiên env VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY (base64url); không có thì
+// generate 1 lần rồi persist — đổi key là MỌI subscription cũ chết nên phải giữ ổn định
+// qua restart. Subscriptions cũng persist cùng file (gitignored).
+let pushState = { publicKey: '', privateKey: '', subs: [] };
+try { pushState = { ...pushState, ...JSON.parse(fs.readFileSync(PUSH_STATE_FILE, 'utf8')) }; } catch {}
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  pushState.publicKey = process.env.VAPID_PUBLIC_KEY;
+  pushState.privateKey = process.env.VAPID_PRIVATE_KEY;
+} else if (!pushState.publicKey || !pushState.privateKey) {
+  const jwk = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    .privateKey.export({ format: 'jwk' });
+  // public = điểm uncompressed 65B (0x04 || X || Y), private = scalar D 32B
+  pushState.publicKey = b64u(Buffer.concat([
+    Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url'),
+  ]));
+  pushState.privateKey = jwk.d;
+  savePushState();
+}
+
+function savePushState() {
+  try { fs.writeFileSync(PUSH_STATE_FILE, JSON.stringify(pushState, null, 2)); } catch {}
+}
+
+function removeSub(endpoint) {
+  const n = pushState.subs.length;
+  pushState.subs = pushState.subs.filter(s => s.endpoint !== endpoint);
+  if (pushState.subs.length !== n) savePushState();
+}
+
+// Authorization header VAPID (RFC 8292): JWT ES256 ký bằng private key, aud = origin push service
+function vapidAuth(endpoint) {
+  const pub = Buffer.from(pushState.publicKey, 'base64url');
+  const key = crypto.createPrivateKey({
+    format: 'jwk',
+    key: { kty: 'EC', crv: 'P-256', d: pushState.privateKey, x: b64u(pub.subarray(1, 33)), y: b64u(pub.subarray(33, 65)) },
+  });
+  const seg = o => b64u(Buffer.from(JSON.stringify(o)));
+  const unsigned = seg({ typ: 'JWT', alg: 'ES256' }) + '.'
+    + seg({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: VAPID_SUBJECT });
+  const sig = crypto.sign('sha256', Buffer.from(unsigned), { key, dsaEncoding: 'ieee-p1363' });
+  return 'vapid t=' + unsigned + '.' + b64u(sig) + ', k=' + pushState.publicKey;
+}
+
+// Mã hoá payload theo RFC 8291 (ECDH P-256 + HKDF + AES-128-GCM, content coding aes128gcm)
+function encryptPush(sub, payload) {
+  const uaPub = Buffer.from(sub.keys.p256dh, 'base64url'); // public key browser (65B)
+  const authSecret = Buffer.from(sub.keys.auth, 'base64url'); // auth secret 16B
+  const ecdh = crypto.createECDH('prime256v1');
+  const asPub = ecdh.generateKeys(); // ephemeral keypair phía server
+  const shared = ecdh.computeSecret(uaPub);
+  const keyInfo = Buffer.concat([Buffer.from('WebPush: info\0'), uaPub, asPub]);
+  const ikm = Buffer.from(crypto.hkdfSync('sha256', shared, authSecret, keyInfo, 32));
+  const salt = crypto.randomBytes(16);
+  const cek = Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16));
+  const nonce = Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
+  const c = crypto.createCipheriv('aes-128-gcm', cek, nonce);
+  // record cuối: plaintext + delimiter 0x02, không pad thêm
+  const cipher = Buffer.concat([c.update(Buffer.concat([payload, Buffer.from([2])])), c.final(), c.getAuthTag()]);
+  // header aes128gcm: salt(16) + rs(4, 4096) + idlen(1) + keyid(as_public 65B)
+  return Buffer.concat([salt, Buffer.from([0, 0, 16, 0, 65]), asPub, cipher]);
+}
+
+function sendPush(sub, dataObj) {
+  return new Promise(resolve => {
+    let u;
+    try { u = new URL(sub.endpoint); } catch { return resolve({ status: 0, error: 'bad endpoint' }); }
+    // push service thật luôn https; http chỉ cho loopback (test local)
+    const mod = u.protocol === 'https:' ? https
+      : (u.hostname === '127.0.0.1' || u.hostname === 'localhost') ? http : null;
+    if (!mod) return resolve({ status: 0, error: 'endpoint phải là https' });
+    let body;
+    try { body = encryptPush(sub, Buffer.from(JSON.stringify(dataObj))); } catch (e) { return resolve({ status: 0, error: e.message }); }
+    const req2 = mod.request(u, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Encoding': 'aes128gcm',
+        'Content-Length': body.length,
+        TTL: '3600',
+        Urgency: 'high',
+        Authorization: vapidAuth(sub.endpoint),
+      },
+      timeout: 10000,
+    }, r => {
+      r.resume();
+      // 404/410 = subscription đã chết (user gỡ app / revoke quyền) -> tự dọn
+      if (r.statusCode === 404 || r.statusCode === 410) removeSub(sub.endpoint);
+      resolve({ status: r.statusCode });
+    });
+    req2.on('timeout', () => req2.destroy(new Error('timeout')));
+    req2.on('error', e => resolve({ status: 0, error: e.message }));
+    req2.end(body);
+  });
+}
+
+async function pushAll(dataObj) {
+  const subs = pushState.subs.slice();
+  const results = await Promise.all(subs.map(s => sendPush(s, dataObj)));
+  return {
+    total: subs.length,
+    sent: results.filter(r => r.status >= 200 && r.status < 300).length,
+    results: results.map((r, i) => ({ endpoint: subs[i].endpoint.slice(0, 60), ...r })),
+  };
+}
+
+// Bắn push khi Claude/Hermes trả lời xong. SW phía client quyết định hiển thị:
+// có tab visible thì bỏ qua (toast/beep local đã lo), tab ẩn/đóng mới hiện notification.
+function notifyPush(msg, sid) {
+  if (!pushState.subs.length) return;
+  pushAll({ title: 'Claude Control Center', body: msg, tag: 'ccc-done', sid: sid || null, url: '/' }).catch(() => {});
+}
+
 /* ---------------- server ---------------- */
 
 const server = http.createServer(async (req, res) => {
@@ -785,6 +910,7 @@ const server = http.createServer(async (req, res) => {
           const msg = ((stderr || '').trim() || err.message || 'hermes error').slice(-2000);
           return json(res, 500, { ok: false, error: msg });
         }
+        notifyPush('Hermes đã trả lời');
         json(res, 200, { ok: true, reply: (stdout || '').trim() || '(hermes không trả output)' });
       });
     return; // response trả trong callback execFile
@@ -832,6 +958,43 @@ const server = http.createServer(async (req, res) => {
     return json(res, r.error ? 409 : 200, r);
   }
 
+  // ---- Web Push: vapid key + subscribe/unsubscribe + gửi test ----
+  if (p === '/api/push/vapid') return json(res, 200, { key: pushState.publicKey });
+  if (p === '/api/push/subscribe' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const sub = body && body.endpoint ? body : (body.subscription || {});
+    if (!sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+      return json(res, 400, { error: 'subscription không hợp lệ (cần endpoint + keys.p256dh + keys.auth)' });
+    }
+    removeSub(sub.endpoint); // upsert theo endpoint
+    pushState.subs.push({
+      endpoint: sub.endpoint,
+      keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+      ua: String(req.headers['user-agent'] || '').slice(0, 120),
+      at: Date.now(),
+    });
+    savePushState();
+    return json(res, 200, { ok: true, subs: pushState.subs.length });
+  }
+  if (p === '/api/push/unsubscribe' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    removeSub(String(body.endpoint || ''));
+    return json(res, 200, { ok: true, subs: pushState.subs.length });
+  }
+  if (p === '/api/push/send' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const r = await pushAll({
+      title: (body.title || 'Claude Control Center').slice(0, 100),
+      body: (body.body || 'Test notification').slice(0, 500),
+      tag: body.tag || 'ccc-test',
+      url: '/',
+    });
+    return json(res, 200, { ok: true, ...r });
+  }
+
   json(res, 404, { error: 'not found' });
 });
 
@@ -860,10 +1023,37 @@ const MANIFEST = JSON.stringify({
   icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
 });
 
-// Service worker tối thiểu — network-only, đủ điều kiện cài PWA
+// Service worker: network-only (đủ điều kiện PWA) + Web Push nhận notification thật
 const SW_JS = `self.addEventListener('install', function () { self.skipWaiting(); });
 self.addEventListener('activate', function (e) { e.waitUntil(self.clients.claim()); });
 self.addEventListener('fetch', function () { /* network-only */ });
+
+// Push từ server: chỉ hiện system notification khi KHÔNG có tab nào visible —
+// tab đang mở thì toast/beep local đã lo, tránh notification trùng.
+self.addEventListener('push', function (e) {
+  var data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (err) { data = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
+    var visible = list.some(function (c) { return c.visibilityState === 'visible'; });
+    if (visible) return;
+    return self.registration.showNotification(data.title || 'Claude Control Center', {
+      body: data.body || '',
+      icon: '/icon.svg',
+      badge: '/icon.svg',
+      tag: data.tag || 'ccc-push',
+      data: { url: data.url || '/', sid: data.sid || null },
+    });
+  }));
+});
+
+// Tap notification: focus tab đang có, không có thì mở tab mới
+self.addEventListener('notificationclick', function (e) {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
+    for (var i = 0; i < list.length; i++) { if ('focus' in list[i]) return list[i].focus(); }
+    return self.clients.openWindow((e.notification.data && e.notification.data.url) || '/');
+  }));
+});
 `;
 
 /* ---------------- frontend ---------------- */
@@ -1665,8 +1855,10 @@ function unlockAudio() {
   // xin quyền system notification 1 lần ở gesture đầu tiên (browser yêu cầu user gesture)
   if (!notifAsked && 'Notification' in window && Notification.permission === 'default') {
     notifAsked = true;
-    try { Notification.requestPermission().catch(function () {}); } catch {}
-  }
+    try {
+      Notification.requestPermission().then(function (perm) { if (perm === 'granted') setupPush(); }).catch(function () {});
+    } catch {}
+  } else setupPush(); // đã granted từ trước (hoặc subscribe fail lượt trước) -> thử subscribe
 }
 document.addEventListener('pointerdown', unlockAudio, { passive: true });
 document.addEventListener('keydown', unlockAudio);
@@ -1695,6 +1887,45 @@ function notifyDone(msg) {
   if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
     try { new Notification('Claude Control Center', { body: msg, icon: '/icon.svg', tag: 'ccc-done' }); } catch {}
   }
+}
+
+/* ================= Web Push: đăng ký nhận push THẬT từ server ================= */
+// Cần secure context (https hoặc localhost) + quyền notification. Không đủ điều kiện
+// (vd mở qua http://100.x.x.x) -> im lặng, giữ fallback Notification local ở notifyDone.
+let pushSetupDone = false;
+async function setupPush() {
+  if (pushSetupDone) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  pushSetupDone = true;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const vap = await fetch('/api/push/vapid').then(r => r.json());
+    const key = urlB64ToU8(vap.key);
+    let sub = await reg.pushManager.getSubscription();
+    // server đổi VAPID key -> subscription cũ vô dụng, huỷ rồi đăng ký lại
+    if (sub && sub.options && sub.options.applicationServerKey) {
+      const cur = new Uint8Array(sub.options.applicationServerKey);
+      let same = cur.length === key.length;
+      for (let i = 0; same && i < key.length; i++) same = cur[i] === key[i];
+      if (!same) { await sub.unsubscribe(); sub = null; }
+    }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub.toJSON()),
+    });
+  } catch (e) {
+    pushSetupDone = false; // push service không sẵn (browser/mạng) -> thử lại ở gesture sau
+  }
+}
+function urlB64ToU8(s) {
+  const pad = '='.repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
 }
 
 /* ================= tabs + badges ================= */
@@ -3251,9 +3482,9 @@ for (const id of ['taskinput', 'chatinput', 'hermes-input']) {
   });
 }
 
-// PWA service worker
+// PWA service worker + Web Push (tự subscribe nếu đã cấp quyền từ session trước)
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(function () {});
+  navigator.serviceWorker.register('/sw.js').then(function () { setupPush(); }).catch(function () {});
 }
 </script>
 </body>
