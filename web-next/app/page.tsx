@@ -6,11 +6,14 @@ import { TokenGate } from '@/components/token-gate';
 import { AgyTab } from '@/components/agy/agy-tab';
 import { StatsTab } from '@/components/stats/stats-tab';
 import { HermesTab } from '@/components/hermes/hermes-tab';
+import { SessionList } from '@/components/cli/session-list';
+import { ChatView } from '@/components/cli/chat-view';
 import { initToken } from '@/lib/api';
 import { useStream } from '@/lib/use-stream';
 
 export default function Page() {
   const [tab, setTab] = useState<TabId>('cli');
+  const [openSid, setOpenSid] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const { data, offline, unauthorized } = useStream();
 
@@ -26,7 +29,9 @@ export default function Page() {
   return (
     <>
       <AppShell tab={tab} onTab={setTab} badges={{ cli: unread }}>
-        {tab === 'cli' && <Placeholder name="Claude CLI" />}
+        {tab === 'cli' && (openSid
+          ? <ChatView sid={openSid} onBack={() => setOpenSid(null)} />
+          : <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} onOpen={setOpenSid} />)}
         {tab === 'hermes' && <HermesTab />}
         {tab === 'agy' && <AgyTab />}
         {tab === 'stats' && <StatsTab sessions={data?.sessions || []} />}
