@@ -1194,13 +1194,15 @@ const HTML = `<!doctype html>
       <div id="list" class="flex-1 flex flex-col min-h-0">
         <!-- toolbar: search + project filter -->
         <div class="flex items-center gap-2 px-4 py-2.5 border-b border-[#262a36]">
-          <div class="flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-[10px] px-3
+          <!-- min-w-0 cả wrapper lẫn input: input mặc định có min-width ~200px, không co được
+               trong flex -> đẩy nút compare ra ngoài viewport mobile 390px -->
+          <div class="flex-1 min-w-0 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-[10px] px-3
                       focus-within:border-[#3b82f6]/60 transition-colors">
             <i data-lucide="search" class="w-3.5 h-3.5 text-[#666b7d] shrink-0"></i>
-            <input id="searchbox" class="flex-1 bg-transparent outline-none py-1.5 text-[13px] placeholder-[#666b7d]"
+            <input id="searchbox" class="flex-1 min-w-0 w-full bg-transparent outline-none py-1.5 text-[13px] placeholder-[#666b7d]"
                    placeholder="Tìm session...">
           </div>
-          <select id="projfilter" class="select select-sm bg-[#1a1d27] border-[#262a36] text-[13px] text-[#e4e4e7] rounded-[10px] max-w-[180px] focus:outline-none">
+          <select id="projfilter" class="select select-sm bg-[#1a1d27] border-[#262a36] text-[13px] text-[#e4e4e7] rounded-[10px] max-w-[130px] sm:max-w-[180px] shrink-0 focus:outline-none">
             <option value="">Tất cả project</option>
           </select>
           <button id="comparebtn" class="w-11 h-11 rounded-[10px] bg-[#1a1d27] border border-[#262a36] hover:border-[#3b82f6]/60
@@ -2087,7 +2089,7 @@ taskinput.addEventListener('input', () => {
   if (taskinput.value === '/') { taskinput.value = ''; openPalette(''); }
 });
 taskinput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') submitTask();
+  if (e.key === 'Enter' && !e.isComposing) submitTask(); // isComposing: không submit giữa chừng gõ IME tiếng Việt
 });
 
 function submitTask() {
@@ -2757,7 +2759,7 @@ function submitHermes() {
   inp.value = '';
   hermesSend(v);
 }
-document.getElementById('hermes-input').addEventListener('keydown', e => { if (e.key === 'Enter') submitHermes(); });
+document.getElementById('hermes-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) submitHermes(); });
 document.getElementById('hermessendbtn').addEventListener('click', submitHermes);
 
 // history riêng cho từng input (task / chat resume / hermes)
@@ -2911,9 +2913,11 @@ async function refreshAgyStatus() {
     r.models.length ? r.models.join('  ·  ') : (r.running ? '(gateway chưa trả models)' : '(agy-proxy không chạy)'));
   // chạy ngoài dashboard -> Stop/Restart không kill được, hiện note
   document.getElementById('agy-note').classList.toggle('hidden', !(r.running && !r.dev));
-  // buttons: Start disable khi đang chạy; Stop chỉ enable khi dashboard là chủ process
+  // buttons: Start disable khi đang chạy; Stop/Restart chỉ enable khi dashboard là chủ process
+  // (proxy chạy ngoài -> Restart cũng disable: bấm chỉ spawn dev mới rồi dính EADDRINUSE)
   document.getElementById('agy-btn-start').disabled = !!r.dev || r.running;
   document.getElementById('agy-btn-stop').disabled = !r.dev;
+  document.getElementById('agy-btn-restart').disabled = r.running && !r.dev;
   const taskName = r.task ? r.task.name : null;
   for (const name of ['build', 'test', 'typecheck']) {
     document.getElementById('agy-btn-' + name).disabled = !!taskName;

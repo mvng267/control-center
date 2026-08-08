@@ -92,12 +92,13 @@ const ok = (name, pass, extra) => { results.push({ name, pass, extra }); console
     // note "chạy ngoài" phải hiện (proxy ngoài đang chạy, dashboard không sở hữu)
     const noteShown = await page.evaluate(() => !document.getElementById('agy-note').classList.contains('hidden'));
     ok(label + ': note "chạy ngoài dashboard" hiện', noteShown);
-    // Start disabled (đang chạy ngoài), Stop disabled (không sở hữu)
+    // Start/Stop/Restart đều disabled (đang chạy ngoài, dashboard không sở hữu process)
     const btns = await page.evaluate(() => ({
       start: document.getElementById('agy-btn-start').disabled,
       stop: document.getElementById('agy-btn-stop').disabled,
+      restart: document.getElementById('agy-btn-restart').disabled,
     }));
-    ok(label + ': Start+Stop disabled đúng khi proxy chạy ngoài', btns.start && btns.stop, JSON.stringify(btns));
+    ok(label + ': Start+Stop+Restart disabled đúng khi proxy chạy ngoài', btns.start && btns.stop && btns.restart, JSON.stringify(btns));
 
     // ⌘K palette + filter + navigate
     await page.keyboard.press('Meta+1');
@@ -254,6 +255,36 @@ const ok = (name, pass, extra) => { results.push({ name, pass, extra }); console
       return { withUnread: t, after: document.title };
     });
     ok(label + ': title badge "(5) ..." khi unread', titleBadge.withUnread.startsWith('(5) '), JSON.stringify(titleBadge));
+
+    // ===== VÒNG 4 =====
+    // tab STATS: stat cards khớp allSessions + charts có data
+    await page.keyboard.press('Meta+4');
+    await page.waitForTimeout(600);
+    const stats = await page.evaluate(() => ({
+      total: +document.getElementById('stat-total').textContent,
+      msgs: +document.getElementById('stat-msgs').textContent,
+      nSess: allSessions.length,
+      sumMsgs: allSessions.reduce((n, s) => n + s.msgs, 0),
+      donutPts: donutChart ? donutChart.data.datasets[0].data.length : 0,
+      barPts: barChart ? barChart.data.datasets[0].data.length : 0,
+      donutW: document.getElementById('chart-donut').getBoundingClientRect().width,
+    }));
+    ok(label + ': STATS cards khớp allSessions',
+      stats.total === stats.nSess && stats.msgs === stats.sumMsgs, JSON.stringify(stats));
+    ok(label + ': STATS charts render có data',
+      stats.donutPts > 0 && stats.barPts > 0 && stats.donutW > 100,
+      'donut=' + stats.donutPts + ' bar=' + stats.barPts);
+    await page.keyboard.press('Meta+1');
+    await page.waitForTimeout(200);
+
+    // KHÔNG tràn ngang (regression: comparebtn từng bị đẩy khỏi viewport mobile 390px)
+    const ovf = await page.evaluate(() => {
+      const W = document.documentElement.clientWidth;
+      const cb = document.getElementById('comparebtn').getBoundingClientRect();
+      return { scrollW: document.body.scrollWidth, W, cmpBtnIn: cb.right <= W + 1 && cb.width >= 40 };
+    });
+    ok(label + ': list view không tràn ngang + comparebtn trong viewport',
+      ovf.scrollW <= ovf.W + 1 && ovf.cmpBtnIn, JSON.stringify(ovf));
 
     // screenshot
     await page.screenshot({ path: '/tmp/pwtest/shot-' + vp.width + '.png' });
