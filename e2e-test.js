@@ -16,6 +16,14 @@ const FIX_DIR = path.join(os.homedir(), '.claude', 'projects', '-tmp-e2e-tools')
 const FIX_SID = 'e2e00000-0000-4000-8000-0000000000t1';
 const FIX_FILE = path.join(FIX_DIR, FIX_SID + '.jsonl');
 
+// Timestamp trong NGÀY HÔM NAY: fixture từng ghi ngày cứng "2026-08-08" nên chạy qua
+// nửa đêm là vạch ngăn đổi thành "Hôm qua" và test fail dù chức năng vẫn đúng.
+function todayAt(hh, mm, ss) {
+  const d = new Date();
+  d.setHours(hh, mm, ss || 0, 0);
+  return d.toISOString();
+}
+
 function fixLine(type, content, ts) {
   return JSON.stringify({ type, timestamp: ts, message: { role: type, content } });
 }
@@ -598,6 +606,12 @@ function cleanFixture() {
     // ---- công tắc quyền: dashboard chạy claude -p nên KHÔNG có hộp thoại hỏi quyền;
     // acceptEdits là thứ giúp Claude thật sự sửa được file thay vì báo "chưa có quyền" ----
     const perm = await page.evaluate(async () => {
+      // đưa về acceptEdits trước: chế độ được LƯU BỀN qua restart nên lần chạy trước
+      // để lại giá trị gì thì lần này bắt đầu từ đó -> test phải tự đặt mốc
+      await fetch('/api/perm', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'acceptEdits' }) });
+      permMode = 'acceptEdits'; renderPerm();
+      await new Promise(r => setTimeout(r, 200));
       const start = { label: document.getElementById('permlabel').textContent,
                       cls: document.getElementById('permbtn').className };
       const seen = [];
@@ -733,18 +747,18 @@ function cleanFixture() {
     // PNG 1x1 hợp lệ (base64) -> endpoint phải trả đúng binary
     const PNG1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
     require('fs').writeFileSync(IMGFILE,
-      fixLine('assistant', [{ type: 'text', text: 'Chụp màn hình rồi sửa file.' }], '2026-08-08T07:00:00Z') + '\n' +
+      fixLine('assistant', [{ type: 'text', text: 'Chụp màn hình rồi sửa file.' }], todayAt(7,0,0)) + '\n' +
       fixLine('assistant', [
         { type: 'tool_use', id: 'i1', name: 'Read', input: { file_path: '/x/shot.png' } },
-      ], '2026-08-08T07:00:05Z') + '\n' +
+      ], todayAt(7,0,5)) + '\n' +
       fixLine('user', [
         { type: 'tool_result', tool_use_id: 'i1', content: [{ type: 'text', text: 'ảnh đây' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG1 } }] },
-      ], '2026-08-08T07:00:06Z') + '\n' +
+      ], todayAt(7,0,6)) + '\n' +
       fixLine('assistant', [
         { type: 'text', text: 'Giờ sửa code.' },
         { type: 'tool_use', id: 'i2', name: 'Edit', input: { file_path: '/x/app.ts', old_string: 'const a = 1', new_string: 'const a = 2' } },
-      ], '2026-08-08T07:00:10Z') + '\n' +
-      fixLine('user', [{ type: 'tool_result', tool_use_id: 'i2', content: 'done' }], '2026-08-08T07:00:11Z') + '\n');
+      ], todayAt(7,0,10)) + '\n' +
+      fixLine('user', [{ type: 'tool_result', tool_use_id: 'i2', content: 'done' }], todayAt(7,0,11)) + '\n');
     await page.evaluate(s => openChat(s), IMGSID);
     await page.waitForFunction(() => document.querySelectorAll('.tcard').length >= 2, { timeout: 8000 });
     const grp = await page.evaluate(() => {
