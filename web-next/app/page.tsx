@@ -10,12 +10,14 @@ import { SessionList } from '@/components/cli/session-list';
 import { ChatView } from '@/components/cli/chat-view';
 import { initToken } from '@/lib/api';
 import { useStream } from '@/lib/use-stream';
+import { usePwa } from '@/lib/use-pwa';
 
 export default function Page() {
   const [tab, setTab] = useState<TabId>('cli');
   const [openSid, setOpenSid] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const { data, offline, unauthorized } = useStream();
+  usePwa();
 
   useEffect(() => {
     initToken();

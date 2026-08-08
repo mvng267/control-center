@@ -1538,8 +1538,16 @@ const MANIFEST = JSON.stringify({
 });
 
 // Service worker: network-only (đủ điều kiện PWA) + Web Push nhận notification thật
-const SW_JS = `var SHELL = 'ccc-shell-v1';
+const SW_JS = `var SHELL = 'ccc-shell-v2';
 var SHELL_URLS = ['/', '/manifest.json', '/icon.svg'];
+// Tài nguyên Next (/_next/static/...) đặt tên theo hash nội dung nên KHÔNG liệt kê cứng
+// được — cache khi tải lần đầu. Thiếu chúng thì offline chỉ ra vỏ trắng vì mất JS bundle.
+function isShellUrl(pathname) {
+  return SHELL_URLS.indexOf(pathname) >= 0
+    || pathname.indexOf('/_next/static/') === 0
+    || /^\\/js\\/[a-z-]+\\.js$/.test(pathname)
+    || pathname === '/app.css';
+}
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
@@ -1563,7 +1571,7 @@ self.addEventListener('fetch', function (e) {
   var url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.indexOf('/api/') === 0 || url.pathname === '/stream') return;
-  if (SHELL_URLS.indexOf(url.pathname) < 0) return;
+  if (!isShellUrl(url.pathname)) return;
   // mạng trước (luôn có bản mới nhất), hỏng thì lấy cache
   e.respondWith(
     fetch(req).then(function (res) {
