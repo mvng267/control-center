@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/layout/app-shell';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { TaskBar } from './task-bar';
 
 function ago(ms: number) {
   const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
@@ -27,8 +28,8 @@ type SortKey = 'title' | 'project' | 'msgs' | 'mtimeMs';
 const PAGE = 10;
 
 export function SessionList({
-  sessions, jobs, onOpen,
-}: { sessions: Session[]; jobs: Job[]; onOpen: (sid: string) => void }) {
+  sessions, jobs, perm, onOpen,
+}: { sessions: Session[]; jobs: Job[]; perm?: string; onOpen: (sid: string) => void }) {
   const [q, setQ] = useState('');
   const [proj, setProj] = useState('');
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: 'mtimeMs', dir: -1 });
@@ -84,7 +85,7 @@ export function SessionList({
         }
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 md:px-6 md:pb-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6">
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           {/* thanh công cụ trên bảng */}
           <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
@@ -219,6 +220,7 @@ export function SessionList({
           </div>
         </div>
       </div>
+      <TaskBar perm={perm} onOpen={onOpen} />
     </div>
   );
 }
