@@ -5,7 +5,10 @@ import { ArrowLeft, Send, Square, Check, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
 import { Markdown } from './markdown';
-import { ChatToolbar, AttachBar, type Attachment } from './chat-toolbar';
+import { ChatToolbar, AttachBar, AttachButton, type Attachment } from './chat-toolbar';
+import { PermSwitch } from './perm-switch';
+import { TodoBar } from './todo-bar';
+import { SlashHint, useSlash } from './slash-hint';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -73,22 +76,50 @@ const dayLabel = (ts: string | null) => {
   return d.toLocaleDateString('vi-VN');
 };
 
-export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
+export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => void; perm?: string }) {
   const [h, setH] = useState<History | null>(null);
   const [att, setAtt] = useState<Attachment[]>([]);
   const [text, setText] = useState('');
+  const slash = useSlash(text, (v) => setText(v));
+  // Tin vừa gửi, hiện NGAY trước khi server kịp ghi vào .jsonl. Đo thật: Claude CLI
+  // mất ~1.9s mới ghi file, cộng vòng poll 2s -> tin của mình có thể 4s sau mới hiện,
+  // cảm giác như treo. Giữ ở đây tới khi bản từ server có nội dung trùng thì bỏ đi.
+  const [pending, setPending] = useState<Msg[]>([]);
   const boxRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
+  // Nhịp hỏi lại server: Claude ĐANG chạy thì hỏi dày (700ms) để chữ hiện ra gần như
+  // tức thì; rảnh thì giãn ra 2s cho đỡ tốn pin và băng thông Tailscale.
+  const busyNow = h?.typing || h?.status === 'RUNNING';
   useEffect(() => {
     let alive = true;
     const load = () => api<History>('/api/history/' + sid).then((r) => alive && setH(r)).catch(() => {});
     load();
-    const t = setInterval(load, 2000);
+    const t = setInterval(load, busyNow ? 700 : 2000);
     return () => { alive = false; clearInterval(t); };
-  }, [sid]);
+  }, [sid, busyNow]);
 
-  const groups = useMemo(() => groupMessages(h?.messages || []), [h?.messages]);
+  useEffect(() => {
+    if (!pending.length) return;
+    const server = h?.messages || [];
+    setPending((ps) => ps.filter(
+      (p) => !server.some((m) => m.role === 'user' && m.content.trim() === p.content.trim())));
+  }, [h?.messages]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const groups = useMemo(
+    () => groupMessages([...(h?.messages || []), ...pending]), [h?.messages, pending]);
+
+  // TodoWrite MỚI NHẤT của phiên — mỗi lần Claude cập nhật là ghi đè cả danh sách,
+  // nên chỉ bản cuối mới phản ánh đúng tiến độ. Quét ngược cho nhanh.
+  const todos = useMemo(() => {
+    const ms = h?.messages || [];
+    for (let i = ms.length - 1; i >= 0; i--) {
+      for (const p of ms[i].parts || []) {
+        if (p.t === 'tool' && p.todos?.length) return p.todos;
+      }
+    }
+    return [];
+  }, [h?.messages]);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -105,12 +136,21 @@ export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
       : v;
     const keep = att;
     setText(''); setAtt([]);
+    const mine: Msg = { role: 'user', content: msg, ts: new Date().toISOString() };
+    setPending((ps) => [...ps, mine]);
+    atBottom.current = true;   // vừa gửi thì luôn cuộn xuống xem tin của mình
     try {
       const r = await api<{ error?: string }>('/api/chat/' + sid, {
         method: 'POST', body: JSON.stringify({ message: msg }),
       });
-      if (r.error) { setText(v); setAtt(keep); toast.error('Không gửi được: ' + r.error); }
-    } catch { setText(v); setAtt(keep); toast.error('Lỗi mạng'); }
+      if (r.error) {
+        setPending((ps) => ps.filter((p) => p !== mine));
+        setText(v); setAtt(keep); toast.error('Không gửi được: ' + r.error);
+      }
+    } catch {
+      setPending((ps) => ps.filter((p) => p !== mine));
+      setText(v); setAtt(keep); toast.error('Lỗi mạng');
+    }
   };
 
   const approve = async () => {
@@ -135,13 +175,17 @@ export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
           {h?.title || sid.slice(0, 8)}
         </span>
         {h?.model && <Badge variant="outline" className="hidden shrink-0 text-[10.5px] text-tool-accent sm:inline-flex">{h.model}</Badge>}
-        <Badge variant="outline" className={cn('shrink-0 text-[10.5px]',
+        <Badge variant="outline" className={cn('hidden shrink-0 text-[10.5px] sm:inline-flex',
           h?.status === 'RUNNING' && 'border-status-ok/40 text-status-ok')}>{h?.status || '…'}</Badge>
+        {/* Chế độ quyền phải thấy được NGAY TRONG chat: đang nhắn mà không biết Claude
+            có tự sửa file được không thì không dám giao việc. */}
+        <PermSwitch perm={perm} compact testid="chat-perm" />
         <ChatToolbar sid={sid} title={h?.title || ''} model={h?.model ?? null} usage={h?.usage}
           onTitle={(t) => setH((x) => (x ? { ...x, title: t } : x))}
-          onModel={(mo) => setH((x) => (x ? { ...x, model: mo } : x))}
-          onAttach={(a) => setAtt((xs) => [...xs, a])} />
+          onModel={(mo) => setH((x) => (x ? { ...x, model: mo } : x))} />
       </div>
+
+      <TodoBar todos={todos} />
 
       <div ref={boxRef} data-testid="chat-bubbles"
         onScroll={(e) => {
@@ -246,12 +290,22 @@ export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
 
       <div className="mx-auto w-full max-w-[920px] shrink-0 border-t border-border px-3 py-3"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+        <SlashHint items={slash.items} active={slash.active} onPick={slash.pick} />
         <AttachBar items={att} onRemove={(i) => setAtt((xs) => xs.filter((_, k) => k !== i))} />
         <div className="flex items-center gap-2">
+          {/* Nút ảnh nằm CẠNH ô nhắn tin, không phải trên header: đính ảnh là một
+              phần của việc soạn tin, để tít trên cùng thì tay phải với. */}
+          <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])} />
           <Input value={text} onChange={(e) => setText(e.target.value)} data-testid="chat-input"
-            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && send()}
+            onKeyDown={(e) => {
+              if (slash.onKeyDown(e)) return;   // ↑↓ chọn, Tab/Enter điền, Esc đóng
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) send();
+            }}
             placeholder="Tiếp tục cuộc trò chuyện…" className="h-11 text-[16px]" />
-          <Button size="icon" className="size-11 shrink-0" onClick={send}><Send className="size-4" /></Button>
+          <Button size="icon" className="size-11 shrink-0" onClick={send}
+            disabled={!text.trim() && !att.length} data-testid="chat-send">
+            <Send className="size-4" />
+          </Button>
         </div>
       </div>
     </div>

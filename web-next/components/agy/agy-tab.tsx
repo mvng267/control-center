@@ -10,6 +10,8 @@ import { StatCard } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { AgyLog } from './agy-log';
+import { AgyConfig } from './agy-config';
 import { cn } from '@/lib/utils';
 
 const ACC_LABEL: Record<string, string> = {
@@ -257,6 +259,12 @@ export function AgyTab() {
           )}
         </div>
       </Card>
+
+      {/* Log + cấu hình: hai cột trên màn rộng, xếp dọc trên điện thoại */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <AgyLog />
+        <AgyConfig />
+      </div>
     </div>
     </>
   );

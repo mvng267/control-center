@@ -96,7 +96,7 @@ export default function Page() {
 
       <AppShell tab={tab} onTab={setTab} badges={{ cli: unread }}>
         {tab === 'cli' && (openSid
-          ? <ChatView sid={openSid} onBack={() => setOpenSid(null)} />
+          ? <ChatView sid={openSid} onBack={() => setOpenSid(null)} perm={data?.perm} />
           : <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} perm={data?.perm} onOpen={setOpenSid} />)}
         {tab === 'hermes' && <HermesTab />}
         {tab === 'agy' && <AgyTab />}

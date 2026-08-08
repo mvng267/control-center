@@ -12,6 +12,25 @@ import { toast } from 'sonner';
 interface HMsg { role: string; content: string; ts: number }
 interface HConv { id: string; title: string; source: string; count: number; lastTs: number; messages: HMsg[] }
 
+// Hội thoại từ Hermes CLI không có tiêu đề, tên rơi về ID thô kiểu
+// "20260808_170834_f6bbf2" — nhìn không biết là cái gì. ID đã chứa sẵn ngày giờ
+// nên dịch ra tiếng Việt; hội thoại từ Telegram vốn có tiêu đề thật thì giữ nguyên.
+const RAW_ID = /^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})_[0-9a-f]+$/;
+
+function niceTitle(c: { title: string; source: string }) {
+  const m = RAW_ID.exec(c.title || '');
+  if (!m) return c.title;
+  const [, y, mo, d, h, mi] = m;
+  return `Phiên ${c.source} · ${d}/${mo}/${y} ${h}:${mi}`;
+}
+
+// Tin đầu tiên của người dùng làm phụ đề — biết hội thoại nói về gì mà không phải mở.
+function firstLine(c: { messages?: { role: string; content: string }[] }) {
+  const first = (c.messages || []).find((m) => m.role === 'user' && m.content.trim());
+  if (!first) return '';
+  return first.content.replace(/\s+/g, ' ').trim().slice(0, 90);
+}
+
 const EXTRA_KEY = 'hermesExtra';   // tin gửi từ dashboard, giữ qua F5 (cap 60/hội thoại)
 
 function loadExtra(): Record<string, HMsg[]> {
@@ -85,9 +104,9 @@ export function HermesTab() {
                 <MessageSquare className="size-4" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-semibold">{c.title}</span>
+                <span className="block truncate text-[13px] font-semibold">{niceTitle(c)}</span>
                 <span className="block truncate text-[11.5px] text-muted-foreground">
-                  {c.source} · {c.count} tin
+                  {firstLine(c) || `${c.source} · ${c.count} tin`}
                 </span>
               </span>
               <span className="shrink-0 text-[10.5px] tabular-nums text-muted-foreground">
@@ -106,10 +125,13 @@ export function HermesTab() {
         <Button variant="ghost" size="icon" className="size-8" onClick={() => setOpenId(null)}>
           <ArrowLeft className="size-4" />
         </Button>
-        <span className="truncate text-[13px] font-medium">{conv?.title}</span>
+        <span className="truncate text-[13px] font-medium">{conv ? niceTitle(conv) : ''}</span>
       </div>
 
-      <div ref={boxRef} className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-4">
+      {/* testid này là ĐỊA CHỈ cho use-soft-keyboard: bàn phím bật thì nó cuộn hộp
+          xuống cuối. Đổi tên là mất tính năng, không phải chỉ hỏng test. */}
+      <div ref={boxRef} data-testid="hermes-bubbles"
+        className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-4">
         {msgs.map((m, i) => (
           <div key={i} data-testid="hermes-bubble" data-role={m.role}
             className={cn(

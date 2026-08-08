@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Download, Coins, Pencil, Cpu, Paperclip, X, MoreHorizontal } from 'lucide-react';
+import { Download, Coins, Pencil, Cpu, X, MoreHorizontal, ImagePlus, Loader2 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -41,8 +41,44 @@ function shrink(file: File): Promise<string> {
   });
 }
 
+/* Nút đính kèm ảnh — tách riêng để đặt CẠNH ô nhắn tin (soạn tin ở đâu thì nút ở đó),
+   thay vì nằm chung với nhóm nút quản lý phiên trên header. */
+export function AttachButton({ onAttach }: { onAttach: (a: Attachment) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';   // reset để chọn lại đúng ảnh đó vẫn kích hoạt
+    if (!f) return;
+    if (!f.type.startsWith('image/')) return toast.error('Chỉ gửi được ảnh');
+    setBusy(true);
+    try {
+      const data = await shrink(f);
+      const r = await api<{ ok: boolean; path: string; error?: string }>('/api/upload', {
+        method: 'POST', body: JSON.stringify({ data }),
+      });
+      if (!r.ok) return toast.error('Gửi ảnh lỗi: ' + (r.error || '?'));
+      onAttach({ path: r.path, name: f.name || 'ảnh', thumb: data });
+      navigator.vibrate?.(10);
+    } catch { toast.error('Không đọc được ảnh'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pick}
+        data-testid="file-pick" />
+      <Button variant="ghost" size="icon" className="size-11 shrink-0" title="Đính kèm ảnh"
+        data-testid="attach-btn" disabled={busy} onClick={() => fileRef.current?.click()}>
+        {busy ? <Loader2 className="size-[18px] animate-spin" /> : <ImagePlus className="size-[18px]" />}
+      </Button>
+    </>
+  );
+}
+
 export function ChatToolbar({
-  sid, title, model, usage, onTitle, onModel, onAttach,
+  sid, title, model, usage, onTitle, onModel,
 }: {
   sid: string;
   title: string;
@@ -50,11 +86,9 @@ export function ChatToolbar({
   usage?: { turns: number; inTok: number; outTok: number; cacheRead: number; cacheWrite: number } | null;
   onTitle: (t: string) => void;
   onModel: (m: string | null) => void;
-  onAttach: (a: Attachment) => void;
 }) {
   const [dlg, setDlg] = useState<null | 'rename' | 'model' | 'cost'>(null);
   const [name, setName] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const short = (n: number) => {
     if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
@@ -85,25 +119,6 @@ export function ChatToolbar({
     } catch { toast.error('Không đổi được model'); }
   };
 
-  const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    e.target.value = '';   // reset để chọn lại đúng ảnh đó vẫn kích hoạt
-    if (!f) return;
-    if (!f.type.startsWith('image/')) return toast.error('Chỉ gửi được ảnh');
-    toast('Đang xử lý ảnh…');
-    try {
-      const data = await shrink(f);
-      const r = await api<{ ok: boolean; path: string; error?: string }>('/api/upload', {
-        method: 'POST', body: JSON.stringify({ data }),
-      });
-      if (!r.ok) return toast.error('Gửi ảnh lỗi: ' + (r.error || '?'));
-      onAttach({ path: r.path, name: f.name || 'ảnh', thumb: data });
-      navigator.vibrate?.(10);
-    } catch { toast.error('Không đọc được ảnh'); }
-  };
-
-  // Đính kèm ảnh để RIÊNG ngoài menu ở cả hai cỡ màn: đây là thao tác hay dùng nhất
-  // trên điện thoại (chụp màn hình rồi hỏi), giấu vào menu là thêm một lần chạm thừa.
   const acts = [
     { id: 'model', icon: Cpu, label: 'Model cho phiên này', run: () => setDlg('model'), on: !!model },
     { id: 'cost', icon: Coins, label: 'Token đã dùng', run: () => setDlg('cost') },
@@ -113,14 +128,6 @@ export function ChatToolbar({
 
   return (
     <>
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pick}
-        data-testid="file-pick" />
-
-      <Button variant="ghost" size="icon" className="size-8 shrink-0" title="Đính kèm ảnh"
-        data-testid="attach-btn" onClick={() => fileRef.current?.click()}>
-        <Paperclip className="size-4" />
-      </Button>
-
       {/* Màn rộng: bày hết ra cho bấm một chạm */}
       <div className="hidden shrink-0 items-center gap-1 sm:flex">
         {acts.map((a) => (

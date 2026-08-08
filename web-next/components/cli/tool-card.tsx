@@ -17,7 +17,9 @@ export interface ToolPart {
   status: 'ok' | 'error' | 'running' | 'pending';
   result: string;
   images: { i: number; mt: string; bytes: number }[];
-  todos?: { content: string; status: string }[];
+  // Server gửi {text, status} (extractTodos ở src/server/tools.js) — trước đây khai
+  // là `content` nên checklist hiện ra TRỐNG TRƠN, chỉ thấy dấu ○ không có chữ.
+  todos?: { text: string; status: string }[];
 }
 
 function iconFor(name: string) {
@@ -152,7 +154,7 @@ export function ToolCard({ part, sid }: { part: ToolPart; sid: string }) {
                           {t.status === 'completed' ? '✓' : '○'}
                         </span>
                         <span className={t.status === 'completed' ? 'text-muted-foreground line-through' : ''}>
-                          {t.content}
+                          {t.text}
                         </span>
                       </div>
                     ))}
