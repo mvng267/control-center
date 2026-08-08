@@ -26,6 +26,25 @@ const procs = new Map();
 const lastSeen = new Map();
 // Model áp dụng cho task mới (--model khi spawn), set qua lệnh /model. null = default
 let currentModel = null;
+/* Chế độ quyền khi spawn Claude.
+   Dashboard chạy `claude -p` với stdio ignore -> KHÔNG có kênh nào để hỏi quyền:
+   Claude im lặng bỏ qua việc cần quyền rồi trả lời "bạn chưa cấp quyền", nhìn như
+   đã làm mà thật ra không làm gì. acceptEdits = tự cho phép sửa file (lệnh nguy hiểm
+   vẫn bị chặn). Ghi ra file để giữ nguyên lựa chọn sau khi restart dashboard. */
+const PERM_FILE = path.join(os.homedir(), '.claude', 'dashboard-perm.json');
+const PERM_MODES = ['default', 'acceptEdits', 'bypassPermissions'];
+let permMode = 'acceptEdits'; // mặc định: hết cảnh "làm như không làm"
+try {
+  const saved = JSON.parse(fs.readFileSync(PERM_FILE, 'utf8'));
+  if (PERM_MODES.indexOf(saved.mode) >= 0) permMode = saved.mode;
+} catch {}
+function savePermMode() {
+  try { fs.writeFileSync(PERM_FILE, JSON.stringify({ mode: permMode })); } catch {}
+}
+// Cờ --permission-mode cho mọi lần spawn ('default' = để CLI tự quyết, không truyền cờ)
+function permArgs() {
+  return permMode === 'default' ? [] : ['--permission-mode', permMode];
+}
 // Loop/cron jobs: id -> { id, kind: 'loop'|'cron', spec, prompt, runs, lastSid, timer?, lastKey? }
 const jobs = new Map();
 // One-shot claude runs (enhance prompt / summary): id -> { status, output }
@@ -348,6 +367,18 @@ function titleOf(sid, parsedTitle) {
   return loadTitles()[sid] || parsedTitle || '';
 }
 
+// Nhãn cho thông báo đẩy: ưu tiên tiêu đề, không có mới rơi về ID
+// (thông báo "Claude 7e31e9e3 đã trả lời xong" đọc xong vẫn không biết là phiên nào)
+function sessionLabel(sid) {
+  let t = loadTitles()[sid];
+  if (!t) {
+    const file = findSessionFile(sid);
+    const parsed = file ? parseSessionFile(file) : null;
+    t = parsed && parsed.title;
+  }
+  return t ? (t.length > 60 ? t.slice(0, 60) + '…' : t) : 'Claude ' + sid.slice(0, 8);
+}
+
 function findSessionFile(sid) {
   let dirs = [];
   try { dirs = fs.readdirSync(PROJECTS_DIR); } catch { return null; }
@@ -419,7 +450,7 @@ function spawnClaude(args, sid, meta) {
   proc.on('exit', (code, signal) => {
     procs.delete(sid);
     // signal = bị kill chủ động (nút Kill) -> không báo "đã trả lời xong"
-    if (!signal) notifyPush('Claude ' + sid.slice(0, 8) + ' đã trả lời xong', sid);
+    if (!signal) notifyPush(sessionLabel(sid) + ' đã trả lời xong', sid);
   });
   proc.unref();
   procs.set(sid, { proc, startedAt: Date.now(), ...meta });
@@ -469,7 +500,7 @@ function parseInterval(s) {
 // Chạy 1 lượt của loop/cron job: mỗi lượt là 1 session claude mới
 function runJob(job) {
   const sid = crypto.randomUUID();
-  const args = ['-p', job.prompt, '--session-id', sid];
+  const args = ['-p', job.prompt, '--session-id', sid].concat(permArgs());
   if (currentModel) args.push('--model', currentModel);
   spawnClaude(args, sid, { task: job.prompt, project: '(job:' + job.id + ')' });
   job.runs++;
@@ -806,6 +837,54 @@ function groupModels(models) {
   return out;
 }
 
+/* ---- lưu lượng thật: bảng gateway_usage trong state.db của agy-proxy ----
+   Mỗi request 1 dòng (ts, model, token, ok, ms, status) -> thống kê được tỉ lệ lỗi,
+   model dùng nhiều, biểu đồ theo giờ. Dùng sqlite3 CLI readonly như phần Hermes
+   (dự án zero-dependency, không thêm module). */
+let agyUsageCache = { at: 0, data: null };
+
+function agySqlite(sql) {
+  const db = path.join(agyDataDir(), 'state.db');
+  return new Promise(resolve => {
+    execFile('sqlite3', ['-readonly', '-json', db, sql],
+      { maxBuffer: 8 * 1024 * 1024, timeout: 5000 },
+      (err, out) => {
+        if (err) return resolve(null);
+        try { resolve(JSON.parse(out || '[]')); } catch { resolve(null); }
+      });
+  });
+}
+
+async function getAgyUsage() {
+  // cache 15s: số liệu 24h không đổi theo từng giây, client poll 3s
+  if (agyUsageCache.data && Date.now() - agyUsageCache.at < 15000) return agyUsageCache.data;
+  const DAY = "ts > (strftime('%s','now')*1000 - 86400000)";
+  const [sum, models, codes, hours] = await Promise.all([
+    agySqlite('SELECT COUNT(*) reqs, SUM(ok=0) errs, SUM(prompt_tokens+completion_tokens) tokens,'
+      + ' CAST(AVG(ms) AS INT) avgMs FROM gateway_usage WHERE ' + DAY + ';'),
+    agySqlite('SELECT model, COUNT(*) n, SUM(ok=0) e FROM gateway_usage WHERE ' + DAY
+      + ' GROUP BY model ORDER BY n DESC LIMIT 5;'),
+    agySqlite('SELECT status, COUNT(*) n FROM gateway_usage WHERE ok=0 AND ' + DAY
+      + ' GROUP BY status ORDER BY n DESC LIMIT 5;'),
+    // 12 giờ gần nhất cho biểu đồ cột mini
+    agySqlite("SELECT strftime('%H',ts/1000,'unixepoch','localtime') h, COUNT(*) n, SUM(ok=0) e"
+      + ' FROM gateway_usage WHERE ts > (strftime(\'%s\',\'now\')*1000 - 43200000) GROUP BY h ORDER BY h;'),
+  ]);
+  const s = (sum && sum[0]) || {};
+  const data = sum ? {
+    ok: true,
+    reqs: s.reqs || 0,
+    errs: s.errs || 0,
+    tokens: s.tokens || 0,
+    avgMs: s.avgMs || 0,
+    models: models || [],
+    codes: codes || [],
+    hours: hours || [],
+  } : { ok: false }; // không đọc được DB (thiếu sqlite3 CLI / file khoá) -> client ẩn khối này
+  agyUsageCache = { at: Date.now(), data };
+  return data;
+}
+
 async function getAgyStatus() {
   if (agyStatusCache.data && Date.now() - agyStatusCache.at < 3000) return agyStatusCache.data;
   const port = await agyPort();
@@ -820,8 +899,9 @@ async function getAgyStatus() {
     accounts = Math.max(0, csv.split('\n').filter(l => l.trim()).length - 1); // trừ header
   } catch {}
   const acc = readAgyAccounts();
+  const usage = await getAgyUsage();
   const data = {
-    running, port, accounts, models,
+    running, port, accounts, models, usage,
     modelGroups: groupModels(models),
     acc,                       // sức khoẻ tài khoản: ok/new/failed/needs_human + chạy 24h
     external: running && !agyDev, // proxy đang chạy NGOÀI dashboard -> Stop/Restart không tác dụng
@@ -1030,7 +1110,7 @@ const server = http.createServer(async (req, res) => {
     });
     const send = () => {
       // payload object: sessions + jobs đang chạy + model hiện tại
-      try { res.write(`data: ${JSON.stringify({ sessions: listSessions(), jobs: listJobs(), model: currentModel })}\n\n`); } catch {}
+      try { res.write(`data: ${JSON.stringify({ sessions: listSessions(), jobs: listJobs(), model: currentModel, perm: permMode })}\n\n`); } catch {}
     };
     send();
     const iv = setInterval(send, 2000);
@@ -1044,7 +1124,7 @@ const server = http.createServer(async (req, res) => {
     const task = (body.task || '').trim();
     if (!task) return json(res, 400, { error: 'task required' });
     const sid = crypto.randomUUID();
-    const args = ['-p', task, '--session-id', sid];
+    const args = ['-p', task, '--session-id', sid].concat(permArgs());
     if (currentModel) args.push('--model', currentModel); // model đã set qua /model
     spawnClaude(args, sid, { task, project: '(new)' });
     return json(res, 200, { ok: true, sid });
@@ -1058,7 +1138,7 @@ const server = http.createServer(async (req, res) => {
     const msg = (body.message || '').trim();
     if (!msg) return json(res, 400, { error: 'message required' });
     if (procs.has(sid)) return json(res, 409, { error: 'session is busy' });
-    spawnClaude(['-p', msg, '--resume', sid], sid, { task: msg });
+    spawnClaude(['-p', msg, '--resume', sid].concat(permArgs()), sid, { task: msg });
     return json(res, 200, { ok: true, sid });
   }
 
@@ -1169,6 +1249,17 @@ const server = http.createServer(async (req, res) => {
     try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
     currentModel = (body.model || '').trim() || null;
     return json(res, 200, { ok: true, model: currentModel });
+  }
+
+  // ---- chế độ quyền: quyết định Claude có tự sửa file được không ----
+  if (p === '/api/perm' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const mode = String(body.mode || '');
+    if (PERM_MODES.indexOf(mode) < 0) return json(res, 400, { error: 'mode không hợp lệ' });
+    permMode = mode;
+    savePermMode();
+    return json(res, 200, { ok: true, mode: permMode });
   }
 
   // ---- /loop: tạo loop job chạy prompt mỗi interval ----
@@ -1624,6 +1715,27 @@ const HTML = `<!doctype html>
   #compare .msgwrap { max-width: 94%; }
   #compare .tcard-head { font-size: 12px; min-height: 40px; }
   #compare .tcard-sum { font-size: 11px; }
+  /* hàng [chế độ][công tắc quyền] trên màn hẹp: cho nhóm chế độ co + cuộn ngang,
+     công tắc quyền luôn nguyên vẹn (phải đọc được Claude đang có quyền gì) */
+  .segscroll { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .segscroll::-webkit-scrollbar { display: none; }
+
+  /* ---- công tắc quyền: Claude có được tự sửa file không ---- */
+  .permbtn {
+    display: flex; align-items: center; gap: 7px; height: 44px; padding: 0 12px;
+    border-radius: 12px; border: 1px solid #262a36; background: #1a1d27; color: #8b8fa3;
+    font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; flex-shrink: 0;
+    transition: color .2s ease, border-color .2s ease;
+  }
+  .permdot { width: 8px; height: 8px; border-radius: 50%; background: #4b5163; flex-shrink: 0; }
+  .permbtn.p-accept { color: #34d399; border-color: rgba(52, 211, 153, .35); }
+  .permbtn.p-accept .permdot { background: #10b981; }
+  .permbtn.p-bypass { color: #f87171; border-color: rgba(248, 113, 113, .4); }
+  .permbtn.p-bypass .permdot { background: #ef4444; }
+  @media (min-width: 768px) { .permbtn:hover { border-color: rgba(59, 130, 246, .5); } }
+  /* màn rất hẹp mới ẩn chữ; 390px (iPhone) vẫn phải đọc được để biết Claude đang có quyền gì */
+  @media (max-width: 360px) { .permbtn span:last-child { display: none; } .permbtn { padding: 0 13px; } }
+
   /* tiêu đề phiên trong header chat: bấm để đổi tên */
   .chattitle {
     background: none; border: 0; cursor: pointer; padding: 2px 6px; margin-left: -6px;
@@ -1906,6 +2018,40 @@ const HTML = `<!doctype html>
     border-radius: 10px; padding: 8px 10px;
   }
 
+  /* ---- lưu lượng 24h: 3 số chính + biểu đồ giờ + model + mã lỗi ---- */
+  .ustats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .ustat-n { font-size: 21px; font-weight: 700; color: #e4e4e7; letter-spacing: -.4px; line-height: 1.15; }
+  .ustat-n.warn { color: #f87171; }
+  .ustat-l { font-size: 10.5px; color: #666b7d; letter-spacing: .3px; margin-top: 1px; }
+  .uabox {
+    margin-top: 10px; font-size: 12px; line-height: 1.5; border-radius: 10px; padding: 8px 10px;
+    background: rgba(248, 113, 113, .08); border: 1px solid rgba(248, 113, 113, .25); color: #f87171;
+  }
+  /* biểu đồ cột theo giờ: phần lỗi chồng lên phần thành công */
+  .uhours { display: flex; align-items: flex-end; gap: 3px; height: 46px; margin-top: 12px; }
+  .ubar { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
+  .ubar-e { background: #ef4444; border-radius: 2px 2px 0 0; }
+  .ubar-o { background: #3b82f6; }
+  .ubar-empty { background: #1a1d27; height: 2px; border-radius: 2px; }
+  .uhours-lbl { display: flex; gap: 3px; margin-top: 3px; }
+  .uhours-lbl span { flex: 1; min-width: 0; text-align: center; font-size: 9px; color: #4b5163; }
+  /* dòng model: thanh nền thể hiện tỉ trọng */
+  .urow { position: relative; border-radius: 8px; overflow: hidden; background: #0b0d13; }
+  .urow-fill { position: absolute; inset: 0 auto 0 0; background: rgba(59, 130, 246, .14); }
+  .urow-txt {
+    position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    font-size: 12px; color: #c2c7d4;
+  }
+  .urow-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .urow-n { color: #8b8fa3; font-size: 11.5px; flex-shrink: 0; }
+  .urow-e { color: #f87171; font-size: 11px; flex-shrink: 0; }
+  .ucode {
+    font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid #262a36;
+    background: #141722; color: #8b8fa3;
+  }
+  .ucode b { color: #f87171; font-weight: 600; }
+
   /* ---- thanh phân bổ tài khoản: nhìn tỉ lệ ok/mới/lỗi thay vì đọc con số ---- */
   .accbar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: #0b0d13; gap: 2px; }
   .accbar span { display: block; min-width: 2px; transition: width .3s ease; }
@@ -2102,11 +2248,18 @@ const HTML = `<!doctype html>
         <!-- input bar -->
         <div class="relative border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
           <div class="flex items-center gap-2 flex-wrap">
-            <div id="modeseg" class="seg">
-              <button class="segbtn active" data-mode="">Normal</button>
-              <button class="segbtn" data-mode="research">Research</button>
-              <button class="segbtn" data-mode="coding">Coding</button>
-              <button class="segbtn" data-mode="creative">Creative</button>
+            <div class="flex items-center gap-2 w-full md:w-auto min-w-0">
+              <div id="modeseg" class="seg segscroll">
+                <button class="segbtn active" data-mode="">Normal</button>
+                <button class="segbtn" data-mode="research">Research</button>
+                <button class="segbtn" data-mode="coding">Coding</button>
+                <button class="segbtn" data-mode="creative">Creative</button>
+              </div>
+              <!-- công tắc quyền: quyết định Claude có tự sửa file được không -->
+              <button id="permbtn" class="permbtn ml-auto md:ml-0" onclick="cyclePerm()"
+                      title="Quyền của Claude khi làm việc — bấm để đổi">
+                <span id="permicon" class="permdot"></span><span id="permlabel">Tự sửa file</span>
+              </button>
             </div>
             <!-- nút / mở command palette drawer (cmd+K) -->
             <button id="palbtn" class="w-11 h-11 rounded-xl bg-[#1a1d27] border border-[#262a36] hover:border-[#3b82f6]/60
@@ -2244,6 +2397,24 @@ const HTML = `<!doctype html>
           <div id="agy-note" class="hidden agyhero-note">
             Proxy đang chạy NGOÀI dashboard nên Stop/Restart không tác dụng — dừng nó ở nơi đã khởi chạy.
           </div>
+        </div>
+
+        <!-- LƯU LƯỢNG THẬT: đọc bảng gateway_usage trong state.db -->
+        <div id="agy-usagebox" class="chartbox hidden">
+          <div class="flex items-baseline justify-between mb-3 gap-2 flex-wrap">
+            <span class="text-[13px] font-semibold text-[#a5a9b8]">Lưu lượng 24 giờ</span>
+            <span id="agy-u-avg" class="text-[11.5px] text-[#666b7d]"></span>
+          </div>
+          <div class="ustats">
+            <div><div id="agy-u-reqs" class="ustat-n">–</div><div class="ustat-l">request</div></div>
+            <div><div id="agy-u-errs" class="ustat-n">–</div><div class="ustat-l">lỗi</div></div>
+            <div><div id="agy-u-tok" class="ustat-n">–</div><div class="ustat-l">token</div></div>
+          </div>
+          <div id="agy-u-alert" class="hidden uabox"></div>
+          <div id="agy-u-hours" class="uhours"></div>
+          <div id="agy-u-hourlbl" class="uhours-lbl"></div>
+          <div id="agy-u-models" class="mt-3 flex flex-col gap-1.5"></div>
+          <div id="agy-u-codes" class="mt-3 pt-2.5 border-t border-[#262a36] flex flex-wrap gap-2"></div>
         </div>
 
         <!-- SỨC KHOẺ TÀI KHOẢN: thanh phân bổ thay cho con số trơ trọi -->
@@ -2518,6 +2689,43 @@ function switchTab(t) {
   updateBadges();
 }
 
+/* ---- vuốt ngang để chuyển tab (mobile) ----
+   Bỏ qua khi: đang vuốt dọc (cuộn), vuốt bên trong vùng cuộn ngang được (code block,
+   log, biểu đồ), hoặc đang mở overlay/chat để không cướp thao tác của người dùng. */
+const TAB_ORDER = ['cli', 'hermes', 'agy', 'stats'];
+let swX = 0, swY = 0, swT = 0, swSkip = false;
+function scrollableXAncestor(el) {
+  for (let n = el; n && n !== document.body; n = n.parentElement) {
+    if (n.scrollWidth > n.clientWidth + 4) {
+      const ov = getComputedStyle(n).overflowX;
+      if (ov === 'auto' || ov === 'scroll') return true;
+    }
+  }
+  return false;
+}
+document.addEventListener('touchstart', e => {
+  if (e.touches.length !== 1) { swSkip = true; return; }
+  const t = e.touches[0];
+  swX = t.clientX; swY = t.clientY; swT = Date.now();
+  const ov = document.getElementById('overlay');
+  swSkip = (ov && ov.style.display === 'flex')
+    || !!document.querySelector('.imgov')            // đang xem ảnh full màn
+    || !!(currentSid || compareSids)                 // đang trong chat/compare: vuốt dễ nhầm
+    || scrollableXAncestor(t.target);
+}, { passive: true });
+document.addEventListener('touchend', e => {
+  if (swSkip || !e.changedTouches.length) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - swX, dy = t.clientY - swY;
+  // ngưỡng: đi ngang ≥60px, gấp đôi độ lệch dọc, trong 600ms -> chắc chắn là vuốt ngang
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - swT > 600) return;
+  const i = TAB_ORDER.indexOf(activeTab);
+  if (i < 0) return;
+  const next = dx < 0 ? i + 1 : i - 1;
+  if (next < 0 || next >= TAB_ORDER.length) return;
+  switchTab(TAB_ORDER[next]);
+}, { passive: true });
+
 // Sidebar desktop: thu gọn / mở rộng
 function toggleSidebar() {
   document.getElementById('sidenav').classList.toggle('collapsed');
@@ -2549,13 +2757,16 @@ es.onmessage = e => {
   const data = JSON.parse(e.data);
   allSessions = data.sessions || [];
   allJobs = data.jobs || [];
+  if (data.perm) { permMode = data.perm; renderPerm(); } // server là nguồn thật (renderPerm tự no-op nếu không đổi)
   // RUNNING -> hết RUNNING = Claude trả lời xong; chỉ notify khi KHÔNG đang mở chat đó
   const nowRunning = new Set();
   allSessions.forEach(s => { if (s.status === 'RUNNING') nowRunning.add(s.sid); });
   if (prevRunning) {
     for (const sid of prevRunning) {
       if (!nowRunning.has(sid) && !(activeTab === 'cli' && currentSid === sid)) {
-        notifyDone('Claude ' + sid.slice(0, 8) + ' đã trả lời xong');
+        const s = allSessions.find(x => x.sid === sid);
+        const label = (s && s.title) ? s.title : 'Claude ' + sid.slice(0, 8);
+        notifyDone(label + ' đã trả lời xong');
       }
     }
   }
@@ -3922,8 +4133,8 @@ function exportCurrent() {
   if (!currentSid) return toast('Mở 1 session trước rồi mới export');
   const sid = currentSid;
   const box = document.createElement('div');
-  box.textContent = 'Tải TOÀN BỘ history của session ' + sid.slice(0, 8)
-    + ' (không giới hạn 30 message cuối), hoặc copy 30 message cuối ra clipboard.';
+  box.textContent = 'Tải TOÀN BỘ history của "' + (chatTitle || sid.slice(0, 8))
+    + '" (không giới hạn 30 message cuối), hoặc copy 30 message cuối ra clipboard.';
   showOverlay('Export session', box, [
     overlayButton('Copy clipboard', () => { closeOverlay(); exportChat(); }),
     overlayButton('Tải .json', () => { downloadURL('/api/export/' + sid + '?fmt=json'); closeOverlay(); toast('Đang tải .json'); }),
@@ -4055,6 +4266,41 @@ async function refreshChat() {
 
 function killCurrent() {
   if (currentSid) fetch('/api/kill/' + currentSid, { method: 'POST' });
+}
+
+/* ---- quyền của Claude ----
+   Dashboard chạy claude ở chế độ -p với stdio ignore nên KHÔNG có hộp thoại hỏi quyền như CLI:
+   ở chế độ mặc định, Claude im lặng bỏ qua việc cần quyền rồi trả lời "bạn chưa cấp quyền"
+   — nhìn như đã làm mà thật ra không làm gì. */
+const PERM_UI = {
+  default: { label: 'Hỏi quyền', cls: '', toast: 'Chế độ mặc định — Claude KHÔNG tự sửa được file (sẽ báo chưa có quyền)' },
+  acceptEdits: { label: 'Tự sửa file', cls: 'p-accept', toast: 'Claude tự sửa/tạo file được; lệnh nguy hiểm vẫn bị chặn' },
+  bypassPermissions: { label: 'Bỏ mọi kiểm tra', cls: 'p-bypass', toast: 'CẨN THẬN: bỏ qua MỌI kiểm tra quyền, kể cả lệnh nguy hiểm' },
+};
+const PERM_CYCLE = ['acceptEdits', 'default', 'bypassPermissions'];
+let permMode = 'acceptEdits';
+
+function renderPerm() {
+  const b = document.getElementById('permbtn');
+  if (!b) return;
+  const ui = PERM_UI[permMode] || PERM_UI.default;
+  const cls = 'permbtn ' + ui.cls;
+  if (b.className.trim() !== cls.trim()) b.className = cls;
+  setText(document.getElementById('permlabel'), ui.label);
+  b.title = 'Quyền của Claude: ' + ui.label + ' — bấm để đổi';
+}
+
+function cyclePerm() {
+  const next = PERM_CYCLE[(PERM_CYCLE.indexOf(permMode) + 1) % PERM_CYCLE.length];
+  permMode = next;
+  renderPerm();
+  fetch('/api/perm', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: next }),
+  }).then(r => r.json()).then(r => {
+    if (r.mode) { permMode = r.mode; renderPerm(); }
+    toast(PERM_UI[permMode].toast);
+  }).catch(() => toast('Không đổi được chế độ quyền'));
 }
 
 /* ---- đổi tên phiên: lưu riêng ở dashboard, KHÔNG sửa .jsonl của Claude CLI ---- */
@@ -4476,6 +4722,110 @@ function renderAccBar(acc) {
   }
 }
 
+// 16814671 -> "16.8M"; 1317 -> "1.3k"
+function shortNum(n) {
+  n = +n || 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e4) return Math.round(n / 1e3) + 'k';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(n);
+}
+// mã lỗi HTTP -> nói bằng tiếng người
+const CODE_LABEL = {
+  429: 'vượt hạn mức', 503: 'nhà cung cấp quá tải', 500: 'lỗi máy chủ',
+  400: 'request sai', 401: 'sai khoá', 402: 'hết tiền', 404: 'không thấy model', 408: 'quá hạn chờ',
+};
+
+function renderAgyUsage(u) {
+  const box = document.getElementById('agy-usagebox');
+  if (!u || !u.ok) { box.classList.add('hidden'); return; } // không đọc được DB -> ẩn hẳn
+  box.classList.remove('hidden');
+  const sig = JSON.stringify(u);
+  if (box.dataset.sig === sig) return; // số liệu chưa đổi -> khỏi đụng DOM
+  box.dataset.sig = sig;
+
+  const errPct = u.reqs ? Math.round(u.errs / u.reqs * 100) : 0;
+  setText(document.getElementById('agy-u-reqs'), shortNum(u.reqs));
+  const eEl = document.getElementById('agy-u-errs');
+  setText(eEl, u.errs ? shortNum(u.errs) + ' (' + errPct + '%)' : '0');
+  eEl.className = 'ustat-n' + (errPct >= 20 ? ' warn' : ''); // lỗi nhiều -> tô đỏ
+  setText(document.getElementById('agy-u-tok'), shortNum(u.tokens));
+  setText(document.getElementById('agy-u-avg'), u.avgMs ? 'trễ trung bình ' + (u.avgMs / 1000).toFixed(1) + 's' : '');
+
+  // cảnh báo khi tỉ lệ lỗi cao — nói rõ nguyên nhân chính
+  const alert = document.getElementById('agy-u-alert');
+  if (errPct >= 20 && u.codes.length) {
+    const top = u.codes[0];
+    const why = CODE_LABEL[top.status] || (top.status ? 'mã ' + top.status : 'không rõ nguyên nhân');
+    setText(alert, errPct + '% request lỗi trong 24h — chủ yếu do ' + why + ' (' + top.n + ' lần).');
+    alert.classList.remove('hidden');
+  } else alert.classList.add('hidden');
+
+  // biểu đồ cột theo giờ: đỏ chồng trên xanh
+  const hb = document.getElementById('agy-u-hours');
+  const lblBox = document.getElementById('agy-u-hourlbl');
+  hb.innerHTML = '';
+  lblBox.innerHTML = '';
+  const lbl = lblBox;
+  const max = Math.max(1, ...u.hours.map(h => h.n));
+  for (const h of u.hours) {
+    const col = document.createElement('div');
+    col.className = 'ubar';
+    col.title = h.h + 'h: ' + h.n + ' request' + (h.e ? ', ' + h.e + ' lỗi' : '');
+    if (!h.n) {
+      const z = document.createElement('div'); z.className = 'ubar-empty'; col.appendChild(z);
+    } else {
+      const pct = h.n / max * 100;
+      const ePct = h.n ? (h.e / h.n) : 0;
+      const eDiv = document.createElement('div');
+      eDiv.className = 'ubar-e';
+      eDiv.style.height = (pct * ePct) + '%';
+      const oDiv = document.createElement('div');
+      oDiv.className = 'ubar-o';
+      oDiv.style.height = (pct * (1 - ePct)) + '%';
+      if (h.e) col.appendChild(eDiv);
+      col.appendChild(oDiv);
+    }
+    hb.appendChild(col);
+    const s = document.createElement('span');
+    s.textContent = h.h;
+    lbl.appendChild(s);
+  }
+  // model dùng nhiều nhất
+  const mb = document.getElementById('agy-u-models');
+  mb.innerHTML = '';
+  const mMax = Math.max(1, ...u.models.map(m => m.n));
+  for (const m of u.models) {
+    const row = document.createElement('div');
+    row.className = 'urow';
+    const fill = document.createElement('div');
+    fill.className = 'urow-fill';
+    fill.style.width = (m.n / mMax * 100) + '%';
+    const tx = document.createElement('div');
+    tx.className = 'urow-txt';
+    const nm = document.createElement('span'); nm.className = 'urow-name'; nm.textContent = m.model;
+    const n = document.createElement('span'); n.className = 'urow-n'; n.textContent = m.n;
+    tx.appendChild(nm); tx.appendChild(n);
+    if (m.e) { const e = document.createElement('span'); e.className = 'urow-e'; e.textContent = m.e + ' lỗi'; tx.appendChild(e); }
+    row.appendChild(fill); row.appendChild(tx);
+    mb.appendChild(row);
+  }
+
+  // mã lỗi
+  const cb = document.getElementById('agy-u-codes');
+  cb.innerHTML = '';
+  for (const c of u.codes) {
+    const s = document.createElement('span');
+    s.className = 'ucode';
+    const b = document.createElement('b');
+    b.textContent = c.status || '?';
+    s.appendChild(b);
+    s.appendChild(document.createTextNode(' ' + (CODE_LABEL[c.status] || 'khác') + ' · ' + c.n));
+    cb.appendChild(s);
+  }
+}
+
 let agyModelGroups = [];
 function renderAgyModels() {
   const box = document.getElementById('agy-modellist');
@@ -4547,6 +4897,7 @@ async function refreshAgyStatus() {
   tag.classList.toggle('hidden', !r.external);
   if (r.external) setText(tag, 'CHẠY NGOÀI');
 
+  renderAgyUsage(r.usage);
   setText(document.getElementById('agy-accounts'), String(r.accounts));
   if (r.acc) {
     renderAccBar(r.acc);

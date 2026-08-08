@@ -153,6 +153,33 @@ function cleanFixture() {
     ok(label + ': agy models gom nhóm, head ≥44px (không còn khối chữ dính liền)',
       agyUI.groups > 0 && agyUI.grpMinH >= 43.9, JSON.stringify({ groups: agyUI.groups, h: agyUI.grpMinH }));
 
+    // khối lưu lượng 24h (đọc gateway_usage trong state.db của agy-proxy)
+    const usage = await page.evaluate(async () => {
+      const r = await fetch('/api/agy/status').then(x => x.json());
+      const box = document.getElementById('agy-usagebox');
+      const hidden = box.classList.contains('hidden');
+      return {
+        apiOk: !!(r.usage && r.usage.ok),
+        hidden,
+        reqs: document.getElementById('agy-u-reqs').textContent,
+        errs: document.getElementById('agy-u-errs').textContent,
+        bars: document.querySelectorAll('#agy-u-hours .ubar').length,
+        lbls: document.querySelectorAll('#agy-u-hourlbl span').length,
+        models: document.querySelectorAll('#agy-u-models .urow').length,
+        codes: document.querySelectorAll('#agy-u-codes .ucode').length,
+        hoursLen: r.usage && r.usage.hours ? r.usage.hours.length : -1,
+      };
+    });
+    if (usage.apiOk) {
+      // 1 cột + 1 nhãn cho mỗi giờ có dữ liệu; không có sqlite3 CLI thì khối này phải ẩn hẳn
+      ok(label + ': agy lưu lượng 24h (số liệu thật, biểu đồ giờ, model, mã lỗi)',
+        !usage.hidden && /^[\d.]+[kMB]?$/.test(usage.reqs)
+        && usage.bars === usage.hoursLen && usage.lbls === usage.hoursLen && usage.models > 0,
+        JSON.stringify(usage));
+    } else {
+      ok(label + ': agy lưu lượng — ẩn khối khi không đọc được state.db', usage.hidden, JSON.stringify(usage));
+    }
+
     // tìm model -> lọc + tô sáng; xoá ô tìm -> hiện lại đủ nhóm
     const agySearch = await page.evaluate(async () => {
       const inp = document.getElementById('agy-modelsearch');
@@ -469,6 +496,61 @@ function cleanFixture() {
     await page.waitForTimeout(200);
     // KHÔNG xoá UXFILE ở đây: vòng viewport thứ 2 còn dùng lại. Dọn ở cleanFixture().
 
+    // ---- công tắc quyền: dashboard chạy claude -p nên KHÔNG có hộp thoại hỏi quyền;
+    // acceptEdits là thứ giúp Claude thật sự sửa được file thay vì báo "chưa có quyền" ----
+    const perm = await page.evaluate(async () => {
+      const start = { label: document.getElementById('permlabel').textContent,
+                      cls: document.getElementById('permbtn').className };
+      const seen = [];
+      for (let i = 0; i < 3; i++) {           // đi hết 1 vòng: acceptEdits -> default -> bypass
+        cyclePerm();
+        await new Promise(r => setTimeout(r, 250));
+        seen.push({ mode: permMode, label: document.getElementById('permlabel').textContent,
+                    cls: document.getElementById('permbtn').className });
+      }
+      const bad = await fetch('/api/perm', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'khong-hop-le' }) }).then(r => r.status);
+      // trả về acceptEdits cho các test sau + đúng mặc định
+      await fetch('/api/perm', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'acceptEdits' }) });
+      return { start, seen, bad };
+    });
+    // request 400 ở trên là CHỦ Ý (test chặn giá trị lạ) -> loại khỏi đếm console error cuối phiên
+    const i400 = errors.findIndex(x => x.includes('400'));
+    if (i400 >= 0) errors.splice(i400, 1);
+    ok(label + ': công tắc quyền mặc định acceptEdits + xoay vòng 3 chế độ + chặn giá trị lạ',
+      perm.start.cls.indexOf('p-accept') >= 0 && perm.start.label === 'Tự sửa file'
+      && perm.seen.map(s => s.mode).join(',') === 'default,bypassPermissions,acceptEdits'
+      && perm.seen[1].cls.indexOf('p-bypass') >= 0 && perm.bad === 400,
+      JSON.stringify(perm));
+
+    // ---- vuốt ngang chuyển tab (mobile) ----
+    const swipe = await page.evaluate(async () => {
+      const fire = (dx, dy) => {
+        const mk = (x, y) => new Touch({ identifier: 1, target: document.body, clientX: x, clientY: y });
+        document.dispatchEvent(new TouchEvent('touchstart',
+          { touches: [mk(195, 400)], changedTouches: [mk(195, 400)], bubbles: true }));
+        document.dispatchEvent(new TouchEvent('touchend',
+          { changedTouches: [mk(195 + dx, 400 + dy)], touches: [], bubbles: true }));
+        return activeTab;
+      };
+      switchTab('cli');
+      await new Promise(r => setTimeout(r, 150));
+      const seq = [];
+      seq.push(fire(-120, 5));                    // cli -> hermes
+      seq.push(fire(-120, 5));                    // -> agy
+      seq.push(fire(-120, 5));                    // -> stats
+      seq.push(fire(-120, 5));                    // hết -> vẫn stats
+      seq.push(fire(120, 5));                     // -> agy
+      const diag = fire(120, 90);                 // vuốt chéo -> PHẢI bỏ qua
+      const short = fire(-30, 2);                 // vuốt ngắn -> PHẢI bỏ qua
+      switchTab('cli');
+      return { seq, diag, short };
+    });
+    ok(label + ': vuốt ngang chuyển tab, dừng ở 2 đầu, bỏ qua vuốt chéo/ngắn',
+      swipe.seq.join(',') === 'hermes,agy,stats,stats,agy'
+      && swipe.diag === 'agy' && swipe.short === 'agy', JSON.stringify(swipe));
+
     // ---- tiêu đề phiên: ai-title của Claude CLI + đổi tên riêng ở dashboard ----
     const TTSID = 'e2e00000-0000-4000-8000-0000000000tt';
     const TTFILE = require('path').join(FIX_DIR, TTSID + '.jsonl');
@@ -521,6 +603,17 @@ function cleanFixture() {
     }, TTSID);
     ok(label + ': danh sách session hiện tiêu đề thay cho ID',
       inList === 'Tiêu đề Claude CLI đặt', String(inList));
+
+    // thông báo "đã trả lời xong" phải gọi TÊN phiên, không phải ID hex
+    const notif = await page.evaluate(sid => {
+      const s = allSessions.find(x => x.sid === sid);
+      const label = (s && s.title) ? s.title : 'Claude ' + sid.slice(0, 8);
+      notifyDone(label + ' đã trả lời xong');
+      const t = document.getElementById('toast');
+      return { txt: t ? t.textContent : '', title: s ? s.title : null };
+    }, TTSID);
+    ok(label + ': thông báo dùng tiêu đề phiên (không phải ID hex)',
+      notif.txt === 'Tiêu đề Claude CLI đặt đã trả lời xong', JSON.stringify(notif));
     require('fs').rmSync(TTFILE, { force: true });
 
     // ---- ẢNH THẬT + thời gian + gộp lượt + diff ----
@@ -674,12 +767,19 @@ function cleanFixture() {
     await page.waitForTimeout(2200); // đợi SSE đẩy allSessions mới
 
     // ---- /clear trên session có tool card: xoá sạch, rồi msg mới vẫn về bình thường ----
-    await page.evaluate(sid => openChat(sid), FIX_SID);
-    await page.waitForTimeout(900);
+    // dùng session RIÊNG: FIX_FILE đã bị test window-slide bơm >30 msg, window trượt sẽ
+    // kéo message cũ về (giới hạn sẵn có của clearOffsets) làm nhiễu phép đo /clear
+    const CLSID = 'e2e00000-0000-4000-8000-0000000000cl';
+    const CLFILE = require('path').join(FIX_DIR, CLSID + '.jsonl');
+    require('fs').writeFileSync(CLFILE,
+      fixLine('user', [{ type: 'text', text: 'tin cũ 1' }], '2026-08-08T04:50:00Z') + '\n' +
+      fixLine('assistant', [{ type: 'text', text: 'trả lời cũ' }], '2026-08-08T04:50:05Z') + '\n');
+    await page.evaluate(sid => openChat(sid), CLSID);
+    await page.waitForFunction(() => document.querySelectorAll('#bubbles .msgwrap').length >= 2, { timeout: 8000 });
     await page.evaluate(() => clearChatLocal());
     await page.waitForTimeout(300);
     const afterClear = await page.evaluate(() => document.getElementById('bubbles').querySelectorAll('.msgwrap').length);
-    require('fs').appendFileSync(FIX_FILE, fixLine('user',
+    require('fs').appendFileSync(CLFILE, fixLine('user',
       [{ type: 'text', text: 'sau-khi-clear' }], '2026-08-08T05:00:00Z') + '\n');
     await page.waitForTimeout(2600);
     const afterClearNew = await page.evaluate(() => {
@@ -688,9 +788,10 @@ function cleanFixture() {
       const last = wraps[wraps.length - 1];
       return { n: wraps.length, last: last ? (last.querySelector('.bub') || last).textContent.trim() : '' };
     });
-    ok(label + ': /clear xoá hết rồi vẫn nhận msg mới (session có tool card)',
+    ok(label + ': /clear xoá hết rồi vẫn nhận msg mới (không kéo lại tin cũ)',
       afterClear === 0 && afterClearNew.n === 1 && afterClearNew.last === 'sau-khi-clear',
       JSON.stringify({ afterClear, ...afterClearNew }));
+    require('fs').rmSync(CLFILE, { force: true });
     await page.evaluate(() => backToList());
     await page.waitForTimeout(200);
 
