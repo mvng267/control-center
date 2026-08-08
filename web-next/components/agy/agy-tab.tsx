@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import type { AgyStatus, AgyUsage } from '@/lib/types';
 import { PageHeader } from '@/components/layout/app-shell';
 import { Card } from '@/components/ui/card';
+import { StatCard } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -111,11 +112,16 @@ export function AgyTab() {
               </span>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-2.5">
-            <Stat label="request" value={shortNum(usage.reqs)} />
-            <Stat label="lỗi" value={usage.errs ? `${shortNum(usage.errs)} (${errPct}%)` : '0'}
-              warn={errPct >= 20} testid="agy-errs" />
-            <Stat label="token" value={shortNum(usage.tokens)} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <StatCard title="Request" sub="24 giờ qua" value={shortNum(usage.reqs)}
+              spark={usage.hours.map((h) => h.n)} tone="primary" dot="primary" testid="agy-reqs" />
+            <StatCard title="Lỗi" sub="tỉ lệ thất bại" value={usage.errs ? shortNum(usage.errs) : '0'}
+              delta={errPct} deltaLabel="trên tổng request"
+              spark={usage.hours.map((h) => h.e)} tone={errPct >= 20 ? 'error' : 'ok'}
+              dot={errPct >= 20 ? 'error' : 'ok'} testid="agy-errs" />
+            <StatCard title="Token" sub="đã dùng" value={shortNum(usage.tokens)}
+              deltaLabel={usage.avgMs ? `trễ TB ${(usage.avgMs / 1000).toFixed(1)}s` : undefined}
+              tone="primary" testid="agy-tokens" />
           </div>
 
           {errPct >= 20 && usage.codes[0] && (
@@ -253,18 +259,6 @@ export function AgyTab() {
       </Card>
     </div>
     </>
-  );
-}
-
-function Stat({ label, value, warn, testid }: { label: string; value: string; warn?: boolean; testid?: string }) {
-  return (
-    <div>
-      <div className={cn('text-[21px] font-bold leading-tight tracking-tight', warn && 'text-status-error')}
-        data-testid={testid}>
-        {value}
-      </div>
-      <div className="mt-px text-[10.5px] tracking-wide text-muted-foreground">{label}</div>
-    </div>
   );
 }
 
