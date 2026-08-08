@@ -54,6 +54,156 @@ function extractText(content) {
   return '';
 }
 
+/* ---------------- tool_use / tool_result -> dữ liệu có cấu trúc ----------------
+   Trước đây tool bị đè phẳng thành "[tool: Bash]" — mất sạch input, mất is_error,
+   mất liên kết call<->result. Giờ giữ nguyên thành `parts` để client render tool card. */
+
+// Cap độ dài — chặn payload phình trên poll 2s qua Tailscale (session dài x nhiều tool)
+const TOOL_SUMMARY_CAP = 120;
+const TOOL_INPUT_CAP = 1000;
+const TOOL_RESULT_CAP = 1200;
+
+function clampText(s, cap) {
+  s = String(s == null ? '' : s);
+  return s.length > cap ? s.slice(0, cap) + '\n… (+' + (s.length - cap) + ' chars)' : s;
+}
+
+function base(p) { return String(p || '').split('/').filter(Boolean).pop() || String(p || ''); }
+
+// Tên hiển thị: mcp__server__tool -> "server · tool" (tên MCP thô quá dài cho 1 dòng mobile)
+function toolDisplayName(name) {
+  const n = String(name || 'tool');
+  if (n.startsWith('mcp__')) {
+    const seg = n.split('__').slice(1).map(s => s.replace(/_/g, ' '));
+    return seg.length > 1 ? seg[0] + ' · ' + seg.slice(1).join(' · ') : seg[0] || n;
+  }
+  return n;
+}
+
+// Giá trị string đầu tiên trong input — fallback tóm tắt cho tool lạ / MCP
+function firstStringVal(input) {
+  for (const k of Object.keys(input)) {
+    const v = input[k];
+    if (typeof v === 'string' && v.trim()) return v;
+  }
+  return '';
+}
+
+// Tóm tắt 1 dòng hiện trên head của card (luôn ≤ TOOL_SUMMARY_CAP, không xuống dòng)
+function summarizeToolInput(name, input) {
+  if (input == null || typeof input !== 'object') return '';
+  const n = String(name || '');
+  let s = '';
+  switch (n) {
+    case 'Bash':
+    case 'BashOutput':
+      s = input.description || String(input.command || '').split('\n')[0];
+      break;
+    case 'Read': {
+      s = base(input.file_path);
+      if (input.offset != null) s += ':' + input.offset + (input.limit != null ? '-' + (+input.offset + +input.limit) : '');
+      break;
+    }
+    case 'Edit':
+      s = base(input.file_path);
+      break;
+    case 'MultiEdit':
+      s = base(input.file_path) + (Array.isArray(input.edits) ? ' · ' + input.edits.length + ' edits' : '');
+      break;
+    case 'Write':
+    case 'NotebookEdit':
+      s = base(input.file_path || input.notebook_path) + (typeof input.content === 'string' ? ' · ' + input.content.length + ' chars' : '');
+      break;
+    case 'Grep':
+      s = String(input.pattern || '') + (input.path ? ' in ' + base(input.path) : '');
+      break;
+    case 'Glob':
+      s = String(input.pattern || '');
+      break;
+    case 'Task':
+    case 'Agent':
+      s = input.description || String(input.prompt || '').slice(0, 100);
+      break;
+    case 'TodoWrite': {
+      const t = Array.isArray(input.todos) ? input.todos : [];
+      s = t.length + ' todos · ' + t.filter(x => x && x.status === 'completed').length + ' done';
+      break;
+    }
+    case 'WebFetch':
+      s = String(input.url || '').replace(/^https?:\/\//, '');
+      break;
+    case 'WebSearch':
+      s = String(input.query || '');
+      break;
+    case 'Skill':
+      s = String(input.skill || input.command || '');
+      break;
+    default:
+      s = firstStringVal(input) || JSON.stringify(input).slice(0, 100);
+  }
+  // URL rất hay là input của MCP/tool lạ — bỏ protocol cho vừa 1 dòng mobile
+  return String(s || '').replace(/^https?:\/\//, '').replace(/\s+/g, ' ').trim().slice(0, TOOL_SUMMARY_CAP);
+}
+
+// Chi tiết input hiện khi mở card
+function buildInputDetail(name, input) {
+  if (input == null || typeof input !== 'object') return '';
+  let s;
+  switch (String(name || '')) {
+    case 'Bash':
+      s = input.command || '';
+      break;
+    case 'Edit':
+      s = '--- old\n' + (input.old_string || '') + '\n+++ new\n' + (input.new_string || '');
+      break;
+    case 'Write':
+      s = input.content || '';
+      break;
+    default:
+      try { s = JSON.stringify(input, null, 2); } catch { s = String(input); }
+  }
+  return clampText(s, TOOL_INPUT_CAP);
+}
+
+// tool_result.content: string HOẶC mảng block {type:'text'|'image'} -> nối text, đếm ảnh
+function toolResultPreview(content) {
+  let text = '', images = 0;
+  if (typeof content === 'string') text = content;
+  else if (Array.isArray(content)) {
+    const buf = [];
+    for (const b of content) {
+      if (typeof b === 'string') buf.push(b);
+      else if (!b) continue;
+      else if (b.type === 'text') buf.push(b.text || '');
+      else if (b.type === 'image') images++;
+    }
+    text = buf.filter(Boolean).join('\n');
+  }
+  return { text: clampText(text, TOOL_RESULT_CAP), images };
+}
+
+// Chuỗi phẳng dựng lại từ parts — giữ y hệt format cũ để stats/unread/export cũ không đổi
+function flattenParts(parts) {
+  return parts.map(p => (p.t === 'text' ? p.text : '[tool: ' + p.name + ']')).filter(Boolean).join('\n');
+}
+
+const TOOL_ST_LABEL = { ok: 'OK', error: 'ERROR', running: 'RUNNING', pending: 'PENDING' };
+
+// Markdown 1 message cho export .md — tool thành blockquote header + fence input/result.
+// Dùng chung shape với exportChat phía client để 2 kiểu export ra giống nhau.
+function mdForMessage(msg) {
+  if (!msg.parts || !msg.parts.length) return msg.content || '';
+  return msg.parts.map(p => {
+    if (p.t === 'text') return p.text;
+    let s = '> 🔧 **' + p.disp + '**' + (p.summary ? ' — `' + p.summary + '`' : '')
+      + ' — ' + (TOOL_ST_LABEL[p.status] || p.status);
+    if (p.input) s += '\n\n```input\n' + p.input + '\n```';
+    if (p.result) s += '\n\n```result\n' + p.result + '\n```';
+    if (p.images) s += '\n\n_[+' + p.images + ' image]_';
+    return s;
+  }).filter(Boolean).join('\n\n');
+}
+
 function parseSessionFile(file) {
   let st;
   try { st = fs.statSync(file); } catch { cache.delete(file); return null; }
@@ -61,6 +211,9 @@ function parseSessionFile(file) {
   if (c && c.mtimeMs === st.mtimeMs && c.size === st.size) return c.data;
 
   const msgs = [];
+  // tool_use_id -> part object; ghép result vào call. Ghép trên TOÀN file trước khi
+  // slice window 30 -> call ở đầu window vẫn nhận được result nằm sau.
+  const toolIndex = new Map();
   let raw;
   try { raw = fs.readFileSync(file, 'utf8'); } catch { return null; }
   for (const line of raw.split('\n')) {
@@ -69,9 +222,50 @@ function parseSessionFile(file) {
     try { obj = JSON.parse(line); } catch { continue; }
     if (obj.type !== 'user' && obj.type !== 'assistant') continue;
     const m = obj.message || obj;
-    const text = extractText(m.content);
+    const content = m.content;
+    const parts = [];
+
+    if (Array.isArray(content)) {
+      for (const b of content) {
+        if (typeof b === 'string') { if (b.trim()) parts.push({ t: 'text', text: b }); continue; }
+        if (!b) continue;
+        if (b.type === 'text') { if ((b.text || '').trim()) parts.push({ t: 'text', text: b.text }); }
+        else if (b.type === 'tool_use') {
+          const part = {
+            t: 'tool',
+            id: b.id || '',
+            name: b.name || 'tool',
+            disp: toolDisplayName(b.name),
+            summary: summarizeToolInput(b.name, b.input),
+            input: buildInputDetail(b.name, b.input),
+            status: 'pending',
+            result: '',
+            images: 0,
+          };
+          parts.push(part);
+          if (b.id) toolIndex.set(b.id, part);
+        } else if (b.type === 'tool_result') {
+          // Gắn vào card của call tương ứng; message user thuần tool_result KHÔNG phát ra bubble
+          const target = toolIndex.get(b.tool_use_id);
+          if (target) {
+            const pv = toolResultPreview(b.content);
+            target.status = b.is_error ? 'error' : 'ok';
+            target.result = pv.text;
+            target.images = pv.images;
+          }
+          // orphan (call đã trôi khỏi file / jsonl hỏng) -> bỏ im lặng
+        }
+        // thinking + block lạ: bỏ (giữ hành vi cũ)
+      }
+    } else {
+      const text = extractText(content);
+      if (text.trim()) parts.push({ t: 'text', text });
+    }
+
+    if (!parts.length) continue;
+    const text = flattenParts(parts);
     if (!text.trim()) continue;
-    msgs.push({ role: obj.type, text, ts: obj.timestamp || null });
+    msgs.push({ role: obj.type, text, ts: obj.timestamp || null, parts });
   }
   // tsMs: timestamp (ms) từng message — precompute 1 lần để đếm unread không tốn Date.parse mỗi tick
   const data = { msgs, mtimeMs: st.mtimeMs, tsMs: msgs.map(m => Date.parse(m.ts) || 0) };
@@ -86,7 +280,7 @@ function getHistory(sid) {
   if (!file) return null;
   const parsed = parseSessionFile(file);
   if (!parsed) return null;
-  return parsed.msgs.slice(-30).map(m => ({ role: m.role, content: m.text }));
+  return parsed.msgs.slice(-30).map(m => ({ role: m.role, content: m.text, ts: m.ts, parts: m.parts }));
 }
 
 function findSessionFile(sid) {
@@ -768,7 +962,7 @@ const server = http.createServer(async (req, res) => {
     const file = findSessionFile(sid);
     // user đang xem chat -> đánh dấu đã đọc (chỉ set cho session THẬT, sid rác không phình Map)
     if (file || typing) lastSeen.set(sid, Date.now());
-    if (!file) return json(res, 200, { sid, messages: [], total: 0, typing, status: statusOf(sid, 0) });
+    if (!file) return json(res, 200, { sid, messages: [], total: 0, start: 0, typing, status: statusOf(sid, 0) });
     let mt = 0;
     try { mt = fs.statSync(file).mtimeMs; } catch {}
     const messages = getHistory(sid) || [];
@@ -776,7 +970,18 @@ const server = http.createServer(async (req, res) => {
     // quy đổi offset /clear; thiếu total thì /clear trên session >30 msg mất message mới vĩnh viễn
     const parsed = parseSessionFile(file);
     const total = parsed ? parsed.msgs.length : messages.length;
-    return json(res, 200, { sid, messages, total, typing, status: statusOf(sid, mt) });
+    // start: chỉ số tuyệt đối của messages[0]. Client so start để biết window ĐÃ TRƯỢT
+    // (msg mới đẩy msg cũ ra, length không đổi) — thiếu nó thì client đứng hình không nhận msg mới.
+    const start = Math.max(0, total - messages.length);
+    // tool_use chưa có result + session đang chạy = đang thực thi -> chip "running".
+    // Không typing thì để pending (run bị kill/ngắt), client hiện chip mờ.
+    if (typing && messages.length) {
+      const last = messages[messages.length - 1];
+      if (last.parts) {
+        last.parts = last.parts.map(p => (p.t === 'tool' && p.status === 'pending' ? Object.assign({}, p, { status: 'running' }) : p));
+      }
+    }
+    return json(res, 200, { sid, messages, total, start, typing, status: statusOf(sid, mt) });
   }
 
   if ((m = p.match(/^\/api\/status\/([\w-]+)$/))) {
@@ -794,7 +999,7 @@ const server = http.createServer(async (req, res) => {
     const parsed = file ? parseSessionFile(file) : null;
     if (!parsed) return json(res, 404, { error: 'session not found' });
     const fmt = url.searchParams.get('fmt') === 'json' ? 'json' : 'md';
-    const msgs = parsed.msgs.map(x => ({ role: x.role, content: x.text, ts: x.ts }));
+    const msgs = parsed.msgs.map(x => ({ role: x.role, content: x.text, ts: x.ts, parts: x.parts }));
     let body, type;
     if (fmt === 'json') {
       body = JSON.stringify({ sid, exportedAt: new Date().toISOString(), count: msgs.length, messages: msgs }, null, 2);
@@ -802,7 +1007,7 @@ const server = http.createServer(async (req, res) => {
     } else {
       body = '# Claude session ' + sid + '\n\n'
         + msgs.map(x => '**' + (x.role === 'user' ? 'User' : 'Assistant') + '**'
-          + (x.ts ? ' · ' + x.ts : '') + ':\n\n' + x.content + '\n\n---\n').join('\n');
+          + (x.ts ? ' · ' + x.ts : '') + ':\n\n' + mdForMessage(x) + '\n\n---\n').join('\n');
       type = 'text/markdown; charset=utf-8';
     }
     res.writeHead(200, {
@@ -1212,6 +1417,54 @@ const HTML = `<!doctype html>
     color: #b7a5ef; font-size: 12px; max-width: 82%;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
+
+  /* ---- TOOL CARD: 1 message assistant = text bubble + N card tool xếp dọc ---- */
+  .msgwrap { display: flex; flex-direction: column; gap: 6px; align-self: flex-start; max-width: 76%; width: 100%; }
+  .msgwrap .bub { max-width: 100%; }
+  .tcard {
+    border: 1px solid #262a36; background: #141722; border-radius: 12px; overflow: hidden;
+    transition: border-color .2s ease;
+  }
+  .tcard.t-err { border-color: rgba(248, 113, 113, .4); }
+  .tcard.t-run { border-color: rgba(251, 191, 36, .35); }
+  /* head là <button>: tap được trên mobile, focus được bằng bàn phím, cao ≥44px (Apple HIG) */
+  .tcard-head {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px;
+    padding: 8px 12px; background: none; border: 0; color: #e4e4e7; font-size: 13px;
+    font-family: inherit; text-align: left; cursor: pointer; transition: background .2s ease;
+  }
+  .tcard-head:focus-visible { outline: 2px solid rgba(59, 130, 246, .6); outline-offset: -2px; }
+  /* hover chỉ là bonus desktop — mobile không có hover, mọi thứ vẫn tap được */
+  @media (min-width: 768px) { .tcard-head:hover { background: #1a1e2b; } }
+  .tcard-ic { flex-shrink: 0; display: flex; color: #8b5cf6; }
+  .tcard-name { flex-shrink: 0; font-weight: 600; }
+  .tcard-sum {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: #8b8fa3; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .tcard-st { flex-shrink: 0; display: flex; align-items: center; color: #4b5163; }
+  .tcard-st-ok { color: #34d399; }
+  .tcard-st-err { color: #f87171; }
+  /* pulse 2 nhịp rồi ĐỨNG YÊN (giống .st-RUNNING) — RULES: không animation lặp vô hạn */
+  .tcard-st-run { color: #fbbf24; animation: dot-pulse 2s ease-in-out 2; border-radius: 50%; }
+  .tcard-chev { flex-shrink: 0; display: flex; color: #666b7d; transition: transform .2s ease; }
+  .tcard.open .tcard-chev { transform: rotate(180deg); }
+  /* body mở/đóng bằng grid-template-rows 0fr->1fr: transition 1 lần 200ms, không phải keyframe lặp */
+  .tcard-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s ease; }
+  .tcard.open .tcard-body { grid-template-rows: 1fr; }
+  .tcard-body > .tinner { overflow: hidden; min-height: 0; }
+  .tsec { padding: 0 12px 10px; }
+  .tsec .codewrap { margin: 0; }
+  .tlbl { font-size: 10px; font-weight: 600; letter-spacing: .5px; color: #666b7d; margin: 0 0 4px 2px; }
+  .tsec-err .tlbl { color: #f87171; }
+  .tsec-err .codeblock { border-color: rgba(248, 113, 113, .3); }
+  .timg { font-size: 11px; color: #8b5cf6; margin-top: 6px; }
+  /* mobile: bubble/card rộng 85% theo RULES */
+  @media (max-width: 767px) { .msgwrap { max-width: 85%; } }
+  /* compare view 2 cột hẹp: thu nhỏ card */
+  #compare .msgwrap { max-width: 94%; }
+  #compare .tcard-head { font-size: 12px; min-height: 40px; }
+  #compare .tcard-sum { font-size: 11px; }
 
   /* code block trong bubble */
   .codewrap { position: relative; margin: 8px 0; }
@@ -2576,6 +2829,8 @@ function clearChatLocal() {
   if (!currentSid) return toast('Mở 1 session trước rồi mới /clear');
   clearOffsets[currentSid] = chatTotal;
   chatRendered = 0;
+  chatStart = -1;      // window bắt đầu lại từ vị trí mới, đừng so với start cũ
+  chatCards.clear();   // card vừa bị xoá khỏi DOM -> bỏ khỏi Map reconcile
   document.getElementById('bubbles').innerHTML = '';
   toast('Đã clear chat view (local)');
 }
@@ -2591,6 +2846,25 @@ async function setModel(name) {
   toast('Model = ' + (r.model || 'default'));
 }
 
+// Markdown 1 message — cùng shape với mdForMessage() ở server để 2 kiểu export giống nhau
+const TOOL_ST_TXT = { ok: 'OK', error: 'ERROR', running: 'RUNNING', pending: 'PENDING' };
+function mdParts(msg) {
+  const NL = String.fromCharCode(10);
+  const F = String.fromCharCode(96, 96, 96);
+  const TICK = String.fromCharCode(96);
+  if (!msg.parts || !msg.parts.length) return msg.content || '';
+  return msg.parts.map(p => {
+    if (p.t === 'text') return p.text;
+    let s = '> 🔧 **' + (p.disp || p.name) + '**'
+      + (p.summary ? ' — ' + TICK + p.summary + TICK : '')
+      + ' — ' + (TOOL_ST_TXT[p.status] || p.status);
+    if (p.input) s += NL + NL + F + 'input' + NL + p.input + NL + F;
+    if (p.result) s += NL + NL + F + 'result' + NL + p.result + NL + F;
+    if (p.images) s += NL + NL + '_[+' + p.images + ' image]_';
+    return s;
+  }).filter(Boolean).join(NL + NL);
+}
+
 async function exportChat() {
   if (!currentSid) return toast('Mở 1 session trước rồi mới /export');
   const r = await fetch('/api/history/' + currentSid).then(r => r.json());
@@ -2598,7 +2872,7 @@ async function exportChat() {
   let md = '# Session ' + currentSid + NL + NL;
   for (const msg of r.messages) {
     md += '**' + (msg.role === 'user' ? 'User' : 'Assistant') + '**:' + NL + NL
-      + msg.content + NL + NL + '---' + NL + NL;
+      + mdParts(msg) + NL + NL + '---' + NL + NL;
   }
   navigator.clipboard.writeText(md)
     .then(() => toast('Đã copy ' + r.messages.length + ' messages (markdown)'))
@@ -2699,6 +2973,8 @@ document.getElementById('enhancebtn').addEventListener('click', async () => {
 /* ================= chat view: STABLE RENDER (append-only) ================= */
 let chatRendered = 0; // số bubble đã render cho session đang mở
 let chatTotal = 0;    // tổng messages trong history lần fetch cuối
+let chatStart = -1;   // chỉ số tuyệt đối của bubble đầu tiên đang render (-1 = chưa render gì)
+let chatCards = new Map(); // tool_use_id -> {card, chip, status} để cập nhật chip khi tool xong
 
 // Parse markdown an toàn: marked (render) + DOMPurify (sanitize chống XSS).
 // Fallback textContent nếu CDN chưa load — không bao giờ vỡ render.
@@ -2761,12 +3037,195 @@ function renderContent(el, content) {
   }
 }
 
+/* ---------------- tool card ----------------
+   SVG inline (không dùng data-lucide): node động không được gọi lại lucide.createIcons() */
+const SVG_A = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">';
+const TICON = {
+  Bash: SVG_A + '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>',
+  Read: SVG_A + '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>',
+  Edit: SVG_A + '<path d="M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10"/><path d="M14 2v5h5"/><path d="M10.4 12.6a2 2 0 1 1 3 3L8 21l-4 1 1-4Z"/></svg>',
+  Write: SVG_A + '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M9 15h6"/><path d="M12 12v6"/></svg>',
+  Grep: SVG_A + '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+  Task: SVG_A + '<rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" x2="8" y1="16" y2="16"/><line x1="16" x2="16" y1="16" y2="16"/></svg>',
+  TodoWrite: SVG_A + '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>',
+  Web: SVG_A + '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>',
+  Skill: SVG_A + '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>',
+  mcp: SVG_A + '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>',
+  def: SVG_A + '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"/></svg>',
+};
+const ICON_CHEV = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+const ICON_OK = SVG_A + '<path d="M20 6 9 17l-5-5"/></svg>';
+const ICON_ERR = SVG_A + '<path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+const ICON_RUN = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>';
+const ICON_DASH = SVG_A + '<path d="M5 12h14"/></svg>';
+
+function toolIcon(name) {
+  const n = String(name || '');
+  if (n.startsWith('mcp__')) return TICON.mcp;
+  if (TICON[n]) return TICON[n];
+  if (n === 'MultiEdit' || n === 'NotebookEdit') return TICON.Edit;
+  if (n === 'Glob' || n === 'ToolSearch') return TICON.Grep;
+  if (n === 'Agent') return TICON.Task;
+  if (n === 'WebFetch' || n === 'WebSearch') return TICON.Web;
+  if (n === 'BashOutput' || n === 'KillShell') return TICON.Bash;
+  return TICON.def;
+}
+
+function statusIcon(st) {
+  if (st === 'ok') return { html: ICON_OK, cls: 'tcard-st-ok' };
+  if (st === 'error') return { html: ICON_ERR, cls: 'tcard-st-err' };
+  if (st === 'running') return { html: ICON_RUN, cls: 'tcard-st-run' };
+  return { html: ICON_DASH, cls: '' }; // pending: run bị ngắt / chưa có kết quả
+}
+
+// 1 section (Input / Result) trong body card — dùng lại .codewrap + copybtn của code block
+function toolSection(label, text, isErr) {
+  const sec = document.createElement('div');
+  sec.className = 'tsec' + (isErr ? ' tsec-err' : '');
+  const lb = document.createElement('div');
+  lb.className = 'tlbl';
+  lb.textContent = label;
+  sec.appendChild(lb);
+  const wrap = document.createElement('div');
+  wrap.className = 'codewrap';
+  const btn = document.createElement('button');
+  btn.className = 'copybtn';
+  btn.innerHTML = ICON_COPY + '<span>Copy</span>';
+  btn.onclick = function (ev) {
+    ev.stopPropagation(); // đừng để click Copy làm gập card
+    navigator.clipboard.writeText(text).then(function () {
+      btn.querySelector('span').textContent = 'Copied!';
+      setTimeout(function () { btn.querySelector('span').textContent = 'Copy'; }, 1200);
+    });
+  };
+  const pre = document.createElement('pre');
+  pre.className = 'codeblock';
+  pre.textContent = text;
+  wrap.appendChild(btn);
+  wrap.appendChild(pre);
+  sec.appendChild(wrap);
+  return sec;
+}
+
+// Dựng nội dung body — LAZY, chỉ chạy lần mở đầu tiên (30 msg x N tool mà dựng sẵn hết thì phí)
+function buildToolBody(card) {
+  const inner = card.querySelector('.tinner');
+  inner.innerHTML = '';
+  const p = card._part;
+  if (p.input) inner.appendChild(toolSection('INPUT', p.input, false));
+  const isErr = p.status === 'error';
+  const hasResult = p.result || p.status === 'ok' || isErr;
+  if (hasResult) {
+    const sec = toolSection(isErr ? 'ERROR' : 'RESULT', p.result || '(empty)', isErr);
+    sec.dataset.role = 'result';
+    inner.appendChild(sec);
+  }
+  if (p.images) {
+    const im = document.createElement('div');
+    im.className = 'timg tsec';
+    im.textContent = '[+' + p.images + ' image]';
+    inner.appendChild(im);
+  }
+  card._built = true;
+}
+
+function renderToolCard(part) {
+  const card = document.createElement('div');
+  card._part = part;
+  card.className = 'tcard fadein' + (part.status === 'error' ? ' t-err' : part.status === 'running' ? ' t-run' : '');
+  if (part.id) card.dataset.tid = part.id;
+
+  const head = document.createElement('button');
+  head.className = 'tcard-head';
+  head.type = 'button';
+  head.setAttribute('aria-expanded', 'false');
+
+  const ic = document.createElement('span');
+  ic.className = 'tcard-ic';
+  ic.innerHTML = toolIcon(part.name);
+  const nm = document.createElement('span');
+  nm.className = 'tcard-name';
+  nm.textContent = part.disp || part.name;
+  const sum = document.createElement('span');
+  sum.className = 'tcard-sum';
+  sum.textContent = part.summary || '';
+  const si = statusIcon(part.status);
+  const st = document.createElement('span');
+  st.className = 'tcard-st ' + si.cls;
+  st.innerHTML = si.html;
+  const chev = document.createElement('span');
+  chev.className = 'tcard-chev';
+  chev.innerHTML = ICON_CHEV;
+  head.appendChild(ic); head.appendChild(nm); head.appendChild(sum); head.appendChild(st); head.appendChild(chev);
+
+  const body = document.createElement('div');
+  body.className = 'tcard-body';
+  const inner = document.createElement('div');
+  inner.className = 'tinner';
+  body.appendChild(inner);
+
+  head.onclick = function () {
+    const opening = !card.classList.contains('open');
+    if (opening && !card._built) buildToolBody(card);
+    card.classList.toggle('open', opening);
+    head.setAttribute('aria-expanded', opening ? 'true' : 'false');
+  };
+
+  card.appendChild(head);
+  card.appendChild(body);
+  // đăng ký để reconcileToolStatus cập nhật chip khi tool chạy xong (pending/running -> ok/error).
+  // Compare view cũng dùng bubbleFor nhưng không reconcile -> không đăng ký, tránh Map phình.
+  if (part.id && !compareSids) chatCards.set(part.id, { card: card, chip: st, status: part.status });
+  return card;
+}
+
 function bubbleFor(msg) {
-  const b = document.createElement('div');
-  const cls = msg.role === 'user' ? 'bub-user' : msg.role === 'tool' ? 'bub-tool' : 'bub-assistant';
-  b.className = 'bub ' + cls + ' fadein'; // fade-in MỘT LẦN khi xuất hiện
-  renderContent(b, msg.content);
-  return b;
+  const hasTool = msg.parts && msg.parts.some(p => p.t === 'tool');
+  if (!hasTool) {
+    const b = document.createElement('div');
+    const cls = msg.role === 'user' ? 'bub-user' : msg.role === 'tool' ? 'bub-tool' : 'bub-assistant';
+    b.className = 'bub ' + cls + ' fadein'; // fade-in MỘT LẦN khi xuất hiện
+    renderContent(b, msg.content);
+    return b;
+  }
+  // message có tool: text bubble + card xếp dọc trong 1 wrapper
+  const w = document.createElement('div');
+  w.className = 'msgwrap fadein';
+  for (const p of msg.parts) {
+    if (p.t === 'text') {
+      if (!p.text || !p.text.trim()) continue;
+      const b = document.createElement('div');
+      b.className = 'bub ' + (msg.role === 'user' ? 'bub-user' : 'bub-assistant');
+      renderContent(b, p.text);
+      w.appendChild(b);
+    } else {
+      w.appendChild(renderToolCard(p));
+    }
+  }
+  return w;
+}
+
+// Tool chạy xong trong lúc đang xem -> chỉ đổi CHIP + border của card đó, không đụng node khác
+// (RULES: diff DOM, chỉ update node thay đổi — rebuild sẽ giết card user đang mở)
+function reconcileToolStatus(msgs) {
+  for (let i = Math.max(0, msgs.length - 10); i < msgs.length; i++) {
+    const parts = msgs[i] && msgs[i].parts;
+    if (!parts) continue;
+    for (const p of parts) {
+      if (p.t !== 'tool' || !p.id) continue;
+      const ent = chatCards.get(p.id);
+      if (!ent || ent.status === p.status) continue;
+      ent.status = p.status;
+      ent.card._part = p;
+      const si = statusIcon(p.status);
+      ent.chip.className = 'tcard-st ' + si.cls;
+      ent.chip.innerHTML = si.html;
+      ent.card.classList.toggle('t-err', p.status === 'error');
+      ent.card.classList.toggle('t-run', p.status === 'running');
+      // card đang mở -> dựng lại body cho khớp kết quả mới; đang đóng thì để lazy build lo
+      if (ent.card._built) buildToolBody(ent.card);
+    }
+  }
 }
 
 function openChat(sid) {
@@ -2775,6 +3234,8 @@ function openChat(sid) {
   currentSid = sid;
   chatRendered = 0;
   chatTotal = 0;
+  chatStart = -1;
+  chatCards = new Map();
   delete clearOffsets[sid];
   document.getElementById('list').classList.add('hidden');
   const chat = document.getElementById('chat');
@@ -2965,11 +3426,31 @@ async function refreshChat() {
   const skip = Math.max(0, (clearOffsets[currentSid] || 0) - dropped);
   const msgs = r.messages.slice(skip);
   chatTotal = total;
-  // history co lại (hiếm: file bị cắt) -> render lại từ đầu
-  if (msgs.length < chatRendered) { box.innerHTML = ''; chatRendered = 0; }
+  // start: vị trí TUYỆT ĐỐI của msgs[0]. Chỉ so length là không đủ — khi window 30 trượt
+  // (msg mới đẩy msg cũ ra) length không đổi -> vòng append bên dưới không chạy lần nào
+  // -> client đứng hình, im lặng bỏ lỡ mọi message mới.
+  const start = (r.start != null ? r.start : dropped) + skip;
+  if (chatStart === -1) chatStart = start;
+  if (start !== chatStart || msgs.length < chatRendered) {
+    const delta = start - chatStart;
+    if (delta > 0 && delta <= chatRendered && msgs.length >= chatRendered - delta) {
+      // window trượt: cắt bubble đầu, GIỮ NGUYÊN node còn lại (card đang mở không bị giết)
+      for (let i = 0; i < delta; i++) { if (box.firstChild) box.firstChild.remove(); }
+      // bỏ card đã detach khỏi Map, tránh phình + reconcile lên node không còn trong DOM
+      for (const [tid, ent] of chatCards) { if (!ent.card.isConnected) chatCards.delete(tid); }
+      chatRendered -= delta;
+    } else {
+      // hiếm: file bị cắt / nhảy quá xa -> render lại từ đầu
+      box.innerHTML = '';
+      chatRendered = 0;
+      chatCards.clear();
+    }
+    chatStart = start;
+  }
   // STABLE: chỉ append phần mới, không đụng bubble cũ
   for (let i = chatRendered; i < msgs.length; i++) box.appendChild(bubbleFor(msgs[i]));
   chatRendered = msgs.length;
+  reconcileToolStatus(msgs); // tool xong -> đổi chip tại chỗ (không rebuild)
   document.getElementById('typingind').classList.toggle('hidden', !r.typing);
   if (atBottom) box.scrollTop = box.scrollHeight;
 }

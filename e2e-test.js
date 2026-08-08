@@ -7,7 +7,51 @@ const URL = process.env.DASH_URL || 'http://localhost:7799/';
 const results = [];
 const ok = (name, pass, extra) => { results.push({ name, pass, extra }); console.log((pass ? 'PASS' : 'FAIL') + ' | ' + name + (extra ? ' | ' + extra : '')); };
 
+/* ---- fixture tool card: session giả có đủ ca biên (ok / error / pending / image / MCP / orphan)
+   mà session thật hiếm khi có đủ. Test tự ghi file, xoá ở finally. ---- */
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const FIX_DIR = path.join(os.homedir(), '.claude', 'projects', '-tmp-e2e-tools');
+const FIX_SID = 'e2e00000-0000-4000-8000-0000000000t1';
+const FIX_FILE = path.join(FIX_DIR, FIX_SID + '.jsonl');
+
+function fixLine(type, content, ts) {
+  return JSON.stringify({ type, timestamp: ts, message: { role: type, content } });
+}
+function writeFixture() {
+  fs.mkdirSync(FIX_DIR, { recursive: true });
+  const T = '2026-08-08T02:00:0';
+  const lines = [
+    // assistant: text + 3 tool_use (Bash, Edit, MCP)
+    fixLine('assistant', [
+      { type: 'text', text: 'Chạy test rồi sửa file.' },
+      { type: 'tool_use', id: 'tu_bash1', name: 'Bash', input: { command: 'npm test', description: 'Chạy unit test' } },
+      { type: 'tool_use', id: 'tu_edit1', name: 'Edit', input: { file_path: '/tmp/x/app.js', old_string: 'a', new_string: 'b' } },
+      { type: 'tool_use', id: 'tu_mcp1', name: 'mcp__figma__get_screenshot', input: { url: 'https://figma.com/f/1' } },
+    ], T + '0Z'),
+    // user: 3 tool_result — 1 ok, 1 error, 1 có image; KHÔNG được tạo bubble user
+    fixLine('user', [
+      { type: 'tool_result', tool_use_id: 'tu_bash1', content: '12 passed' },
+      { type: 'tool_result', tool_use_id: 'tu_edit1', content: 'String not found', is_error: true },
+      { type: 'tool_result', tool_use_id: 'tu_mcp1', content: [{ type: 'text', text: 'shot ok' }, { type: 'image', source: {} }] },
+      { type: 'tool_result', tool_use_id: 'tu_orphan_khong_ton_tai', content: 'mồ côi -> phải bỏ' },
+    ], T + '1Z'),
+    // assistant: tool_use CHƯA có result -> pending
+    fixLine('assistant', [
+      { type: 'tool_use', id: 'tu_read1', name: 'Read', input: { file_path: '/tmp/x/big.txt', offset: 10, limit: 20 } },
+    ], T + '2Z'),
+    // user text thường -> vẫn phải ra bubble user
+    fixLine('user', [{ type: 'text', text: 'ok cảm ơn' }], T + '3Z'),
+  ];
+  fs.writeFileSync(FIX_FILE, lines.join('\n') + '\n');
+}
+function cleanFixture() {
+  try { fs.rmSync(FIX_DIR, { recursive: true, force: true }); } catch {}
+}
+
 (async () => {
+  writeFixture();
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
 
   for (const [label, vp] of [['mobile 390x844', { width: 390, height: 844 }], ['desktop 1440x900', { width: 1440, height: 900 }]]) {
@@ -198,6 +242,207 @@ const ok = (name, pass, extra) => { results.push({ name, pass, extra }); console
       await page.evaluate(() => backToList());
     } else ok(label + ': nút export chat view (skip)', true);
 
+    // ---- TOOL CARD (fixture): parse có cấu trúc + render card + mở/đóng + mobile ----
+    const th = await page.evaluate(async sid => {
+      const r = await fetch('/api/history/' + sid).then(x => x.json());
+      const tools = r.messages.flatMap(m => (m.parts || []).filter(p => p.t === 'tool'));
+      return {
+        start: r.start, total: r.total, nMsg: r.messages.length,
+        st: tools.map(t => t.status),
+        names: tools.map(t => t.name),
+        disp: tools.map(t => t.disp),
+        sums: tools.map(t => t.summary),
+        img: tools.map(t => t.images),
+        results: tools.map(t => t.result),
+        roles: r.messages.map(m => m.role),
+      };
+    }, FIX_SID);
+    // 4 tool_use, đúng thứ tự status; orphan tool_result bị bỏ
+    ok(label + ': history trả parts có cấu trúc (ok/error/pending) + field start',
+      th.st.join(',') === 'ok,error,ok,pending' && th.start === 0 && th.total === 3 && th.nMsg === 3,
+      JSON.stringify({ st: th.st, start: th.start, total: th.total }));
+    // user thuần tool_result KHÔNG ra bubble; user text thường thì có
+    ok(label + ': msg user thuần tool_result không thành bubble',
+      th.roles.join(',') === 'assistant,assistant,user', th.roles.join(','));
+    ok(label + ': summary theo từng loại tool + tên MCP rút gọn',
+      th.sums[0] === 'Chạy unit test' && th.sums[1] === 'app.js' && th.sums[3] === 'big.txt:10-30'
+      && th.disp[2] === 'figma · get screenshot',
+      JSON.stringify({ sums: th.sums, mcp: th.disp[2] }));
+    ok(label + ': tool_result mảng -> nối text + đếm image',
+      th.img[2] === 1 && th.results[2] === 'shot ok', JSON.stringify({ img: th.img, r2: th.results[2] }));
+
+    await page.evaluate(sid => openChat(sid), FIX_SID);
+    await page.waitForTimeout(900);
+    const tc = await page.evaluate(() => {
+      const box = document.getElementById('bubbles');
+      const cards = [...box.querySelectorAll('.tcard')];
+      return {
+        n: cards.length,
+        userBubs: box.querySelectorAll('.bub-user').length,
+        wraps: box.querySelectorAll('.msgwrap').length,
+        errCard: cards.filter(c => c.classList.contains('t-err')).length,
+        minHead: Math.min(...cards.map(c => c.querySelector('.tcard-head').getBoundingClientRect().height)),
+        wrapPct: +(box.querySelector('.msgwrap').getBoundingClientRect().width / box.clientWidth * 100).toFixed(1),
+        firstSum: cards[0].querySelector('.tcard-sum').textContent,
+        anyOpen: cards.filter(c => c.classList.contains('open')).length,
+      };
+    });
+    ok(label + ': render 4 tool card, chỉ 1 bubble user, card lỗi có class t-err',
+      tc.n === 4 && tc.userBubs === 1 && tc.wraps === 2 && tc.errCard === 1, JSON.stringify(tc));
+    ok(label + ': tap target head ≥44px + msgwrap ≤85% + summary hiện đúng',
+      tc.minHead >= 44 && tc.wrapPct <= 85.5 && tc.firstSum === 'Chạy unit test' && tc.anyOpen === 0,
+      JSON.stringify({ h: tc.minHead, pct: tc.wrapPct }));
+
+    // mở card đầu -> có INPUT + RESULT; đóng lại -> hết .open
+    await page.evaluate(() => document.querySelector('.tcard .tcard-head').click());
+    await page.waitForTimeout(350);
+    const opened = await page.evaluate(() => {
+      const c = document.querySelector('.tcard');
+      const errc = [...document.querySelectorAll('.tcard')].find(x => x.classList.contains('t-err'));
+      return {
+        open: c.classList.contains('open'),
+        aria: c.querySelector('.tcard-head').getAttribute('aria-expanded'),
+        labels: [...c.querySelectorAll('.tlbl')].map(x => x.textContent),
+        bodyH: c.querySelector('.tcard-body').getBoundingClientRect().height,
+        code: c.querySelector('.codeblock').textContent,
+        copyBtns: c.querySelectorAll('.copybtn').length,
+        errLabel: (() => { errc.querySelector('.tcard-head').click(); return null; })(),
+      };
+    });
+    ok(label + ': mở card -> INPUT+RESULT, body cao ra, có nút Copy',
+      opened.open && opened.aria === 'true' && opened.labels.join(',') === 'INPUT,RESULT'
+      && opened.bodyH > 20 && opened.code === 'npm test' && opened.copyBtns === 2,
+      JSON.stringify({ labels: opened.labels, h: opened.bodyH, code: opened.code }));
+    await page.waitForTimeout(350);
+    const errBody = await page.evaluate(() => {
+      const errc = [...document.querySelectorAll('.tcard')].find(x => x.classList.contains('t-err'));
+      return { labels: [...errc.querySelectorAll('.tlbl')].map(x => x.textContent), errSec: errc.querySelectorAll('.tsec-err').length };
+    });
+    ok(label + ': card lỗi -> section ERROR (không phải RESULT)',
+      errBody.labels.includes('ERROR') && errBody.errSec === 1, JSON.stringify(errBody));
+    await page.evaluate(() => document.querySelector('.tcard .tcard-head').click());
+    await page.waitForTimeout(300);
+    const closed = await page.evaluate(() => document.querySelector('.tcard').classList.contains('open'));
+    ok(label + ': tap lần 2 -> card đóng lại', closed === false);
+
+    // ---- window trượt: file đã đầy 30 msg, thêm 2 msg nữa -> length KHÔNG đổi.
+    // Bug cũ: chỉ so length -> vòng append không chạy -> client đứng hình, mất msg mới vĩnh viễn.
+    const appendFix = n => {
+      for (let k = 0; k < n; k++) {
+        require('fs').appendFileSync(FIX_FILE, JSON.stringify({
+          type: 'user', timestamp: '2026-08-08T03:00:00Z',
+          message: { role: 'user', content: [{ type: 'text', text: 'fill ' + k }] },
+        }) + '\n');
+      }
+    };
+    appendFix(30); // đẩy session vượt window 30
+    await page.evaluate(sid => openChat(sid), FIX_SID);
+    await page.waitForTimeout(900);
+    const slide = await page.evaluate(() => {
+      const box = document.getElementById('bubbles');
+      window.__mk = box.lastElementChild; // node cuối: phải SỐNG SÓT qua lần trượt
+      return { before: box.children.length };
+    });
+    require('fs').appendFileSync(FIX_FILE, JSON.stringify({
+      type: 'user', timestamp: '2026-08-08T03:10:00Z',
+      message: { role: 'user', content: [{ type: 'text', text: 'msg-sau-khi-truot' }] },
+    }) + '\n');
+    await page.waitForTimeout(2600); // 1 nhịp poll 2s
+    const slid = await page.evaluate(() => {
+      const box = document.getElementById('bubbles');
+      return {
+        n: box.children.length,
+        markerAlive: window.__mk ? window.__mk.isConnected : null,
+        last: box.lastElementChild ? box.lastElementChild.textContent.trim() : '',
+      };
+    });
+    ok(label + ': window trượt -> nhận msg mới, giữ node cũ (cắt đầu, không rebuild)',
+      slide.before === 30 && slid.n === 30 && slid.last === 'msg-sau-khi-truot' && slid.markerAlive === true,
+      JSON.stringify({ before: slide.before, after: slid.n, last: slid.last, alive: slid.markerAlive }));
+
+    // ---- reconcile: tool đang chạy xong trong lúc user đang xem (và đang MỞ card)
+    // -> chỉ đổi chip + thêm RESULT tại chỗ, KHÔNG rebuild (rebuild sẽ giết card đang mở) ----
+    const RECSID = 'e2e00000-0000-4000-8000-0000000000r1';
+    const RECFILE = require('path').join(FIX_DIR, RECSID + '.jsonl');
+    require('fs').writeFileSync(RECFILE, fixLine('assistant', [
+      { type: 'text', text: 'đang chạy' },
+      { type: 'tool_use', id: 'tu_r1', name: 'Bash', input: { command: 'sleep 5', description: 'Task dài' } },
+    ], '2026-08-08T04:00:00Z') + '\n');
+    await page.evaluate(s => openChat(s), RECSID);
+    await page.waitForTimeout(900);
+    await page.evaluate(() => document.querySelector('.tcard .tcard-head').click()); // mở card ra trước
+    await page.waitForTimeout(350);
+    const recBefore = await page.evaluate(() => {
+      const c = document.querySelector('.tcard');
+      window.__card = c;
+      return { chip: c.querySelector('.tcard-st').className.trim(), open: c.classList.contains('open') };
+    });
+    require('fs').appendFileSync(RECFILE, fixLine('user',
+      [{ type: 'tool_result', tool_use_id: 'tu_r1', content: 'done' }], '2026-08-08T04:00:09Z') + '\n');
+    await page.waitForTimeout(2600);
+    const recAfter = await page.evaluate(() => {
+      const c = document.querySelector('.tcard');
+      return {
+        sameNode: window.__card === c, open: c.classList.contains('open'),
+        chip: c.querySelector('.tcard-st').className,
+        labels: [...c.querySelectorAll('.tlbl')].map(x => x.textContent),
+        hasResult: [...c.querySelectorAll('.codeblock')].some(x => x.textContent === 'done'),
+        userBubs: document.querySelectorAll('#bubbles .bub-user').length,
+      };
+    });
+    ok(label + ': tool xong -> chip đổi tại chỗ, card đang mở vẫn sống + hiện RESULT',
+      recBefore.chip === 'tcard-st' && recAfter.sameNode && recAfter.open
+      && recAfter.chip.includes('tcard-st-ok') && recAfter.labels.join(',') === 'INPUT,RESULT'
+      && recAfter.hasResult && recAfter.userBubs === 0,
+      JSON.stringify({ before: recBefore, after: recAfter }));
+    await page.evaluate(() => backToList());
+    await page.waitForTimeout(200);
+    // xoá file reconcile + chạm lại fixture chính: allSessions sort theo mtime, đừng để
+    // session vừa xoá đứng đầu làm test compare bên dưới nhận cột rỗng
+    require('fs').rmSync(RECFILE, { force: true });
+    require('fs').appendFileSync(FIX_FILE, '');
+    const nowT = new Date();
+    require('fs').utimesSync(FIX_FILE, nowT, nowT);
+    await page.waitForTimeout(2200); // đợi SSE đẩy allSessions mới
+
+    // ---- /clear trên session có tool card: xoá sạch, rồi msg mới vẫn về bình thường ----
+    await page.evaluate(sid => openChat(sid), FIX_SID);
+    await page.waitForTimeout(900);
+    await page.evaluate(() => clearChatLocal());
+    await page.waitForTimeout(300);
+    const afterClear = await page.evaluate(() => document.getElementById('bubbles').children.length);
+    require('fs').appendFileSync(FIX_FILE, fixLine('user',
+      [{ type: 'text', text: 'sau-khi-clear' }], '2026-08-08T05:00:00Z') + '\n');
+    await page.waitForTimeout(2600);
+    const afterClearNew = await page.evaluate(() => {
+      const box = document.getElementById('bubbles');
+      return { n: box.children.length, last: box.lastElementChild ? box.lastElementChild.textContent.trim() : '' };
+    });
+    ok(label + ': /clear xoá hết rồi vẫn nhận msg mới (session có tool card)',
+      afterClear === 0 && afterClearNew.n === 1 && afterClearNew.last === 'sau-khi-clear',
+      JSON.stringify({ afterClear, ...afterClearNew }));
+    await page.evaluate(() => backToList());
+    await page.waitForTimeout(200);
+
+    // export .md của fixture chứa khối tool đầy đủ
+    const expTool = await page.evaluate(async sid => {
+      const md = await fetch('/api/export/' + sid + '?fmt=md').then(r => r.text());
+      const j = await fetch('/api/export/' + sid + '?fmt=json').then(r => r.json());
+      return {
+        hasBash: md.includes('**Bash**'), hasErr: md.includes('— ERROR'),
+        hasInput: md.includes('npm test'), hasResult: md.includes('12 passed'),
+        hasImg: md.includes('[+1 image]'),
+        jParts: (j.messages[0].parts || []).length,
+      };
+    }, FIX_SID);
+    ok(label + ': export md/json giữ đủ thông tin tool (input, result, ERROR, image)',
+      expTool.hasBash && expTool.hasErr && expTool.hasInput && expTool.hasResult && expTool.hasImg && expTool.jParts === 4,
+      JSON.stringify(expTool));
+
+    await page.evaluate(() => backToList());
+    await page.waitForTimeout(300);
+    writeFixture(); // trả fixture về trạng thái gốc cho vòng viewport sau
+
     // compare: bật mode -> chọn 2 session -> split view 2 cột có bubbles -> Esc đóng
     const nSess = await page.evaluate(() => allSessions.length);
     if (nSess >= 2) {
@@ -293,10 +538,11 @@ const ok = (name, pass, extra) => { results.push({ name, pass, extra }); console
   }
 
   await browser.close();
+  cleanFixture();
   const fails = results.filter(r => !r.pass);
   console.log('\n==== ' + (results.length - fails.length) + '/' + results.length + ' PASS ====');
   process.exit(fails.length ? 1 : 0);
-})().catch(e => { console.error('SCRIPT ERROR', e); process.exit(2); });
+})().catch(e => { cleanFixture(); console.error('SCRIPT ERROR', e); process.exit(2); });
 
 // Cách chạy: cần playwright-core + Chrome cài sẵn (không tải browser riêng):
 //   npm i --no-save playwright-core && node e2e-test.js          (test server 7799)
