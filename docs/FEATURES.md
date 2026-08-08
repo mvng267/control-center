@@ -4,7 +4,8 @@ Danh sách mọi tính năng đã tích luỹ qua 25 commit, kèm cách kiểm t
 
 **Vì sao cần file này:** khi viết lại frontend, selector gãy thì test đỏ ngay — biết liền. Nhưng một tính năng biến mất thì **không gì báo cả**. Đây là lưới an toàn: sau mỗi bước di trú, tick lại từng mục.
 
-Cột **Test** ghi `e2e` nếu đã có assertion tự động; `tay` nếu phải kiểm thủ công.
+Cột **Test** ghi `e2e` nếu đã có assertion trong `tests/e2e.js`; `pw` nếu kiểm bằng
+Playwright (giao diện mới); `tay` nếu phải kiểm thủ công trên máy/iPhone thật.
 
 ---
 
@@ -99,6 +100,34 @@ Cột **Test** ghi `e2e` nếu đã có assertion tự động; `tay` nếu ph�
 | 60 | Safe-area iPhone (notch + home indicator) | Xem tab bar dưới | tay |
 | 61 | `/model` toàn cục, `/theme`, `/help`, `/jobs`, `/summary`, `/enhance` | Gõ từng lệnh | tay |
 | 62 | Loop + cron job | `/loop 30s test`, `/schedule` | tay |
+
+---
+
+## Giao diện mới (Next.js, kiểu Atlas)
+
+Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) không có, nên không đưa vào
+`tests/e2e.js` — kiểm bằng Playwright riêng, xem cột Test.
+
+| # | Tính năng | Cách kiểm | Test |
+|---|---|---|---|
+| 63 | Page header 4/4 tab (tiêu đề + số đếm + mô tả + nút) | Xem đầu mỗi tab | pw |
+| 64 | Dải tóm tắt trên bảng phiên, bấm để lọc | Bấm "Đang chạy" → chỉ còn phiên đang chạy | pw |
+| 65 | Menu ⋯ mỗi dòng: mở / tải .md / dừng | Bấm ⋯ ở một dòng | pw |
+| 66 | Lối tắt "Xem nhanh" lọc thật, không chỉ đổi tab | Bấm "Phiên đang chạy" ở sidebar | pw |
+| 67 | Chế độ quyền 4 nấc **trong khung chat** | Mở phiên → nút khiên ở header | pw |
+| 68 | Nút ảnh nằm cạnh ô nhắn tin | Mở phiên → nhìn trái ô nhập | pw |
+| 69 | Tin của mình hiện ngay (~50ms), không đợi server | Gửi tin, bấm giờ | pw |
+| 70 | Nhịp poll co giãn: 700ms khi chạy, 2s khi rảnh | Xem Network lúc Claude chạy | tay |
+| 71 | Thanh việc-đang-làm (TodoWrite mới nhất) | Mở phiên đang chạy có todo | pw |
+| 72 | Gõ `/` trong ô chat → gợi ý lệnh, ↑↓/Tab/Esc | Gõ `/` rồi `/comp` | pw |
+| 73 | Bàn phím ảo iOS không che ô nhập (`--kb`) | iPhone thật: chạm ô nhập | tay |
+| 74 | Kéo-để-làm-mới + vuốt ngang chuyển tab | iPhone thật | pw |
+| 75 | AGY: log thời gian thực tô màu, tạm dừng/xoá | Bật agy từ dashboard | tay |
+| 76 | AGY: sửa `.env` tại chỗ, báo khi cần Restart | Đổi `PORT` → hiện nhắc Restart | tay |
+| 77 | Hermes: tên hội thoại rút gọn + tin đầu làm phụ đề | Xem tab Hermes | pw |
+| 78 | Hermes: ô tìm hội thoại | Gõ vào ô tìm | pw |
+| 79 | Badge % đổi màu theo NGHĨA (thẻ Lỗi tăng = đỏ) | Xem thẻ Lỗi ở tab AGY | pw |
+| 80 | Không còn nút chết | `node scripts/dead-buttons.js` | pw |
 
 ---
 
