@@ -5,6 +5,7 @@ import { ArrowLeft, Send, Square, Check, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
 import { Markdown } from './markdown';
+import { ChatToolbar, AttachBar, type Attachment } from './chat-toolbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -16,9 +17,11 @@ type ThinkPart = { t: 'think'; text: string };
 type Part = TextPart | ThinkPart | ToolPart;
 
 interface Msg { role: string; content: string; ts: string | null; parts?: Part[]; n?: number }
+interface Usage { turns: number; inTok: number; outTok: number; cacheRead: number; cacheWrite: number }
 interface History {
   messages: Msg[]; total: number; start: number; typing: boolean; status: string;
   title: string; error: string | null; awaiting: boolean; model: string | null;
+  usage: Usage | null;
 }
 
 const GROUP_GAP_MS = 120000;
@@ -72,6 +75,7 @@ const dayLabel = (ts: string | null) => {
 
 export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
   const [h, setH] = useState<History | null>(null);
+  const [att, setAtt] = useState<Attachment[]>([]);
   const [text, setText] = useState('');
   const boxRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
@@ -93,14 +97,20 @@ export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
 
   const send = async () => {
     const v = text.trim();
-    if (!v) return;
-    setText('');
+    if (!v && !att.length) return;
+    // Claude CLI đọc ảnh qua ĐƯỜNG DẪN file, không nhận base64 trong tin nhắn.
+    // /api/upload đã lưu ảnh xuống đĩa nên ở đây chỉ cần chèn đường dẫn vào câu.
+    const msg = att.length
+      ? (v ? v + '\n\n' : 'Xem ảnh này:\n\n') + att.map((a) => a.path).join('\n')
+      : v;
+    const keep = att;
+    setText(''); setAtt([]);
     try {
       const r = await api<{ error?: string }>('/api/chat/' + sid, {
-        method: 'POST', body: JSON.stringify({ message: v }),
+        method: 'POST', body: JSON.stringify({ message: msg }),
       });
-      if (r.error) { setText(v); toast.error('Không gửi được: ' + r.error); }
-    } catch { setText(v); toast.error('Lỗi mạng'); }
+      if (r.error) { setText(v); setAtt(keep); toast.error('Không gửi được: ' + r.error); }
+    } catch { setText(v); setAtt(keep); toast.error('Lỗi mạng'); }
   };
 
   const approve = async () => {
@@ -119,14 +129,18 @@ export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="chat-view">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+      <div className="mx-auto flex w-full max-w-[920px] shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
         <Button variant="ghost" size="icon" className="size-8" onClick={onBack}><ArrowLeft className="size-4" /></Button>
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium" data-testid="chat-title" title={sid}>
           {h?.title || sid.slice(0, 8)}
         </span>
-        {h?.model && <Badge variant="outline" className="shrink-0 text-[10.5px] text-tool-accent">{h.model}</Badge>}
+        {h?.model && <Badge variant="outline" className="hidden shrink-0 text-[10.5px] text-tool-accent sm:inline-flex">{h.model}</Badge>}
         <Badge variant="outline" className={cn('shrink-0 text-[10.5px]',
           h?.status === 'RUNNING' && 'border-status-ok/40 text-status-ok')}>{h?.status || '…'}</Badge>
+        <ChatToolbar sid={sid} title={h?.title || ''} model={h?.model ?? null} usage={h?.usage}
+          onTitle={(t) => setH((x) => (x ? { ...x, title: t } : x))}
+          onModel={(mo) => setH((x) => (x ? { ...x, model: mo } : x))}
+          onAttach={(a) => setAtt((xs) => [...xs, a])} />
       </div>
 
       <div ref={boxRef} data-testid="chat-bubbles"
@@ -134,7 +148,9 @@ export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
           const el = e.currentTarget;
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
-        className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-4">
+        /* Căn giữa và chặn bề rộng: trên màn 1440px mà để dòng chạy hết chiều ngang thì
+           mắt phải quét quá xa, đọc rất mệt. 920px ~ 100 ký tự/dòng. */
+        className="mx-auto flex w-full min-h-0 max-w-[920px] flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-4">
         {groups.map((m, gi) => {
           const parts = m.parts?.length ? mergeTextParts(m.parts) : [{ t: 'text', text: m.content } as TextPart];
           const tools = parts.filter((p): p is ToolPart => p.t === 'tool');
@@ -228,8 +244,9 @@ export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
         </div>
       )}
 
-      <div className="shrink-0 border-t border-border px-3 py-3"
+      <div className="mx-auto w-full max-w-[920px] shrink-0 border-t border-border px-3 py-3"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+        <AttachBar items={att} onRemove={(i) => setAtt((xs) => xs.filter((_, k) => k !== i))} />
         <div className="flex items-center gap-2">
           <Input value={text} onChange={(e) => setText(e.target.value)} data-testid="chat-input"
             onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && send()}

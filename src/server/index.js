@@ -1280,6 +1280,68 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, title: titleOf(sid, parsed ? parsed.title : '') });
   }
 
+  // ---- tải phiên về máy (.md để đọc, .json để xử lý tiếp) ----
+  // Bản legacy đã có nút "Tải .md"/"Tải .json" gọi vào đây nhưng route CHƯA TỪNG tồn tại
+  // -> bấm là 404. Bổ sung ở đây nên cả hai giao diện cùng dùng được.
+  if ((m = p.match(/^\/api\/export\/([\w-]+)$/))) {
+    const sid = m[1];
+    const file = findSessionFile(sid);
+    if (!file) return json(res, 404, { error: 'session not found' });
+    const parsed = parseSessionFile(file);
+    if (!parsed) return json(res, 500, { error: 'không đọc được phiên' });
+    const fmt = (url.searchParams.get('fmt') || 'md').toLowerCase();
+    const name = titleOf(sid, parsed.title) || sid;
+    // Tên file cho người đọc: CHỈ GIỮ chữ/số/khoảng trắng/._- (danh sách trắng).
+    // Danh sách trắng thay vì liệt kê ký tự cấm để không sót ký tự điều khiển;
+    // \p{L} giữ được tiếng Việt có dấu.
+    const safe = (name.replace(/[^\p{L}\p{N} ._-]/gu, '-').trim().slice(0, 60) || sid);
+
+    if (fmt === 'json') {
+      // Trường tên `messages` (không phải `msgs`) — trùng với /api/history và với
+      // bản legacy, nên công cụ nào đọc được cái này thì đọc được cái kia.
+      const out = JSON.stringify({
+        sid, title: name, exportedAt: new Date().toISOString(),
+        usage: parsed.usage, messages: parsed.msgs,
+      }, null, 2);
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="' + encodeURIComponent(safe) + '.json"',
+      });
+      return res.end(out);
+    }
+
+    const L = ['# ' + name, '', '_Phiên `' + sid + '` · tải lúc ' + new Date().toLocaleString('vi-VN') + '_', ''];
+    if (parsed.usage && parsed.usage.turns) {
+      const g = parsed.usage;
+      L.push('> ' + g.turns + ' lượt · gửi ' + g.inTok + ' token · nhận ' + g.outTok +
+             ' token · cache đọc ' + g.cacheRead + ' / ghi ' + g.cacheWrite, '');
+    }
+    for (const msg of parsed.msgs) {
+      const when = msg.ts ? new Date(msg.ts).toLocaleString('vi-VN') : '';
+      L.push('## ' + (msg.role === 'user' ? 'Vinh' : 'Claude') + (when ? ' · ' + when : ''), '');
+      for (const part of (msg.parts || [])) {
+        if (part.t === 'text') { L.push(part.text, ''); continue; }
+        // Tool: tóm tắt + kết quả, cắt bớt để file không phình vô hạn.
+        // Đánh dấu ERROR và số ảnh ngay ở dòng đầu — đọc file .md rời khỏi dashboard
+        // vẫn thấy ngay lượt nào hỏng mà không phải mở từng khối kết quả.
+        const err = part.status === 'error' ? ' — ERROR' : '';
+        const nImg = (part.images || []).length;
+        const img = nImg ? ' [' + nImg + ' ảnh]' : '';
+        L.push('**' + (part.disp || part.name) + '**' + err + ' — ' + (part.summary || '') + img, '');
+        if (part.input) L.push('```', String(part.input).slice(0, 4000), '```', '');
+        if (part.result) L.push('<details><summary>Kết quả</summary>', '',
+          '```', String(part.result).slice(0, 4000), '```', '', '</details>', '');
+      }
+      // lượt chỉ có text trần (không tách parts) thì vẫn phải xuất ra
+      if (!(msg.parts || []).length && msg.text) L.push(msg.text, '');
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/markdown; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="' + encodeURIComponent(safe) + '.md"',
+    });
+    return res.end(L.join('\n'));
+  }
+
   // ---- ảnh trong tool_result (screenshot...): trả binary, cache lâu vì nội dung bất biến ----
   if ((m = p.match(/^\/api\/toolimg\/([\w-]+)\/([\w-]+)\/(\d+)$/))) {
     const file = findSessionFile(m[1]);
