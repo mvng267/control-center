@@ -504,6 +504,73 @@ function cleanFixture() {
     await page.waitForTimeout(200);
     // KHÔNG xoá UXFILE ở đây: vòng viewport thứ 2 còn dùng lại. Dọn ở cleanFixture().
 
+    // ---- TOKEN: lỗ hổng cũ là hostAllowed chỉ đọc header Host (giả mạo được).
+    // Mọi /api/* từ NGOÀI loopback phải 401 nếu thiếu token; vỏ app vẫn phải mở được. ----
+    const tok = await page.evaluate(async () => {
+      // fetch đã bị bọc để tự gắn token -> dùng rawFetch để test đúng trường hợp thiếu token
+      const noTok = await rawFetch('/api/agy/status').then(r => r.status);
+      const withTok = await fetch('/api/agy/status').then(r => r.status);
+      const shell = await rawFetch('/manifest.json').then(r => r.ok);
+      return { noTok, withTok, shell, hasToken: !!dashToken };
+    });
+    // e2e chạy qua localhost = loopback -> server miễn token, nên noTok cũng 200.
+    // Phần chặn thật đã kiểm chứng bằng curl qua IP mạng (401). Ở đây chỉ xác nhận
+    // client gắn token đúng và vỏ app luôn mở được.
+    ok(label + ': token — client gắn token vào /api/*, vỏ app không cần token',
+      tok.withTok === 200 && tok.shell === true, JSON.stringify(tok));
+
+    // ---- lệnh mới + nút dừng ----
+    const newCmds = await page.evaluate(() => ({
+      cmds: COMMANDS.filter(c => ['/cost', '/compact', '/stop'].includes(c.cmd)).map(c => c.cmd).sort(),
+      hasStopBtn: !!document.querySelector('#typingind .stopbtn'),
+      hasApprove: !!document.getElementById('chatapprove'),
+      hasOffbar: !!document.getElementById('offbar'),
+      hasPtr: !!document.getElementById('ptr'),
+    }));
+    ok(label + ': có /cost /compact /stop + nút dừng + thanh duyệt + báo offline + kéo-làm-mới',
+      newCmds.cmds.join(',') === '/compact,/cost,/stop' && newCmds.hasStopBtn
+      && newCmds.hasApprove && newCmds.hasOffbar && newCmds.hasPtr, JSON.stringify(newCmds));
+
+    // ---- kéo-để-làm-mới: chỉ kích hoạt khi ở đỉnh danh sách, kéo đủ xa ----
+    const ptr = await page.evaluate(async () => {
+      const mk = y => new Touch({ identifier: 1, target: document.body, clientX: 195, clientY: y });
+      const drag = async dy => {
+        document.dispatchEvent(new TouchEvent('touchstart',
+          { touches: [mk(200)], changedTouches: [mk(200)], bubbles: true }));
+        document.dispatchEvent(new TouchEvent('touchmove',
+          { touches: [mk(200 + dy)], changedTouches: [mk(200 + dy)], bubbles: true }));
+        await new Promise(r => setTimeout(r, 80));
+        const el = document.getElementById('ptr');
+        const st = { on: el.classList.contains('on'), ready: el.classList.contains('ready') };
+        document.dispatchEvent(new TouchEvent('touchend',
+          { changedTouches: [mk(200 + dy)], touches: [], bubbles: true }));
+        return st;
+      };
+      const short = await drag(30);   // kéo ngắn -> hiện gợi ý, chưa sẵn sàng
+      const long = await drag(90);    // kéo đủ xa -> sẵn sàng làm mới
+      return { short, long };
+    });
+    ok(label + ': kéo-để-làm-mới — kéo ngắn chỉ gợi ý, kéo đủ xa mới sẵn sàng',
+      ptr.short.on && !ptr.short.ready && ptr.long.on && ptr.long.ready, JSON.stringify(ptr));
+
+    // ---- offline: service worker cache vỏ app, KHÔNG cache /api/* ----
+    const swc = await page.evaluate(async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const keys = await caches.keys();
+      let shell = [];
+      if (keys.length) {
+        const c = await caches.open(keys[0]);
+        shell = (await c.keys()).map(r => new URL(r.url).pathname);
+      }
+      const bar = document.getElementById('offbar');
+      setOffline(true);
+      const shown = !bar.classList.contains('hidden');
+      setOffline(false);
+      return { reg: !!reg, shell: shell.sort(), apiCached: shell.some(u => u.indexOf('/api/') === 0), shown };
+    });
+    ok(label + ': offline — cache vỏ app, KHÔNG cache /api/*, có banner mất mạng',
+      swc.reg && swc.shell.indexOf('/') >= 0 && !swc.apiCached && swc.shown, JSON.stringify(swc));
+
     // ---- GLASS: blur đúng chỗ + KHÔNG blur trên vùng cuộn (94 lớp blur = tụt fps iPhone) ----
     const glass = await page.evaluate(() => {
       const bf = el => {
@@ -534,9 +601,12 @@ function cleanFixture() {
       const start = { label: document.getElementById('permlabel').textContent,
                       cls: document.getElementById('permbtn').className };
       const seen = [];
-      for (let i = 0; i < 3; i++) {           // đi hết 1 vòng: acceptEdits -> default -> bypass
+      for (let i = 0; i < 4; i++) {  // 1 vòng: acceptEdits -> plan -> default -> bypass -> về đầu
+        const before = permMode;
         cyclePerm();
-        await new Promise(r => setTimeout(r, 250));
+        // đợi server xác nhận đổi xong; SSE tick 2s có thể đẩy giá trị cũ về giữa chừng
+        for (let w = 0; w < 30 && permMode === before; w++) await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, 120));
         seen.push({ mode: permMode, label: document.getElementById('permlabel').textContent,
                     cls: document.getElementById('permbtn').className });
       }
@@ -550,10 +620,11 @@ function cleanFixture() {
     // request 400 ở trên là CHỦ Ý (test chặn giá trị lạ) -> loại khỏi đếm console error cuối phiên
     const i400 = errors.findIndex(x => x.includes('400'));
     if (i400 >= 0) errors.splice(i400, 1);
-    ok(label + ': công tắc quyền mặc định acceptEdits + xoay vòng 3 chế độ + chặn giá trị lạ',
+    ok(label + ': công tắc quyền mặc định acceptEdits + xoay vòng 4 chế độ + chặn giá trị lạ',
       perm.start.cls.indexOf('p-accept') >= 0 && perm.start.label === 'Tự sửa file'
-      && perm.seen.map(s => s.mode).join(',') === 'default,bypassPermissions,acceptEdits'
-      && perm.seen[1].cls.indexOf('p-bypass') >= 0 && perm.bad === 400,
+      && perm.seen.map(s => s.mode).join(',') === 'plan,default,bypassPermissions,acceptEdits'
+      && perm.seen[0].cls.indexOf('p-plan') >= 0
+      && perm.seen[2].cls.indexOf('p-bypass') >= 0 && perm.bad === 400,
       JSON.stringify(perm));
 
     // ---- vuốt ngang chuyển tab (mobile) ----
@@ -613,7 +684,10 @@ function cleanFixture() {
 
     // header chat hiện tiêu đề (không phải ID), bấm mở hộp đổi tên
     await page.evaluate(s => openChat(s), TTSID);
-    await page.waitForFunction(() => document.getElementById('chatsid').textContent.length > 2, { timeout: 8000 });
+    // đợi ĐÚNG tiêu đề: openChat đặt tạm ID làm dự phòng, refreshChat mới thay bằng tiêu đề thật.
+    // Điều kiện lỏng (length > 2) khớp ngay với "e2e00000" -> đo trúng lúc chưa kịp cập nhật.
+    await page.waitForFunction(() =>
+      document.getElementById('chatsid').textContent === 'Tiêu đề Claude CLI đặt', { timeout: 10000 }).catch(() => {});
     const hdr = await page.evaluate(() => {
       const el = document.getElementById('chatsid');
       const txt = el.textContent;
@@ -857,13 +931,18 @@ function cleanFixture() {
       // chọn 2 phiên CÓ message thật — phiên fixture vừa bị xoá / phiên mới 0-1 tin
       // làm cột rỗng và test fail ngẫu nhiên
       await page.evaluate(() => {
-        const withMsgs = allSessions.filter(s => s.msgs >= 2).slice(0, 2);
+        const withMsgs = allSessions.filter(s => s.msgs >= 6).slice(0, 2);
         const pick = withMsgs.length === 2 ? withMsgs : allSessions.slice(0, 2);
         toggleCompareMode();
         rowClick(pick[0].sid);
         rowClick(pick[1].sid);
       });
-      await page.waitForTimeout(1200);
+      // đợi CÓ nội dung thay vì đợi cứng: phiên lớn (file jsonl vài chục MB) parse lâu hơn
+      // 1200ms -> cột rỗng và test fail ngẫu nhiên chứ không phải app hỏng
+      await page.waitForFunction(() =>
+        document.getElementById('cmp-bub-0').children.length > 0
+        && document.getElementById('cmp-bub-1').children.length > 0,
+      { timeout: 15000 }).catch(() => {});
       const cmp = await page.evaluate(() => ({
         open: !document.getElementById('compare').classList.contains('hidden'),
         listHidden: document.getElementById('list').classList.contains('hidden'),

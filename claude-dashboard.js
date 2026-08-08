@@ -32,7 +32,10 @@ let currentModel = null;
    đã làm mà thật ra không làm gì. acceptEdits = tự cho phép sửa file (lệnh nguy hiểm
    vẫn bị chặn). Ghi ra file để giữ nguyên lựa chọn sau khi restart dashboard. */
 const PERM_FILE = path.join(os.homedir(), '.claude', 'dashboard-perm.json');
-const PERM_MODES = ['default', 'acceptEdits', 'bypassPermissions'];
+// 'plan' = Claude trình bày kế hoạch rồi DỪNG chờ duyệt (không đụng file). Đây là cách
+// duyệt-trước-khi-làm khả thi duy nhất: CLI không có kênh uỷ quyền để dashboard bấm
+// "cho phép" từng tool (đã thử stream-json: không phát sự kiện xin quyền).
+const PERM_MODES = ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
 let permMode = 'acceptEdits'; // mặc định: hết cảnh "làm như không làm"
 try {
   const saved = JSON.parse(fs.readFileSync(PERM_FILE, 'utf8'));
@@ -81,6 +84,7 @@ function extractText(content) {
 const TOOL_SUMMARY_CAP = 120;
 const TOOL_INPUT_CAP = 1000;
 const TOOL_RESULT_CAP = 1200;
+const THINK_CAP = 1500; // phần suy nghĩ: hiện đủ ý nhưng không làm phình payload poll 2s
 
 function clampText(s, cap) {
   s = String(s == null ? '' : s);
@@ -165,6 +169,16 @@ function summarizeToolInput(name, input) {
 }
 
 // Chi tiết input hiện khi mở card
+// TodoWrite -> [{text, status}] gọn nhẹ cho client vẽ checklist.
+// Cắt 40 việc: danh sách dài hơn thế thì màn hình cũng không xem nổi.
+function extractTodos(input) {
+  const raw = input && Array.isArray(input.todos) ? input.todos : [];
+  return raw.slice(0, 40).map(t => ({
+    text: String((t && (t.content || t.activeForm)) || '').slice(0, 160),
+    status: (t && t.status) || 'pending',
+  })).filter(t => t.text);
+}
+
 function buildInputDetail(name, input) {
   if (input == null || typeof input !== 'object') return '';
   let s;
@@ -237,7 +251,9 @@ function findToolImage(file, toolId, idx) {
 
 // Chuỗi phẳng dựng lại từ parts — giữ y hệt format cũ để stats/unread/export cũ không đổi
 function flattenParts(parts) {
-  return parts.map(p => (p.t === 'text' ? p.text : '[tool: ' + p.name + ']')).filter(Boolean).join('\n');
+  // 'think' KHÔNG vào chuỗi phẳng: nó chỉ để hiển thị, đưa vào sẽ làm lệch unread/stats/search cũ
+  return parts.map(p => (p.t === 'text' ? p.text : p.t === 'think' ? '' : '[tool: ' + p.name + ']'))
+    .filter(Boolean).join('\n');
 }
 
 const TOOL_ST_LABEL = { ok: 'OK', error: 'ERROR', running: 'RUNNING', pending: 'PENDING' };
@@ -248,6 +264,12 @@ function mdForMessage(msg) {
   if (!msg.parts || !msg.parts.length) return msg.content || '';
   return msg.parts.map(p => {
     if (p.t === 'text') return p.text;
+    if (p.t === 'think') return '> 💭 _Suy nghĩ:_ ' + p.text.replace(/\n/g, '\n> ');
+    if (p.t === 'tool' && p.todos && p.todos.length) {
+      return '> ✅ **Todos**\n\n' + p.todos.map(t =>
+        '- [' + (t.status === 'completed' ? 'x' : ' ') + '] ' + t.text
+        + (t.status === 'in_progress' ? ' _(đang làm)_' : '')).join('\n');
+    }
     let s = '> 🔧 **' + p.disp + '**' + (p.summary ? ' — `' + p.summary + '`' : '')
       + ' — ' + (TOOL_ST_LABEL[p.status] || p.status);
     if (p.input) s += '\n\n```input\n' + p.input + '\n```';
@@ -267,6 +289,7 @@ function parseSessionFile(file) {
   // tool_use_id -> part object; ghép result vào call. Ghép trên TOÀN file trước khi
   // slice window 30 -> call ở đầu window vẫn nhận được result nằm sau.
   const toolIndex = new Map();
+  const usage = { inTok: 0, outTok: 0, cacheRead: 0, cacheWrite: 0, turns: 0 };
   let aiTitle = '';   // Claude CLI tự sinh tiêu đề (dòng type=ai-title), lấy bản MỚI NHẤT
   let firstUser = ''; // dự phòng khi session chưa có ai-title: câu đầu của user
   let raw;
@@ -277,6 +300,15 @@ function parseSessionFile(file) {
     try { obj = JSON.parse(line); } catch { continue; }
     if (obj.type === 'ai-title') { if (obj.aiTitle) aiTitle = obj.aiTitle; continue; }
     if (obj.type !== 'user' && obj.type !== 'assistant') continue;
+    // token đã dùng: CLI ghi sẵn usage mỗi lượt assistant -> cộng dồn, khỏi gọi /cost
+    const u = obj.message && obj.message.usage;
+    if (u) {
+      usage.inTok += u.input_tokens || 0;
+      usage.outTok += u.output_tokens || 0;
+      usage.cacheRead += u.cache_read_input_tokens || 0;
+      usage.cacheWrite += u.cache_creation_input_tokens || 0;
+      usage.turns++;
+    }
     const m = obj.message || obj;
     const content = m.content;
     const parts = [];
@@ -298,6 +330,9 @@ function parseSessionFile(file) {
             result: '',
             images: [],
           };
+          // TodoWrite: gửi kèm danh sách có cấu trúc để client vẽ checklist thật,
+          // thay vì đổ JSON thô ra khối code như mọi tool khác
+          if (b.name === 'TodoWrite') part.todos = extractTodos(b.input);
           parts.push(part);
           if (b.id) toolIndex.set(b.id, part);
         } else if (b.type === 'tool_result') {
@@ -310,8 +345,13 @@ function parseSessionFile(file) {
             target.images = pv.images;
           }
           // orphan (call đã trôi khỏi file / jsonl hỏng) -> bỏ im lặng
+        } else if (b.type === 'thinking') {
+          // Claude CLI có hiện phần suy nghĩ; dashboard trước đây vứt sạch.
+          // Giữ lại nhưng CLAMP: thinking dài hàng chục KB, nhồi hết vào payload poll 2s là phí.
+          const tk = String(b.thinking || '').trim();
+          if (tk) parts.push({ t: 'think', text: clampText(tk, THINK_CAP) });
         }
-        // thinking + block lạ: bỏ (giữ hành vi cũ)
+        // block lạ khác: bỏ
       }
     } else {
       const text = extractText(content);
@@ -331,7 +371,16 @@ function parseSessionFile(file) {
   // tsMs: timestamp (ms) từng message — precompute 1 lần để đếm unread không tốn Date.parse mỗi tick
   // title: ai-title của Claude CLI; chưa có thì lấy câu đầu của user (cắt gọn)
   const title = aiTitle || (firstUser ? firstUser.replace(/\s+/g, ' ').slice(0, 70) : '');
-  const data = { msgs, mtimeMs: st.mtimeMs, title, tsMs: msgs.map(m => Date.parse(m.ts) || 0) };
+  // Chế độ plan: Claude ghi kế hoạch ra ~/.claude/plans/*.md rồi DỪNG, không đụng file đích.
+  // Lượt cuối là assistant + có nhắc tới file kế hoạch => đang chờ người duyệt.
+  const lastMsg = msgs[msgs.length - 1];
+  const planFile = lastMsg && lastMsg.role === 'assistant'
+    ? (lastMsg.text.match(/[^\s`'"]*\.claude\/plans\/[^\s`'")]+\.md/) || [null])[0]
+    : null;
+  const data = {
+    msgs, mtimeMs: st.mtimeMs, title, planFile, usage,
+    tsMs: msgs.map(m => Date.parse(m.ts) || 0),
+  };
   cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, data });
   return data;
 }
@@ -1135,12 +1184,45 @@ function notifyPush(msg, sid) {
   pushAll({ title: 'Claude Control Center', body: msg, tag: 'ccc-done', sid: sid || null, url: '/' }).catch(() => {});
 }
 
+/* ---------------- token truy cập ----------------
+   hostAllowed() KHÔNG phải cơ chế bảo mật: nó đọc header Host do client tự khai,
+   `curl -H "Host: fake.ts.net"` là vượt qua. Mà /api/task giao việc cho Claude ở chế độ
+   acceptEdits = chạy lệnh tuỳ ý trên máy. Nên mọi endpoint GHI dữ liệu phải có token. */
+const TOKEN_FILE = path.join(os.homedir(), '.claude', 'dashboard-token.json');
+let dashToken = process.env.DASH_TOKEN || '';
+if (!dashToken) {
+  try { dashToken = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8')).token || ''; } catch {}
+}
+if (!dashToken) {
+  dashToken = crypto.randomBytes(18).toString('base64url');
+  try { fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token: dashToken }, null, 2), { mode: 0o600 }); } catch {}
+}
+
+// Request từ chính máy này (loopback) khỏi cần token — curl/script local vẫn tiện dùng
+function isLoopback(req) {
+  const a = req.socket && req.socket.remoteAddress ? String(req.socket.remoteAddress) : '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+function tokenOk(req, url) {
+  const h = req.headers['x-dash-token'];
+  if (h && String(h) === dashToken) return true;
+  const q = url.searchParams.get('t');
+  return !!(q && q === dashToken);
+}
+
 /* ---------------- server ---------------- */
 
 const server = http.createServer(async (req, res) => {
   if (!hostAllowed(req)) return json(res, 403, { error: 'forbidden host' });
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
+
+  // Vỏ app + PWA cho qua (không có dữ liệu nhạy cảm, cần cho màn nhập token & offline).
+  // Mọi thứ còn lại — kể cả GET /api/* vì chúng lộ nội dung hội thoại — đều cần token.
+  const isShell = p === '/' || p === '/manifest.json' || p === '/sw.js' || p === '/icon.svg';
+  if (!isShell && !isLoopback(req) && !tokenOk(req, url)) {
+    return json(res, 401, { error: 'cần token truy cập' });
+  }
 
   if (p === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -1243,7 +1325,25 @@ const server = http.createServer(async (req, res) => {
       title: titleOf(sid, parsed ? parsed.title : ''),
       status: statusOf(sid, mt),
       error: se && Date.now() - se.at < 120000 ? se.msg : null,
+      // đang chờ duyệt kế hoạch: có file plan ở lượt cuối và Claude đã dừng
+      awaiting: !!(parsed && parsed.planFile && !typing),
+      usage: parsed ? parsed.usage : null, // token đã dùng (thay cho /cost)
     });
+  }
+
+  // ---- duyệt kế hoạch: chạy tiếp lượt đang chờ, lần này CHO PHÉP sửa file ----
+  if ((m = p.match(/^\/api\/approve\/([\w-]+)$/)) && req.method === 'POST') {
+    const sid = m[1];
+    if (procs.has(sid)) return json(res, 409, { error: 'session đang chạy' });
+    let body = {};
+    try { body = await readBody(req); } catch {}
+    const note = String(body.note || '').trim();
+    const msg = note
+      ? 'Duyệt kế hoạch, làm luôn. Lưu ý thêm: ' + note
+      : 'Duyệt kế hoạch. Thực hiện đúng như đã trình bày.';
+    // ép acceptEdits cho lượt này, bất kể công tắc đang ở chế độ nào — người dùng vừa duyệt rồi
+    spawnClaude(['-p', msg, '--resume', sid, '--permission-mode', 'acceptEdits'], sid, { task: msg });
+    return json(res, 200, { ok: true, sid });
   }
 
   // ---- đổi tên phiên chat (ghi riêng dashboard, không đụng .jsonl của Claude CLI) ----
@@ -1529,9 +1629,47 @@ const MANIFEST = JSON.stringify({
 });
 
 // Service worker: network-only (đủ điều kiện PWA) + Web Push nhận notification thật
-const SW_JS = `self.addEventListener('install', function () { self.skipWaiting(); });
-self.addEventListener('activate', function (e) { e.waitUntil(self.clients.claim()); });
-self.addEventListener('fetch', function () { /* network-only */ });
+const SW_JS = `var SHELL = 'ccc-shell-v1';
+var SHELL_URLS = ['/', '/manifest.json', '/icon.svg'];
+
+self.addEventListener('install', function (e) {
+  self.skipWaiting();
+  // nạp sẵn vỏ app để mất mạng vẫn mở được (trước đây trắng màn hình)
+  e.waitUntil(caches.open(SHELL).then(function (c) { return c.addAll(SHELL_URLS); }).catch(function () {}));
+});
+self.addEventListener('activate', function (e) {
+  e.waitUntil(Promise.all([
+    self.clients.claim(),
+    caches.keys().then(function (ks) {
+      return Promise.all(ks.filter(function (k) { return k !== SHELL; })
+        .map(function (k) { return caches.delete(k); }));
+    }),
+  ]));
+});
+// Chỉ cache VỎ app. TUYỆT ĐỐI không cache /api/* — dashboard mà hiện dữ liệu cũ
+// tưởng là mới thì còn tệ hơn báo lỗi mất mạng.
+self.addEventListener('fetch', function (e) {
+  var req = e.request;
+  if (req.method !== 'GET') return;
+  var url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.indexOf('/api/') === 0 || url.pathname === '/stream') return;
+  if (SHELL_URLS.indexOf(url.pathname) < 0) return;
+  // mạng trước (luôn có bản mới nhất), hỏng thì lấy cache
+  e.respondWith(
+    fetch(req).then(function (res) {
+      if (res && res.ok) {
+        var copy = res.clone();
+        caches.open(SHELL).then(function (c) { c.put(req, copy); }).catch(function () {});
+      }
+      return res;
+    }).catch(function () {
+      return caches.match(req).then(function (hit) {
+        return hit || new Response('offline', { status: 503 });
+      });
+    })
+  );
+});
 
 // Push từ server: chỉ hiện system notification khi KHÔNG có tab nào visible —
 // tab đang mở thì toast/beep local đã lo, tránh notification trùng.
@@ -1783,6 +1921,121 @@ const HTML = `<!doctype html>
   .segscroll { min-width: 0; overflow-x: auto; scrollbar-width: none; }
   .segscroll::-webkit-scrollbar { display: none; }
 
+  /* ---- phần suy nghĩ của Claude: có mặt nhưng KHÔNG tranh chỗ với nội dung chính ---- */
+  .thinkcard {
+    border: 1px dashed rgba(139, 92, 246, .30); border-radius: 12px;
+    background: rgba(139, 92, 246, .05); overflow: hidden;
+  }
+  .think-head {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px;
+    padding: 8px 12px; background: none; border: 0; color: #a78bfa; font: inherit;
+    font-size: 12.5px; text-align: left; cursor: pointer;
+  }
+  .think-ic { display: flex; flex-shrink: 0; opacity: .85; }
+  .think-lbl { font-weight: 600; flex-shrink: 0; }
+  .think-peek {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: #7c7f95; font-size: 11.5px; font-style: italic;
+  }
+  .thinkcard .tcard-chev { color: #7c7f95; }
+  /* thinkcard tái dùng .tcard-body nhưng KHÔNG có class .tcard, nên phải khai báo riêng
+     2 quy tắc mở/xoay — thiếu chúng thì bấm vào card không mở ra được */
+  .thinkcard.open .tcard-body { grid-template-rows: 1fr; }
+  .thinkcard.open .tcard-chev { transform: rotate(180deg); }
+  .think-body { padding: 0 12px 10px; font-size: 13px; line-height: 1.6; color: #a9adc0; font-style: italic; }
+  .think-body .md p { margin: 4px 0; }
+
+  /* ---- checklist TodoWrite ---- */
+  .todobox { padding-top: 2px; }
+  .todohead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .todocount { font-size: 11.5px; color: #7f8598; font-variant-numeric: tabular-nums; }
+  .todobar { height: 4px; border-radius: 999px; background: #0b0d13; overflow: hidden; margin: 6px 0 9px; }
+  .todobar span { display: block; height: 100%; background: #10b981; transition: width .3s ease; }
+  .todolist { display: flex; flex-direction: column; gap: 5px; }
+  .todoitem { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.45; }
+  .todomark {
+    width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid #3a3f52; color: transparent;
+  }
+  .todoitem.td-completed .todomark { background: rgba(16,185,129,.16); border-color: rgba(16,185,129,.5); color: #34d399; }
+  .todoitem.td-in_progress .todomark { border-color: rgba(251,191,36,.6); color: #fbbf24; }
+  .todoitem.td-completed .todotext { color: #6f7488; text-decoration: line-through; }
+  .todoitem.td-in_progress .todotext { color: #e4e4e7; font-weight: 500; }
+  .todotext { color: #a9adc0; min-width: 0; word-break: break-word; }
+
+  /* nút gửi biến thành nút DỪNG khi Claude đang chạy (giống Esc trong CLI) */
+  .stopbtn { background: rgba(239, 68, 68, .16) !important; color: #f87171; border: 1px solid rgba(239,68,68,.45); }
+
+  /* thanh báo mất mạng — dưới cùng, không che nội dung */
+  #offbar {
+    position: fixed; left: 0; right: 0; z-index: 95; text-align: center;
+    bottom: calc(58px + env(safe-area-inset-bottom)); padding: 7px 12px;
+    font-size: 12px; color: #d9a441;
+    background: rgba(42, 32, 12, .92); border-top: 1px solid rgba(245, 158, 11, .3);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  }
+  #offbar.hidden { display: none; }
+  @media (min-width: 768px) { #offbar { bottom: 0; } }
+
+  /* kéo-để-làm-mới: vòng xoay kéo xuống từ mép trên danh sách */
+  .ptr {
+    position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center;
+    justify-content: center; height: 0; overflow: hidden; color: #8b8fa3; font-size: 12px;
+    transition: height .2s ease;
+  }
+  .ptr.on { height: 34px; }
+  .ptr.ready { color: #60a5fa; }
+
+  /* nút dừng Claude giữa chừng — cạnh chấm "đang gõ" cho dễ thấy */
+  .stopbtn {
+    min-height: 30px; padding: 0 11px; border-radius: 8px; cursor: pointer; flex-shrink: 0;
+    border: 1px solid rgba(248, 113, 113, .35); background: rgba(248, 113, 113, .10);
+    color: #f87171; font: inherit; font-size: 12px; font-weight: 500;
+    transition: background .2s ease;
+  }
+  @media (min-width: 768px) { .stopbtn:hover { background: rgba(248, 113, 113, .18); } }
+
+  /* thanh chờ duyệt kế hoạch — màu xanh (việc tốt) để phân biệt với banner lỗi đỏ */
+  .approvebox {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 12.5px; line-height: 1.5; border-radius: 10px; padding: 9px 11px;
+    background: rgba(59, 130, 246, .10); border: 1px solid rgba(59, 130, 246, .35); color: #bfdbfe;
+  }
+  .apvbtn {
+    min-height: 34px; padding: 0 12px; border-radius: 9px; cursor: pointer; flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .06);
+    color: #dbeafe; font: inherit; font-size: 12.5px; font-weight: 500;
+    transition: background .2s ease, border-color .2s ease;
+  }
+  .apv-yes { background: linear-gradient(135deg, #3b82f6, #6366f1); border-color: transparent; color: #fff; font-weight: 600; }
+  @media (min-width: 768px) { .apvbtn:hover { border-color: rgba(59, 130, 246, .6); } }
+
+  /* màn nhập mã truy cập: phủ toàn màn, chặn dùng dashboard khi chưa có token */
+  #tokengate {
+    position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center;
+    padding: 20px; background: rgba(6, 8, 13, .82);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  }
+  #tokengate.hidden { display: none; }
+  .tokenbox {
+    width: 100%; max-width: 340px; border-radius: 16px; padding: 20px;
+    background: var(--g-card); border: 1px solid var(--g-line);
+    box-shadow: 0 1px 0 var(--g-spec) inset, 0 18px 50px rgba(0, 0, 0, .5);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5);
+  }
+  .tokeninput {
+    width: 100%; background: rgba(255, 255, 255, .05); border: 1px solid var(--g-line);
+    border-radius: 11px; padding: 12px 13px; font-size: 16px; color: #e4e4e7; outline: none;
+    transition: border-color .2s ease;
+  }
+  .tokeninput:focus { border-color: rgba(59, 130, 246, .65); }
+  .tokenbtn {
+    width: 100%; margin-top: 10px; min-height: 46px; border-radius: 11px; border: 0;
+    background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff;
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+
   /* banner lỗi trong chat: phải THẤY được, không im lặng như trước */
   .chaterrbox {
     display: flex; align-items: flex-start; gap: 8px;
@@ -1800,6 +2053,8 @@ const HTML = `<!doctype html>
   .permdot { width: 8px; height: 8px; border-radius: 50%; background: #4b5163; flex-shrink: 0; }
   .permbtn.p-accept { color: #34d399; border-color: rgba(52, 211, 153, .35); }
   .permbtn.p-accept .permdot { background: #10b981; }
+  .permbtn.p-plan { color: #60a5fa; border-color: rgba(59, 130, 246, .4); }
+  .permbtn.p-plan .permdot { background: #3b82f6; }
   .permbtn.p-bypass { color: #f87171; border-color: rgba(248, 113, 113, .4); }
   .permbtn.p-bypass .permdot { background: #ef4444; }
   @media (min-width: 768px) { .permbtn:hover { border-color: rgba(59, 130, 246, .5); } }
@@ -2340,6 +2595,22 @@ const HTML = `<!doctype html>
 <body class="text-[#e4e4e7] flex flex-col overflow-hidden text-[14px]"
       style="height:100vh;height:100dvh">
 
+<!-- báo mất mạng: vỏ app vẫn mở được nhờ service worker, nhưng dữ liệu thì đứng im -->
+<div id="offbar" class="hidden">Mất kết nối — dữ liệu đang hiển thị là bản cũ</div>
+
+<!-- ================= màn nhập mã truy cập ================= -->
+<div id="tokengate" class="hidden">
+  <div class="tokenbox">
+    <div class="text-[15px] font-semibold mb-1">Nhập mã truy cập</div>
+    <div class="text-[12.5px] text-[#8b8fa3] mb-3 leading-relaxed">
+      Mã in ra ở cửa sổ chạy dashboard (dòng “mã truy cập”). Nhập một lần, máy này nhớ luôn.
+    </div>
+    <input id="tokeninput" class="tokeninput" placeholder="dán mã vào đây" autocomplete="off"
+           onkeydown="if(event.key==='Enter')saveToken()">
+    <button class="tokenbtn" onclick="saveToken()">Vào dashboard</button>
+  </div>
+</div>
+
 <!-- ================= header ================= -->
 <header class="flex items-center gap-3 px-4 py-2.5 shrink-0"
         style="padding-top:calc(env(safe-area-inset-top) + 10px)">
@@ -2413,7 +2684,8 @@ const HTML = `<!doctype html>
           </button>
         </div>
         <div id="jobsbar" class="hidden border-b border-[#262a36] py-1"></div>
-        <div id="main" class="flex-1 overflow-y-auto py-2">
+        <div id="main" class="flex-1 overflow-y-auto py-2 relative">
+          <div id="ptr" class="ptr">kéo xuống để làm mới</div>
           <!-- skeleton shimmer: chỉ hiện khi chờ SSE tick đầu tiên, renderList() remove -->
           <div id="skelrows" class="flex flex-col gap-1 py-1">
             <div class="flex items-center gap-3 px-4 py-2.5 mx-2"><span class="skel w-2 h-2 rounded-full shrink-0"></span><span class="skel w-9 h-9 rounded-[11px] shrink-0"></span><span class="flex-1 flex flex-col gap-2"><span class="skel h-3 w-2/5"></span><span class="skel h-2.5 w-3/5"></span></span></div>
@@ -2482,9 +2754,19 @@ const HTML = `<!doctype html>
           <button class="chaterrx" onclick="document.getElementById('chaterr').classList.add('hidden')"
                   title="Đóng">✕</button>
         </div>
-        <div id="typingind" class="hidden px-4"><div class="tdots"><span></span><span></span><span></span></div></div>
+        <div id="typingind" class="hidden px-4 flex items-center gap-3">
+          <div class="tdots"><span></span><span></span><span></span></div>
+          <!-- dừng giữa chừng: nút Kill ở header là icon thùng rác, dễ tưởng "xoá session" -->
+          <button class="stopbtn" onclick="stopCurrent()" title="Dừng Claude (Esc)">⏹ Dừng</button>
+        </div>
         <!-- lỗi khi chạy Claude (vd phiên không resume được) — trước đây bị nuốt im lặng -->
         <div id="chaterr" class="hidden mx-4 mb-2 chaterrbox"></div>
+        <!-- chờ duyệt kế hoạch (chế độ plan): Claude đã trình bày, chờ người bấm -->
+        <div id="chatapprove" class="hidden mx-4 mb-2 approvebox">
+          <span class="flex-1 min-w-0">Claude đã trình bày kế hoạch và đang chờ duyệt.</span>
+          <button class="apvbtn apv-yes" onclick="approvePlan()">✓ Duyệt &amp; chạy</button>
+          <button class="apvbtn" onclick="document.getElementById('chatinput').focus()">✎ Sửa</button>
+        </div>
         <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
           <div class="flex items-center gap-2">
             <div class="inputwrap flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
@@ -2493,7 +2775,7 @@ const HTML = `<!doctype html>
                      placeholder="Tiếp tục cuộc trò chuyện…">
             </div>
             <button id="chatsendbtn" class="sendgrad w-11 h-11 rounded-xl flex items-center justify-center
-                                            text-white shrink-0"><i data-lucide="send" class="w-4 h-4"></i></button>
+                                            text-white shrink-0" title="Gửi" aria-label="Gửi"></button>
           </div>
         </div>
       </div>
@@ -2727,6 +3009,52 @@ const HTML = `<!doctype html>
 <div id="toast"></div>
 
 <script>
+/* ================= token truy cập =================
+   Bọc fetch một lần để mọi lệnh gọi tự kèm token — khỏi sửa 26 chỗ và khỏi sót về sau.
+   Token lấy từ ?t=... trên URL (link tiện mở máy khác) rồi lưu localStorage. */
+let dashToken = '';
+try {
+  const u = new URL(location.href);
+  const fromUrl = u.searchParams.get('t');
+  if (fromUrl) {
+    localStorage.setItem('dashToken', fromUrl);
+    u.searchParams.delete('t');            // dọn URL cho khỏi lộ token trong lịch sử/chia sẻ
+    history.replaceState(null, '', u.pathname + u.search + u.hash);
+  }
+  dashToken = localStorage.getItem('dashToken') || '';
+} catch {}
+
+const rawFetch = window.fetch.bind(window);
+window.fetch = function (input, init) {
+  const url = typeof input === 'string' ? input : (input && input.url) || '';
+  // chỉ gắn token cho API của chính dashboard, không đụng request ra ngoài
+  if (dashToken && (url.indexOf('/api/') === 0 || url.indexOf('/stream') === 0)) {
+    init = Object.assign({}, init);
+    init.headers = Object.assign({}, init.headers, { 'X-Dash-Token': dashToken });
+  }
+  return rawFetch(input, init).then(r => {
+    if (r.status === 401) askToken();       // token sai/hết -> hỏi lại
+    return r;
+  });
+};
+
+// Màn nhập mã: hiện khi chưa có token hoặc token sai
+let tokenPromptOpen = false;
+function askToken() {
+  if (tokenPromptOpen) return;
+  tokenPromptOpen = true;
+  const box = document.getElementById('tokengate');
+  if (box) box.classList.remove('hidden');
+  const inp = document.getElementById('tokeninput');
+  if (inp) setTimeout(() => inp.focus(), 60);
+}
+function saveToken() {
+  const v = (document.getElementById('tokeninput').value || '').trim();
+  if (!v) return;
+  localStorage.setItem('dashToken', v);
+  location.reload(); // nạp lại để mọi kết nối (kể cả SSE) dùng token mới
+}
+
 /* ================= state chung ================= */
 let currentSid = null;
 let chatTimer = null;
@@ -2890,6 +3218,41 @@ function scrollableXAncestor(el) {
   }
   return false;
 }
+/* ---- kéo-để-làm-mới trên danh sách session (chỉ khi đã ở đỉnh) ---- */
+let ptrY = 0, ptrActive = false;
+function ptrEl() { return document.getElementById('ptr'); }
+document.addEventListener('touchstart', e => {
+  const main = document.getElementById('main');
+  ptrActive = !!(e.touches.length === 1 && main && !main.classList.contains('hidden')
+    && activeTab === 'cli' && !currentSid && !compareSids && main.scrollTop <= 0);
+  if (ptrActive) ptrY = e.touches[0].clientY;
+}, { passive: true });
+document.addEventListener('touchmove', e => {
+  if (!ptrActive || !e.touches.length) return;
+  const dy = e.touches[0].clientY - ptrY;
+  const el = ptrEl();
+  if (!el) return;
+  if (dy > 24) {
+    el.classList.add('on');
+    // đủ xa -> đổi màu + đổi chữ báo thả tay là làm mới
+    el.classList.toggle('ready', dy > 70);
+    setText(el, dy > 70 ? 'thả ra để làm mới' : 'kéo xuống để làm mới');
+  } else el.classList.remove('on', 'ready');
+}, { passive: true });
+document.addEventListener('touchend', e => {
+  if (!ptrActive) return;
+  ptrActive = false;
+  const el = ptrEl();
+  if (!el) return;
+  const fire = el.classList.contains('ready');
+  el.classList.remove('on', 'ready');
+  if (!fire) return;
+  if (navigator.vibrate) navigator.vibrate(15);
+  // SSE tự đẩy dữ liệu; nạp lại trang là cách chắc chắn nhất khi kết nối đã chết
+  if (es.readyState === 2) location.reload();
+  else { renderList(); toast('Đã làm mới'); }
+}, { passive: true });
+
 document.addEventListener('touchstart', e => {
   if (e.touches.length !== 1) { swSkip = true; return; }
   const t = e.touches[0];
@@ -2938,13 +3301,31 @@ function updateBadges() {
 }
 
 /* ================= SSE ================= */
-const es = new EventSource('/stream');
+// EventSource KHÔNG gửi được custom header -> token phải đi qua query string
+const es = new EventSource('/stream' + (dashToken ? '?t=' + encodeURIComponent(dashToken) : ''));
+es.onerror = () => {
+  if (!dashToken) askToken();       // chưa có token thì hiện màn nhập mã
+  setOffline(true);                 // SSE đứt = mất kết nối tới server
+};
+es.onopen = () => setOffline(false);
+
+/* ---- báo mất mạng: vỏ app vẫn mở nhờ service worker nhưng dữ liệu thì đứng im ---- */
+function setOffline(off) {
+  const bar = document.getElementById('offbar');
+  if (!bar) return;
+  const show = off || !navigator.onLine;
+  if (bar.classList.contains('hidden') === !show) return; // không đổi -> khỏi đụng DOM
+  bar.classList.toggle('hidden', !show);
+}
+window.addEventListener('offline', () => setOffline(true));
+window.addEventListener('online', () => setOffline(false));
 let prevRunning = null; // Set sid RUNNING tick trước — null = tick đầu (không notify session cũ)
 es.onmessage = e => {
   const data = JSON.parse(e.data);
   allSessions = data.sessions || [];
   allJobs = data.jobs || [];
-  if (data.perm) { permMode = data.perm; renderPerm(); } // server là nguồn thật (renderPerm tự no-op nếu không đổi)
+  // server là nguồn thật, NHƯNG đang đổi dở thì đừng để tick cũ kéo ngược lại
+  if (data.perm && !permBusy) { permMode = data.perm; renderPerm(); }
   // RUNNING -> hết RUNNING = Claude trả lời xong; chỉ notify khi KHÔNG đang mở chat đó
   const nowRunning = new Set();
   allSessions.forEach(s => { if (s.status === 'RUNNING') nowRunning.add(s.sid); });
@@ -3172,6 +3553,9 @@ document.addEventListener('keydown', e => {
     if (document.getElementById('overlay').style.display === 'flex') return closeOverlay();
     if (inField) return e.target.blur();
     if (activeTab === 'cli' && compareSids) return closeCompare();
+    // Claude đang chạy -> Esc là DỪNG (giống CLI), chưa phải thoát ra danh sách
+    if (activeTab === 'cli' && currentSid
+        && !document.getElementById('typingind').classList.contains('hidden')) return stopCurrent();
     if (activeTab === 'cli' && currentSid) return backToList();
     if (activeTab === 'hermes' && hermesOpenId) return hermesBack();
     return;
@@ -3309,6 +3693,9 @@ const COMMANDS = [
   { cmd: '/jobs', icon: 'list-checks', desc: 'Xem loop/cron jobs đang chạy', tag: 'claude', noargs: true },
   { cmd: '/summary', icon: 'file-text', desc: 'Tóm tắt session đang mở', tag: 'claude', noargs: true },
   { cmd: '/export', icon: 'download', desc: 'Export session: tải .md/.json hoặc copy clipboard', tag: 'claude', noargs: true },
+  { cmd: '/cost', icon: 'coins', desc: 'Token đã dùng của session đang mở', tag: 'claude', noargs: true },
+  { cmd: '/compact', icon: 'fold-vertical', desc: 'Dọn ngữ cảnh khi hội thoại quá dài', tag: 'claude', noargs: true },
+  { cmd: '/stop', icon: 'square', desc: 'Dừng Claude đang chạy (hoặc bấm Esc)', tag: 'claude', noargs: true },
   { cmd: '/theme', icon: 'sun-moon', desc: 'Toggle giao diện sáng/tối', tag: 'claude', noargs: true },
   { cmd: '/memory', icon: 'brain', desc: 'Hermes: quản lý memory', tag: 'hermes' },
   { cmd: '/todo', icon: 'list-todo', desc: 'Hermes: xem/thêm todo', tag: 'hermes' },
@@ -3501,6 +3888,9 @@ function routeSlash(raw) {
   if (cmd === 'clear') return clearChatLocal();
   if (cmd === 'model') return setModel(rest);
   if (cmd === 'export') return exportCurrent();
+  if (cmd === 'cost') return showCost();
+  if (cmd === 'compact') return compactSession();
+  if (cmd === 'stop') return stopCurrent();
   if (cmd === 'summary') return summarize();
   if (cmd === 'loop') return startLoop(rest);
   if (cmd === 'schedule') return startSchedule(rest);
@@ -3581,6 +3971,12 @@ function mdParts(msg) {
   if (!msg.parts || !msg.parts.length) return msg.content || '';
   return msg.parts.map(p => {
     if (p.t === 'text') return p.text;
+    if (p.t === 'think') return '> 💭 _Suy nghĩ:_ ' + p.text.split(NL).join(NL + '> ');
+    if (p.todos && p.todos.length) {
+      return '> ✅ **Todos**' + NL + NL + p.todos.map(t =>
+        '- [' + (t.status === 'completed' ? 'x' : ' ') + '] ' + t.text
+        + (t.status === 'in_progress' ? ' _(đang làm)_' : '')).join(NL);
+    }
     let s = '> 🔧 **' + (p.disp || p.name) + '**'
       + (p.summary ? ' — ' + TICK + p.summary + TICK : '')
       + ' — ' + (TOOL_ST_TXT[p.status] || p.status);
@@ -3785,6 +4181,10 @@ const ICON_CHEV = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" s
 const ICON_OK = SVG_A + '<path d="M20 6 9 17l-5-5"/></svg>';
 const ICON_ERR = SVG_A + '<path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 const ICON_RUN = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>';
+const ICON_THINK = SVG_A + '<path d="M12 3a6 6 0 0 0-4 10.5V16a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.5A6 6 0 0 0 12 3Z"/><path d="M10 21h4"/></svg>';
+const ICON_STOP = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
+// SVG thay vì <i data-lucide>: nút này đổi qua lại gửi/dừng, Lucide chỉ thay icon 1 lần lúc load
+const ICON_SEND = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>';
 const ICON_DASH = SVG_A + '<path d="M5 12h14"/></svg>';
 
 function toolIcon(name) {
@@ -3954,6 +4354,12 @@ function buildToolBody(card) {
   const inner = card.querySelector('.tinner');
   inner.innerHTML = '';
   const p = card._part;
+  // TodoWrite -> checklist thật thay vì JSON thô
+  if (p.todos && p.todos.length) {
+    inner.appendChild(renderTodoList(p.todos));
+    card._built = true;
+    return;
+  }
   const isDiff = p.name === 'Edit' && p.input && p.input.indexOf('--- old') === 0;
   if (p.input) {
     inner.appendChild(toolSection(isDiff ? 'THAY ĐỔI' : 'INPUT', p.input, false, {
@@ -3974,6 +4380,85 @@ function buildToolBody(card) {
   }
   if (p.images && p.images.length) inner.appendChild(toolImages(p));
   card._built = true;
+}
+
+/* Phần suy nghĩ của Claude: mặc định thu gọn (không chiếm chỗ), bấm để mở.
+   Claude CLI có hiện phần này; dashboard trước đây vứt hoàn toàn. */
+function renderThinkCard(part) {
+  const card = document.createElement('div');
+  card.className = 'thinkcard fadein';
+  const head = document.createElement('button');
+  head.type = 'button';
+  head.className = 'think-head';
+  head.setAttribute('aria-expanded', 'false');
+  const ic = document.createElement('span');
+  ic.className = 'think-ic';
+  ic.innerHTML = ICON_THINK;
+  const lb = document.createElement('span');
+  lb.className = 'think-lbl';
+  lb.textContent = 'Suy nghĩ';
+  // trích 1 dòng đầu làm mồi, để đóng vẫn đoán được nội dung
+  const peek = document.createElement('span');
+  peek.className = 'think-peek';
+  // KHÔNG dùng regex \s ở đây: template literal của server nuốt backslash -> /s+/ (thay chữ "s")
+  peek.textContent = part.text.split(String.fromCharCode(10)).join(' ').slice(0, 90);
+  const chev = document.createElement('span');
+  chev.className = 'tcard-chev';
+  chev.innerHTML = ICON_CHEV;
+  head.appendChild(ic); head.appendChild(lb); head.appendChild(peek); head.appendChild(chev);
+
+  const body = document.createElement('div');
+  body.className = 'tcard-body';
+  const inner = document.createElement('div');
+  inner.className = 'tinner think-body';
+  body.appendChild(inner);
+  head.onclick = () => {
+    const open = card.classList.toggle('open');
+    head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open && !card._built) { inner.appendChild(mdToNode(part.text)); card._built = true; }
+  };
+  card.appendChild(head);
+  card.appendChild(body);
+  return card;
+}
+
+/* Checklist TodoWrite: hiện việc thật + tiến độ, thay vì đổ JSON thô ra khối code */
+function renderTodoList(todos) {
+  const box = document.createElement('div');
+  box.className = 'tsec todobox';
+  const done = todos.filter(t => t.status === 'completed').length;
+  const head = document.createElement('div');
+  head.className = 'todohead';
+  const lb = document.createElement('span');
+  lb.className = 'tlbl';
+  lb.textContent = 'CÔNG VIỆC';
+  const cnt = document.createElement('span');
+  cnt.className = 'todocount';
+  cnt.textContent = done + '/' + todos.length;
+  head.appendChild(lb); head.appendChild(cnt);
+  box.appendChild(head);
+  const bar = document.createElement('div');
+  bar.className = 'todobar';
+  const fill = document.createElement('span');
+  fill.style.width = (todos.length ? done / todos.length * 100 : 0) + '%';
+  bar.appendChild(fill);
+  box.appendChild(bar);
+  const list = document.createElement('div');
+  list.className = 'todolist';
+  for (const t of todos) {
+    const row = document.createElement('div');
+    row.className = 'todoitem td-' + t.status;
+    const mark = document.createElement('span');
+    mark.className = 'todomark';
+    mark.innerHTML = t.status === 'completed' ? ICON_OK : (t.status === 'in_progress' ? ICON_RUN : '');
+    const tx = document.createElement('span');
+    tx.className = 'todotext';
+    tx.textContent = t.text;
+    row.appendChild(mark); row.appendChild(tx);
+    list.appendChild(row);
+  }
+  box.appendChild(list);
+  return box;
 }
 
 function renderToolCard(part) {
@@ -4020,6 +4505,7 @@ function renderToolCard(part) {
     if (opening && !card._built) buildToolBody(card);
     card.classList.toggle('open', opening);
     head.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    if (navigator.vibrate) navigator.vibrate(10); // phản hồi chạm nhẹ như app native
   };
 
   card.appendChild(head);
@@ -4081,7 +4567,8 @@ function metaLine(msg, align) {
 }
 
 function bubbleFor(msg) {
-  const hasTool = msg.parts && msg.parts.some(p => p.t === 'tool');
+  // 'think' cũng phải đi nhánh parts: msg.content không chứa thinking (flattenParts bỏ nó)
+  const hasTool = msg.parts && msg.parts.some(p => p.t === 'tool' || p.t === 'think');
   const w = document.createElement('div');
   w.className = 'msgwrap fadein' + (msg.role === 'user' ? ' mw-user' : '');
   if (!hasTool) {
@@ -4099,6 +4586,8 @@ function bubbleFor(msg) {
         b.className = 'bub ' + (msg.role === 'user' ? 'bub-user' : 'bub-assistant');
         renderContent(b, p.text);
         w.appendChild(b);
+      } else if (p.t === 'think') {
+        w.appendChild(renderThinkCard(p));
       } else {
         w.appendChild(renderToolCard(p));
       }
@@ -4203,6 +4692,7 @@ function openChat(sid) {
   document.getElementById('bubbles').innerHTML = '';
   document.getElementById('typingind').classList.add('hidden');
   document.getElementById('chaterr').classList.add('hidden');
+  setChatRunning(false); // phiên mới: nút về trạng thái gửi cho tới khi poll xác nhận
   refreshChat();
   clearInterval(chatTimer);
   chatTimer = setInterval(refreshChat, 2000); // auto-refresh: chỉ APPEND message mới
@@ -4455,10 +4945,16 @@ async function refreshChat() {
     errBox.classList.remove('hidden');
   } else errBox.classList.add('hidden');
   document.getElementById('typingind').classList.toggle('hidden', !r.typing);
+  setChatRunning(r.status === 'RUNNING'); // đang chạy -> nút gửi thành nút Dừng
   // lỗi chạy Claude (resume trượt...) -> hiện rõ, đừng để user tưởng đã gửi được
   const ce = document.getElementById('chaterr');
   if (r.error) { setText(ce, r.error); ce.classList.remove('hidden'); }
   else ce.classList.add('hidden');
+  // chờ duyệt kế hoạch -> hiện thanh Duyệt/Sửa (rung nhẹ 1 lần khi vừa xuất hiện)
+  const ap = document.getElementById('chatapprove');
+  const wasHidden = ap.classList.contains('hidden');
+  ap.classList.toggle('hidden', !r.awaiting);
+  if (r.awaiting && wasHidden && navigator.vibrate) navigator.vibrate(30);
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
@@ -4473,9 +4969,10 @@ function killCurrent() {
 const PERM_UI = {
   default: { label: 'Hỏi quyền', cls: '', toast: 'Chế độ mặc định — Claude KHÔNG tự sửa được file (sẽ báo chưa có quyền)' },
   acceptEdits: { label: 'Tự sửa file', cls: 'p-accept', toast: 'Claude tự sửa/tạo file được; lệnh nguy hiểm vẫn bị chặn' },
+  plan: { label: 'Duyệt trước', cls: 'p-plan', toast: 'Claude trình bày kế hoạch rồi chờ bạn bấm Duyệt mới làm' },
   bypassPermissions: { label: 'Bỏ mọi kiểm tra', cls: 'p-bypass', toast: 'CẨN THẬN: bỏ qua MỌI kiểm tra quyền, kể cả lệnh nguy hiểm' },
 };
-const PERM_CYCLE = ['acceptEdits', 'default', 'bypassPermissions'];
+const PERM_CYCLE = ['acceptEdits', 'plan', 'default', 'bypassPermissions'];
 let permMode = 'acceptEdits';
 
 function renderPerm() {
@@ -4488,9 +4985,11 @@ function renderPerm() {
   b.title = 'Quyền của Claude: ' + ui.label + ' — bấm để đổi';
 }
 
+let permBusy = false; // đang chờ server xác nhận -> SSE tick cũ không được ghi đè
 function cyclePerm() {
   const next = PERM_CYCLE[(PERM_CYCLE.indexOf(permMode) + 1) % PERM_CYCLE.length];
   permMode = next;
+  permBusy = true;
   renderPerm();
   fetch('/api/perm', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4498,7 +4997,74 @@ function cyclePerm() {
   }).then(r => r.json()).then(r => {
     if (r.mode) { permMode = r.mode; renderPerm(); }
     toast(PERM_UI[permMode].toast);
-  }).catch(() => toast('Không đổi được chế độ quyền'));
+  }).catch(() => toast('Không đổi được chế độ quyền'))
+    .finally(() => { permBusy = false; });
+}
+
+/* ---- /cost: token đã dùng của phiên (đọc từ JSONL, không gọi CLI) ---- */
+function showCost() {
+  if (!currentSid) return toast('Mở 1 session trước rồi mới /cost');
+  fetch('/api/history/' + currentSid).then(r => r.json()).then(r => {
+    const u = r.usage;
+    if (!u || !u.turns) return toast('Phiên này chưa có dữ liệu token');
+    const box = document.createElement('div');
+    box.className = 'flex flex-col gap-2 text-[13px]';
+    const row = (k, v, dim) => {
+      const d = document.createElement('div');
+      d.className = 'flex justify-between gap-4' + (dim ? ' text-[#7f8598]' : '');
+      const a = document.createElement('span'); a.textContent = k;
+      const b = document.createElement('span'); b.className = 'tabular-nums'; b.textContent = v;
+      d.appendChild(a); d.appendChild(b);
+      return d;
+    };
+    // cache_read rẻ hơn nhiều so với input thường -> tách riêng cho khỏi hiểu nhầm
+    box.appendChild(row('Số lượt', String(u.turns)));
+    box.appendChild(row('Token gửi đi', shortNum(u.inTok)));
+    box.appendChild(row('Token nhận về', shortNum(u.outTok)));
+    box.appendChild(row('Đọc từ cache', shortNum(u.cacheRead), true));
+    box.appendChild(row('Ghi vào cache', shortNum(u.cacheWrite), true));
+    const note = document.createElement('div');
+    note.className = 'text-[11.5px] text-[#7f8598] leading-relaxed mt-1 pt-2 border-t border-[#262a36]';
+    note.textContent = 'Token đọc từ cache rẻ hơn nhiều so với token gửi mới, nên con số lớn ở dòng đó là bình thường.';
+    box.appendChild(note);
+    showOverlay('Token đã dùng — ' + (chatTitle || currentSid.slice(0, 8)), box,
+      [overlayButton('Đóng', closeOverlay, true)]);
+  }).catch(() => toast('Không đọc được dữ liệu token'));
+}
+
+/* ---- /compact: nhờ Claude tóm tắt ngữ cảnh khi hội thoại quá dài ---- */
+function compactSession() {
+  if (!currentSid) return toast('Mở 1 session trước rồi mới /compact');
+  fetch('/api/chat/' + currentSid, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: '/compact' }),
+  }).then(r => r.json()).then(r => {
+    if (r.ok) { toast('Đang dọn ngữ cảnh…'); refreshChat(); }
+    else toast('Lỗi: ' + (r.error || '?'));
+  }).catch(() => toast('Không chạy được /compact'));
+}
+
+/* ---- dừng Claude giữa chừng (nút ⏹ hoặc Esc khi đang chạy) ---- */
+function stopCurrent() {
+  if (!currentSid) return;
+  fetch('/api/kill/' + currentSid, { method: 'POST' })
+    .then(r => r.json())
+    .then(() => { toast('Đã dừng Claude'); if (navigator.vibrate) navigator.vibrate([20, 40, 20]); refreshChat(); })
+    .catch(() => toast('Không dừng được'));
+}
+
+/* ---- duyệt kế hoạch: chạy tiếp lượt đang chờ, lần này cho phép sửa file ---- */
+function approvePlan() {
+  if (!currentSid) return;
+  const sid = currentSid;
+  const ap = document.getElementById('chatapprove');
+  ap.classList.add('hidden'); // ẩn ngay cho khỏi bấm 2 lần
+  fetch('/api/approve/' + sid, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  }).then(r => r.json()).then(r => {
+    if (r.ok) { toast('Đã duyệt — Claude đang thực hiện'); refreshChat(); }
+    else { toast('Không duyệt được: ' + (r.error || '?')); ap.classList.remove('hidden'); }
+  }).catch(() => { toast('Không duyệt được'); ap.classList.remove('hidden'); });
 }
 
 /* ---- đổi tên phiên: lưu riêng ở dashboard, KHÔNG sửa .jsonl của Claude CLI ---- */
@@ -4540,7 +5106,24 @@ function renameSession() {
   setTimeout(() => { inp.focus(); inp.select(); }, 50);
 }
 
+/* Nút gửi hoá thành nút DỪNG khi Claude đang chạy — tương đương Esc trong Claude CLI.
+   Trước đây đang chạy mà bấm gửi thì server trả 409 "session is busy", không có cách nào
+   ngắt ngoài nút thùng rác (nhìn như xoá phiên, chẳng ai dám bấm). */
+let chatRunning = false;
+function setChatRunning(on) {
+  if (chatRunning === on) return;
+  chatRunning = on;
+  const b = document.getElementById('chatsendbtn');
+  if (!b) return;
+  b.classList.toggle('stopbtn', on);
+  b.classList.toggle('sendgrad', !on);
+  b.innerHTML = on ? ICON_STOP : ICON_SEND;
+  b.title = on ? 'Dừng Claude (đang chạy)' : 'Gửi';
+  b.setAttribute('aria-label', b.title);
+}
+
 function submitChat() {
+  if (chatRunning) return stopChat();
   const inp = document.getElementById('chatinput');
   const v = inp.value.trim();
   if (!v || !currentSid) return;
@@ -4560,8 +5143,22 @@ function submitChat() {
     })
     .catch(e => { inp.value = v; toast('Lỗi mạng: ' + e.message); });
 }
+function stopChat() {
+  if (!currentSid) return;
+  const sid = currentSid;
+  fetch('/api/kill/' + sid, { method: 'POST' })
+    .then(r => r.json())
+    .then(r => {
+      if (r && r.error) return toast('Không dừng được: ' + r.error);
+      toast('Đã dừng Claude');
+      setChatRunning(false);
+      refreshChat();
+    })
+    .catch(e => toast('Lỗi mạng: ' + e.message));
+}
 document.getElementById('chatinput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) submitChat(); });
 document.getElementById('chatsendbtn').addEventListener('click', submitChat);
+document.getElementById('chatsendbtn').innerHTML = ICON_SEND; // trạng thái ban đầu: gửi
 
 /* ================= HERMES tab: stable render ================= */
 let hermesConvos = [];
@@ -5285,4 +5882,6 @@ server.on('error', e => {
 });
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`claude-dashboard listening on http://localhost:${PORT}`);
+  console.log(`  mã truy cập: ${dashToken}`);
+  console.log(`  mở nhanh trên máy khác: http://<ip>:${PORT}/?t=${dashToken}`);
 });

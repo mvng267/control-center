@@ -2,3 +2,6 @@ node_modules/
 *.log
 .DS_Store
 .push-state.json
+
+# token truy cập dashboard — KHÔNG commit
+dashboard-token.json
