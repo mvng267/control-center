@@ -2318,6 +2318,12 @@ const HTML = `<!doctype html>
     backdrop-filter: blur(8px) saturate(1.2);
   }
 
+  /* Chữ phụ trên nền kính: nền sáng hơn nền đặc cũ nên #666b7d chỉ còn tương phản 3.0.
+     Nâng lên #7f8598 (~4.4) cho chữ nhỏ vẫn đọc được ngoài nắng. */
+  .s-proj, .tlbl, .ustat-l, .mgrp-count, .tcard-sum, .bmeta, .daydiv span,
+  .agyhero-meta, .acclg, .urow-n, .ucode, .codelang { color: #7f8598 !important; }
+  .s-time, .s-msgs, .uhours-lbl span { color: #6f7488 !important; }
+
   /* KHÔNG hỗ trợ backdrop-filter (Firefox cũ...) -> nền đặc, vẫn đọc tốt */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     header, #tabbar, #sidenav { background: #12141c !important; }
@@ -2329,12 +2335,14 @@ const HTML = `<!doctype html>
 </head>
 <!-- height dvh (không phải h-screen/100vh): iOS Safari tính 100vh gồm cả vùng sau toolbar/home
      indicator -> bottom tab bar + input bar bị đẩy xuống dưới nút home. dvh = viewport thật. -->
-<body class="bg-[#0f1117] text-[#e4e4e7] flex flex-col overflow-hidden text-[14px]"
+<!-- KHÔNG đặt bg ở đây: nền gradient của lớp glass (khối GLASS trong <style>) lo phần này;
+     class bg-* của Tailwind sẽ đè mất nền kính -->
+<body class="text-[#e4e4e7] flex flex-col overflow-hidden text-[14px]"
       style="height:100vh;height:100dvh">
 
 <!-- ================= header ================= -->
-<header class="flex items-center gap-3 px-4 py-2.5 border-b border-[#262a36] shrink-0"
-        style="padding-top:calc(env(safe-area-inset-top) + 10px);background:linear-gradient(90deg,#0f1117,#1a1d27,#0f1117)">
+<header class="flex items-center gap-3 px-4 py-2.5 shrink-0"
+        style="padding-top:calc(env(safe-area-inset-top) + 10px)">
   <div class="logoglow w-8 h-8 rounded-[10px] bg-[#3b82f6]/15 flex items-center justify-center text-[#3b82f6] shrink-0">
     <i data-lucide="terminal" class="w-4 h-4"></i>
   </div>

@@ -504,6 +504,30 @@ function cleanFixture() {
     await page.waitForTimeout(200);
     // KHÔNG xoá UXFILE ở đây: vòng viewport thứ 2 còn dùng lại. Dọn ở cleanFixture().
 
+    // ---- GLASS: blur đúng chỗ + KHÔNG blur trên vùng cuộn (94 lớp blur = tụt fps iPhone) ----
+    const glass = await page.evaluate(() => {
+      const bf = el => {
+        const c = getComputedStyle(el);
+        return c.backdropFilter || c.webkitBackdropFilter || 'none';
+      };
+      const has = sel => { const e = document.querySelector(sel); return e ? bf(e) !== 'none' : null; };
+      const rows = [...document.querySelectorAll('#sessrows .srow')];
+      return {
+        supports: CSS.supports('backdrop-filter', 'blur(1px)') || CSS.supports('-webkit-backdrop-filter', 'blur(1px)'),
+        header: has('header'),
+        bodyGradient: getComputedStyle(document.body).backgroundImage.indexOf('gradient') >= 0,
+        // dòng session cuộn nhiều -> PHẢI không có blur
+        rowsBlurred: rows.filter(r => bf(r) !== 'none').length,
+        rowsTotal: rows.length,
+        // tổng số phần tử blur phải nhỏ (bề mặt tĩnh thôi)
+        totalBlurred: [...document.querySelectorAll('*')].filter(e => bf(e) !== 'none').length,
+      };
+    });
+    ok(label + ': glass — nền gradient + blur ở chrome, KHÔNG blur trên dòng cuộn',
+      glass.bodyGradient && (!glass.supports || glass.header)
+      && glass.rowsBlurred === 0 && glass.totalBlurred < 60,
+      JSON.stringify(glass));
+
     // ---- công tắc quyền: dashboard chạy claude -p nên KHÔNG có hộp thoại hỏi quyền;
     // acceptEdits là thứ giúp Claude thật sự sửa được file thay vì báo "chưa có quyền" ----
     const perm = await page.evaluate(async () => {
