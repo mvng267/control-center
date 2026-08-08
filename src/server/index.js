@@ -1421,6 +1421,48 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ...(await getHermesData()), sending: hermesSending > 0 });
   }
   // Chat 2 chiều: gọi THẬT Hermes CLI (-z "<text>" -m <model>), đợi stdout -> reply
+  // ---- chạy lệnh con của Hermes CLI (status, sessions, skills, memory, cron, doctor…)
+  // Whitelist: Hermes có 70+ lệnh, nhiều cái cần tương tác terminal (setup, login) hoặc
+  // đổi cấu hình máy — chỉ mở những lệnh ĐỌC/an toàn để bấm nhầm không hỏng gì. ----
+  const HERMES_SAFE = ['status', 'sessions', 'skills', 'memory', 'cron', 'doctor', 'model',
+    'tools', 'mcp', 'insights', 'version', 'config'];
+  if (p === '/api/hermes/run' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { ok: false, error: 'bad json' }); }
+    const cmd = String(body.cmd || '').trim();
+    const args = Array.isArray(body.args) ? body.args.map(String).slice(0, 6) : [];
+    if (HERMES_SAFE.indexOf(cmd) < 0) return json(res, 400, { ok: false, error: 'lệnh không được phép: ' + cmd });
+    execFile(HERMES_BIN, [cmd, ...args], { maxBuffer: 4 * 1024 * 1024, timeout: 30000, env: process.env },
+      (err, stdout, stderr) => {
+        const out = ((stdout || '') + (stderr || '')).trim();
+        if (err && !out) return json(res, 500, { ok: false, error: err.message.slice(0, 300) });
+        json(res, 200, { ok: true, output: out.slice(-20000) || '(không có output)' });
+      });
+    return;
+  }
+
+  // ---- chạy lệnh slash của Claude CLI và trả VĂN BẢN (không tạo phiên chat).
+  // Dùng cho /context /cost /mcp /doctor… — những lệnh chỉ để xem thông tin. ----
+  if (p === '/api/claude/run' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { ok: false, error: 'bad json' }); }
+    const cmd = String(body.cmd || '').trim();
+    if (!cmd.startsWith('/')) return json(res, 400, { ok: false, error: 'phải là lệnh slash' });
+    const cwd = body.sid ? (sessionCwd(String(body.sid)) || os.homedir()) : os.homedir();
+    const args = ['-p', cmd].concat(permArgs());
+    execFile('claude', args, { cwd, maxBuffer: 4 * 1024 * 1024, timeout: 60000, env: process.env },
+      (err, stdout, stderr) => {
+        const out = ((stdout || '') + (stderr || '')).trim();
+        // CLI chặn lệnh ở chế độ -p thì báo rõ, đừng để người dùng tưởng hỏng
+        if (/isn't available in this environment/i.test(out)) {
+          return json(res, 200, { ok: false, blocked: true, output: out.slice(0, 500) });
+        }
+        if (err && !out) return json(res, 500, { ok: false, error: err.message.slice(0, 300) });
+        json(res, 200, { ok: true, output: out.slice(-20000) || '(không có output)' });
+      });
+    return;
+  }
+
   if (p === '/api/hermes/send' && req.method === 'POST') {
     let body;
     try { body = await readBody(req); } catch { return json(res, 400, { ok: false, error: 'bad json' }); }

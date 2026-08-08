@@ -58,7 +58,8 @@ export function HermesTab() {
     setExtra(next); saveExtra(next);
     try {
       const r = await api<{ reply?: string; error?: string }>('/api/hermes/send', {
-        method: 'POST', body: JSON.stringify({ message: v, id: openId }),
+        // server đọc trường `text` (không phải `message`) — gửi sai tên là luôn 400
+        method: 'POST', body: JSON.stringify({ text: v }),
       });
       if (r.reply) {
         const withReply = { ...next, [openId]: [...(next[openId] || []),
