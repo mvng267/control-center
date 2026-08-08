@@ -48,6 +48,14 @@ function writeFixture() {
 }
 function cleanFixture() {
   try { fs.rmSync(FIX_DIR, { recursive: true, force: true }); } catch {}
+  // xoá tên tự đặt do test tạo — để sót thì lần chạy sau đọc phải tên cũ và fail
+  try {
+    const f = path.join(os.homedir(), '.claude', 'dashboard-titles.json');
+    const t = JSON.parse(fs.readFileSync(f, 'utf8'));
+    let dirty = false;
+    for (const k of Object.keys(t)) if (k.startsWith('e2e00000-')) { delete t[k]; dirty = true; }
+    if (dirty) fs.writeFileSync(f, JSON.stringify(t, null, 2));
+  } catch {}
 }
 
 (async () => {
@@ -597,6 +605,11 @@ function cleanFixture() {
     // đợi SSE (2s/tick) đẩy session fixture vào danh sách
     await page.waitForFunction(sid =>
       !!document.querySelector('#sessrows .srow[data-sid="' + sid + '"] .s-sid'), TTSID, { timeout: 8000 }).catch(() => {});
+    // đợi SSE đẩy đúng tiêu đề (vòng viewport trước có thể vừa đổi tên -> tick cũ còn tên cũ)
+    await page.waitForFunction(sid => {
+      const r = document.querySelector('#sessrows .srow[data-sid="' + sid + '"] .s-sid');
+      return r && r.textContent === 'Tiêu đề Claude CLI đặt';
+    }, TTSID, { timeout: 8000 }).catch(() => {});
     const inList = await page.evaluate(sid => {
       const row = document.querySelector('#sessrows .srow[data-sid="' + sid + '"] .s-sid');
       return row ? row.textContent : null;
@@ -817,12 +830,16 @@ function cleanFixture() {
     // compare: bật mode -> chọn 2 session -> split view 2 cột có bubbles -> Esc đóng
     const nSess = await page.evaluate(() => allSessions.length);
     if (nSess >= 2) {
+      // chọn 2 phiên CÓ message thật — phiên fixture vừa bị xoá / phiên mới 0-1 tin
+      // làm cột rỗng và test fail ngẫu nhiên
       await page.evaluate(() => {
+        const withMsgs = allSessions.filter(s => s.msgs >= 2).slice(0, 2);
+        const pick = withMsgs.length === 2 ? withMsgs : allSessions.slice(0, 2);
         toggleCompareMode();
-        rowClick(allSessions[0].sid);
-        rowClick(allSessions[1].sid);
+        rowClick(pick[0].sid);
+        rowClick(pick[1].sid);
       });
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1200);
       const cmp = await page.evaluate(() => ({
         open: !document.getElementById('compare').classList.contains('hidden'),
         listHidden: document.getElementById('list').classList.contains('hidden'),

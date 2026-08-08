@@ -379,6 +379,34 @@ function sessionLabel(sid) {
   return t ? (t.length > 60 ? t.slice(0, 60) + '…' : t) : 'Claude ' + sid.slice(0, 8);
 }
 
+/* ---- thư mục làm việc của phiên ----
+   Claude CLI tìm phiên theo CWD: chạy `--resume <sid>` từ thư mục khác sẽ báo
+   "No conversation found with session ID" và tin nhắn RƠI VÀO HƯ KHÔNG.
+   Dashboard trước đây luôn spawn từ home -> mọi phiên không thuộc home đều không
+   nhắn được. Mỗi dòng .jsonl có sẵn trường cwd -> đọc ra để spawn đúng chỗ. */
+const cwdCache = new Map(); // sid -> cwd (bất biến trong 1 phiên)
+function sessionCwd(sid) {
+  if (cwdCache.has(sid)) return cwdCache.get(sid);
+  const file = findSessionFile(sid);
+  let cwd = null;
+  if (file) {
+    try {
+      // cwd nằm ngay dòng user đầu tiên — đọc 64KB đầu là đủ, khỏi nạp file 30MB
+      const fd = fs.openSync(file, 'r');
+      const buf = Buffer.alloc(65536);
+      const n = fs.readSync(fd, buf, 0, 65536, 0);
+      fs.closeSync(fd);
+      const m = buf.toString('utf8', 0, n).match(/"cwd":"((?:[^"\\]|\\.)*)"/);
+      if (m) {
+        const p = JSON.parse('"' + m[1] + '"');
+        if (fs.existsSync(p)) cwd = p; // thư mục đã bị xoá -> để null, spawn ở home
+      }
+    } catch {}
+  }
+  cwdCache.set(sid, cwd);
+  return cwd;
+}
+
 function findSessionFile(sid) {
   let dirs = [];
   try { dirs = fs.readdirSync(PROJECTS_DIR); } catch { return null; }
@@ -439,20 +467,51 @@ function listSessions() {
 
 /* ---------------- spawning claude ---------------- */
 
+// sid -> thông báo lỗi lần chạy gần nhất (client hiện lên thay vì im lặng)
+const spawnErrors = new Map();
+
 function spawnClaude(args, sid, meta) {
+  // CWD phải đúng thư mục của phiên, nếu không `--resume` báo "No conversation found"
+  // và tin nhắn rơi vào hư không (API vẫn trả ok -> nhìn như gửi được mà chẳng có gì xảy ra)
+  const cwd = (meta && meta.cwd) || sessionCwd(sid) || os.homedir();
   const proc = spawn('claude', args, {
-    cwd: os.homedir(),
-    detached: true,
-    stdio: ['ignore', 'ignore', 'ignore'],
+    cwd,
+    // KHÔNG detached: tiến trình tách nhóm thì Node không nhận được sự kiện exit/stderr,
+    // nên mọi lỗi của CLI (vd resume trượt) bị nuốt sạch — đúng cái làm chat "gửi mà
+    // không có gì xảy ra". Server sống lâu nên không cần detach để tiến trình chạy tiếp.
+    stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
   });
-  proc.on('error', () => procs.delete(sid));
+  spawnErrors.delete(sid);
+  let errBuf = '', outBuf = '';
+  if (proc.stderr) {
+    proc.stderr.on('data', d => { errBuf = (errBuf + d.toString()).slice(-2000); });
+    proc.stderr.on('error', () => {});
+  }
+  if (proc.stdout) {
+    proc.stdout.on('data', d => { outBuf = (outBuf + d.toString()).slice(-2000); });
+    proc.stdout.on('error', () => {});
+  }
+  proc.on('error', e => {
+    procs.delete(sid);
+    spawnErrors.set(sid, { at: Date.now(), msg: 'Không chạy được claude: ' + e.message });
+  });
   proc.on('exit', (code, signal) => {
     procs.delete(sid);
-    // signal = bị kill chủ động (nút Kill) -> không báo "đã trả lời xong"
-    if (!signal) notifyPush(sessionLabel(sid) + ' đã trả lời xong', sid);
+    if (signal) return; // bị kill chủ động (nút Kill) -> không báo gì
+    const err = errBuf.trim();
+    // soi cả 2 luồng cho chắc (CLI có thể đổi chỗ in giữa các phiên bản)
+    const failedResume = /No conversation found with session ID/i.test(errBuf + outBuf);
+    if (code !== 0 || err || failedResume) {
+      const msg = failedResume
+        ? 'Claude CLI không tìm thấy phiên này (thư mục dự án gốc có thể đã bị xoá/đổi tên) — tin nhắn chưa được gửi.'
+        : (err || 'claude thoát với mã ' + code);
+      spawnErrors.set(sid, { at: Date.now(), msg: msg.split('\n').slice(0, 3).join(' ').slice(0, 300) });
+      notifyPush(sessionLabel(sid) + ': ' + (failedResume ? 'không gửi được tin' : 'chạy lỗi'), sid);
+      return; // thất bại thì đừng báo "đã trả lời xong"
+    }
+    notifyPush(sessionLabel(sid) + ' đã trả lời xong', sid);
   });
-  proc.unref();
   procs.set(sid, { proc, startedAt: Date.now(), ...meta });
   return proc;
 }
@@ -1146,7 +1205,8 @@ const server = http.createServer(async (req, res) => {
     const sid = m[1];
     const entry = procs.get(sid);
     if (!entry) return json(res, 404, { error: 'not running' });
-    try { process.kill(-entry.proc.pid, 'SIGTERM'); } catch { try { entry.proc.kill('SIGTERM'); } catch {} }
+    // không còn detached -> kill thẳng tiến trình; giữ kill theo nhóm làm dự phòng
+    try { entry.proc.kill('SIGTERM'); } catch { try { process.kill(-entry.proc.pid, 'SIGTERM'); } catch {} }
     procs.delete(sid);
     return json(res, 200, { ok: true });
   }
@@ -1176,10 +1236,13 @@ const server = http.createServer(async (req, res) => {
         last.parts = last.parts.map(p => (p.t === 'tool' && p.status === 'pending' ? Object.assign({}, p, { status: 'running' }) : p));
       }
     }
+    // lỗi lần chạy gần nhất (vd resume trượt) — client hiện banner thay vì im lặng
+    const se = spawnErrors.get(sid);
     return json(res, 200, {
       sid, messages, total, start, typing,
       title: titleOf(sid, parsed ? parsed.title : ''),
       status: statusOf(sid, mt),
+      error: se && Date.now() - se.at < 120000 ? se.msg : null,
     });
   }
 
@@ -1720,6 +1783,13 @@ const HTML = `<!doctype html>
   .segscroll { min-width: 0; overflow-x: auto; scrollbar-width: none; }
   .segscroll::-webkit-scrollbar { display: none; }
 
+  /* banner lỗi trong chat: phải THẤY được, không im lặng như trước */
+  .chaterrbox {
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 12.5px; line-height: 1.5; border-radius: 10px; padding: 9px 11px;
+    background: rgba(248, 113, 113, .08); border: 1px solid rgba(248, 113, 113, .3); color: #f87171;
+  }
+
   /* ---- công tắc quyền: Claude có được tự sửa file không ---- */
   .permbtn {
     display: flex; align-items: center; gap: 7px; height: 44px; padding: 0 12px;
@@ -2154,6 +2224,107 @@ const HTML = `<!doctype html>
   }
   #collapsebtn { display: none; }
   @media (min-width: 768px) { #collapsebtn { display: flex; } }
+
+  /* lỗi lần gửi gần nhất (claude không resume được...) — trước đây thất bại im lặng */
+  .chaterr {
+    display: flex; align-items: flex-start; gap: 8px; margin: 0 16px 8px;
+    padding: 9px 11px; border-radius: 11px; font-size: 12.5px; line-height: 1.5;
+    color: #f87171; background: rgba(248, 113, 113, .10); border: 1px solid rgba(248, 113, 113, .28);
+  }
+  .chaterrx {
+    background: none; border: 0; color: #f87171; opacity: .7; cursor: pointer;
+    font-size: 13px; line-height: 1; padding: 2px 4px; flex-shrink: 0;
+  }
+  .chaterrx:hover { opacity: 1; }
+
+  /* ================================================================
+     GLASS — vật liệu kính kiểu Apple
+     4 lớp tạo nên cảm giác "kính" thật (blur không thôi chỉ là mờ):
+       1. nền màu phía sau để kính có thứ mà khúc xạ
+       2. backdrop-filter: blur + saturate (bão hoà giữ màu không bị xám)
+       3. viền hairline sáng
+       4. specular highlight — vệt sáng 1px mép trên, chỗ ánh sáng bắt vào cạnh kính
+     HIỆU NĂNG: KHÔNG đặt backdrop-filter lên phần tử cuộn nhiều (session row, tool card,
+     bubble) — 94 lớp blur khi cuộn là quá nặng cho iPhone. Chúng chỉ dùng nền trong suốt
+     trên nền gradient; blur dành cho bề mặt TĨNH (header, tab bar, thẻ lớn, thanh nhập).
+     ================================================================ */
+  :root {
+    --g-blur: 20px;
+    --g-sat: 1.6;
+    --g-chrome: rgba(16, 18, 26, .72);   /* thanh trên/dưới: dày, đục hơn */
+    --g-card: rgba(28, 32, 44, .55);     /* thẻ lớn tĩnh */
+    --g-soft: rgba(255, 255, 255, .045); /* bề mặt nhẹ trên nền tối */
+    --g-line: rgba(255, 255, 255, .10);  /* viền hairline */
+    --g-spec: rgba(255, 255, 255, .07);  /* vệt sáng mép trên */
+    --g-shadow: 0 8px 24px rgba(0, 0, 0, .30);
+  }
+
+  /* 1. nền màu: cố định, không cuộn theo -> kính luôn có thứ để bắt sáng */
+  body {
+    background:
+      radial-gradient(900px 620px at 14% -8%, rgba(59, 130, 246, .16), transparent 60%),
+      radial-gradient(760px 560px at 88% 4%, rgba(139, 92, 246, .14), transparent 62%),
+      radial-gradient(680px 620px at 52% 106%, rgba(16, 185, 129, .08), transparent 60%),
+      #0a0c12;
+    background-attachment: fixed;
+  }
+
+  /* 2+3+4. chrome: thanh trên, tab bar, sidebar */
+  header, #tabbar, #sidenav {
+    background: var(--g-chrome) !important;
+    -webkit-backdrop-filter: blur(var(--g-blur)) saturate(var(--g-sat));
+    backdrop-filter: blur(var(--g-blur)) saturate(var(--g-sat));
+  }
+  header { border-bottom: 1px solid var(--g-line) !important; box-shadow: 0 1px 0 var(--g-spec) inset; }
+  #tabbar { border-top: 1px solid var(--g-line) !important; box-shadow: 0 1px 0 var(--g-spec) inset; }
+
+  /* thẻ lớn TĨNH -> được dùng blur thật */
+  .chartbox, .agyhero, .statcard, #overlaybox, #drawer {
+    background: var(--g-card) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(1.5);
+    backdrop-filter: blur(16px) saturate(1.5);
+    border: 1px solid var(--g-line) !important;
+    box-shadow: 0 1px 0 var(--g-spec) inset, var(--g-shadow) !important;
+  }
+
+  /* thanh nhập liệu: nền mờ + blur (chỉ 1-2 cái, rẻ) */
+  .inputwrap, .permbtn, .agybtn, .seg, .modelsearch {
+    background: var(--g-soft) !important;
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    backdrop-filter: blur(12px) saturate(1.4);
+    border: 1px solid var(--g-line) !important;
+  }
+
+  /* CUỘN NHIỀU -> chỉ nền trong suốt, KHÔNG blur (giữ 60fps trên iPhone) */
+  .srow, .tcard, .mgrp, .urow, .agylog, .codewrap .codeblock {
+    background: rgba(28, 32, 44, .50) !important;
+    border: 1px solid var(--g-line) !important;
+  }
+  .srow { box-shadow: 0 1px 0 var(--g-spec) inset; }
+  .bub-assistant { background: rgba(28, 32, 44, .55) !important; border: 1px solid var(--g-line) !important; }
+  .bub-tool { background: rgba(28, 32, 44, .38) !important; }
+  /* bubble user giữ accent xanh — dấu hiệu nhận biết ai nói, đừng làm mờ đi */
+
+  /* trạng thái đặc biệt phải NỔI hơn nền kính, không bị hoà tan */
+  .tcard.t-err { background: rgba(60, 26, 30, .62) !important; border-color: rgba(248,113,113,.55) !important; }
+  .tcard.t-run { background: rgba(58, 46, 20, .55) !important; }
+  .agyhero.on { border-color: rgba(16, 185, 129, .40) !important; }
+  .agyhero.off { border-color: rgba(248, 113, 113, .40) !important; }
+  .srow.selected, .srow.cmp-sel { background: rgba(59, 130, 246, .16) !important; border-color: rgba(59,130,246,.45) !important; }
+
+  /* nền tối phía sau overlay/drawer: mờ mạnh cho tách lớp rõ */
+  #overlay, #drawerback {
+    -webkit-backdrop-filter: blur(8px) saturate(1.2);
+    backdrop-filter: blur(8px) saturate(1.2);
+  }
+
+  /* KHÔNG hỗ trợ backdrop-filter (Firefox cũ...) -> nền đặc, vẫn đọc tốt */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    header, #tabbar, #sidenav { background: #12141c !important; }
+    .chartbox, .agyhero, .statcard, #overlaybox, #drawer,
+    .srow, .tcard, .mgrp, .urow, .bub-assistant { background: #1a1d27 !important; }
+    .inputwrap, .permbtn, .agybtn, .seg, .modelsearch { background: #1a1d27 !important; }
+  }
 </style>
 </head>
 <!-- height dvh (không phải h-screen/100vh): iOS Safari tính 100vh gồm cả vùng sau toolbar/home
@@ -2297,7 +2468,15 @@ const HTML = `<!doctype html>
                   onclick="killCurrent()" title="Kill session"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
         </div>
         <div id="bubbles" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2.5" style="scroll-behavior:smooth"></div>
+        <!-- lỗi lần gửi gần nhất (vd claude không tìm thấy phiên) — trước đây thất bại IM LẶNG -->
+        <div id="chaterr" class="hidden chaterr">
+          <span id="chaterrmsg" class="flex-1 min-w-0"></span>
+          <button class="chaterrx" onclick="document.getElementById('chaterr').classList.add('hidden')"
+                  title="Đóng">✕</button>
+        </div>
         <div id="typingind" class="hidden px-4"><div class="tdots"><span></span><span></span><span></span></div></div>
+        <!-- lỗi khi chạy Claude (vd phiên không resume được) — trước đây bị nuốt im lặng -->
+        <div id="chaterr" class="hidden mx-4 mb-2 chaterrbox"></div>
         <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
           <div class="flex items-center gap-2">
             <div class="inputwrap flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
@@ -4015,6 +4194,7 @@ function openChat(sid) {
   document.getElementById('chatsid').title = sid;
   document.getElementById('bubbles').innerHTML = '';
   document.getElementById('typingind').classList.add('hidden');
+  document.getElementById('chaterr').classList.add('hidden');
   refreshChat();
   clearInterval(chatTimer);
   chatTimer = setInterval(refreshChat, 2000); // auto-refresh: chỉ APPEND message mới
@@ -4260,7 +4440,17 @@ async function refreshChat() {
     reopenTids = [];
   }
   reconcileToolStatus(msgs); // tool xong -> đổi chip tại chỗ (không rebuild)
+  // lỗi từ lần chạy claude gần nhất -> hiện banner; trước đây lỗi bị nuốt hoàn toàn
+  const errBox = document.getElementById('chaterr');
+  if (r.error) {
+    setText(document.getElementById('chaterrmsg'), r.error);
+    errBox.classList.remove('hidden');
+  } else errBox.classList.add('hidden');
   document.getElementById('typingind').classList.toggle('hidden', !r.typing);
+  // lỗi chạy Claude (resume trượt...) -> hiện rõ, đừng để user tưởng đã gửi được
+  const ce = document.getElementById('chaterr');
+  if (r.error) { setText(ce, r.error); ce.classList.remove('hidden'); }
+  else ce.classList.add('hidden');
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
