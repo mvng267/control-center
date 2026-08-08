@@ -23,6 +23,7 @@ function collect(dir, filter) {
 
 collect('src/server');
 collect('web/legacy');
+collect('web/legacy/js');
 collect('tests');
 collect('scripts');
 
@@ -36,6 +37,28 @@ for (const rel of targets) {
     console.log('  LỖI  ' + rel);
     const msg = (e.stderr || Buffer.from('')).toString().split('\n').slice(0, 4).join('\n');
     console.log(msg.replace(/^/gm, '       '));
+  }
+}
+
+// Client JS chia theo tính năng nhưng DÙNG CHUNG scope (nạp bằng nhiều thẻ <script>,
+// không phải module) -> kiểm riêng từng file là chưa đủ, phải nối lại đúng thứ tự
+// trong index.html rồi check, mới bắt được lỗi kiểu ngoặc thiếu ở cuối file.
+const idx = path.join(ROOT, 'web/legacy/index.html');
+if (fs.existsSync(idx)) {
+  const order = [...fs.readFileSync(idx, 'utf8').matchAll(/src="\/js\/([a-z-]+\.js)"/g)].map(x => x[1]);
+  if (order.length) {
+    const joined = order.map(n => fs.readFileSync(path.join(ROOT, 'web/legacy/js', n), 'utf8')).join('\n');
+    const tmp = path.join(require('os').tmpdir(), 'ccc-verify-joined.js');
+    fs.writeFileSync(tmp, joined);
+    try {
+      execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe' });
+      console.log('  ok   web/legacy/js/* nối lại theo index.html (' + order.length + ' file)');
+    } catch (e) {
+      bad++;
+      console.log('  LỖI  khi nối ' + order.length + ' file client JS:');
+      console.log((e.stderr || Buffer.from('')).toString().split('\n').slice(0, 4).join('\n').replace(/^/gm, '       '));
+    }
+    fs.unlinkSync(tmp);
   }
 }
 

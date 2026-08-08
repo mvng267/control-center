@@ -1281,7 +1281,10 @@ const server = http.createServer(async (req, res) => {
   // không phát hiện. Tách ra file thật thì kiểm tra được bằng node -c và sửa thấy ngay.
   if (p === '/' || p === '/index.html') return serveWeb(res, 'index.html');
   if (p === '/app.css') return serveWeb(res, 'app.css');
-  if (p === '/app.js') return serveWeb(res, 'app.js');
+  // client JS chia theo tính năng: /js/core.js, /js/chat.js, /js/agy.js…
+  // chỉ nhận tên file phẳng [a-z-] để không thể dùng ../ thoát khỏi web/legacy
+  const jsFile = p.match(/^\/js\/([a-z-]+\.js)$/);
+  if (jsFile) return serveWeb(res, path.join('js', jsFile[1]));
 
   // ---- PWA: manifest + service worker + icon ----
   if (p === '/manifest.json') {
