@@ -1037,17 +1037,35 @@ function tokenOk(req, url) {
   return !!(q && q === dashToken);
 }
 
-/* ---------------- phục vụ giao diện tĩnh ---------------- */
-const WEB_DIR = path.join(__dirname, '..', '..', 'web', 'legacy');
+/* ---------------- phục vụ giao diện tĩnh ----------------
+   Hai giao diện song song trong lúc di trú:
+     web-next/out  — bản mới (Next.js + shadcn, kiểu Atlas)
+     web/legacy    — bản cũ, giữ nguyên làm đường lui
+   NEW_UI=0 để quay về bản cũ tức thì nếu bản mới có vấn đề. */
+const LEGACY_DIR = path.join(__dirname, '..', '..', 'web', 'legacy');
+const NEXT_DIR = path.join(__dirname, '..', '..', 'web-next', 'out');
+const USE_NEW_UI = process.env.NEW_UI !== '0' && fs.existsSync(path.join(NEXT_DIR, 'index.html'));
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
-               '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
-function serveWeb(res, name) {
-  const f = path.join(WEB_DIR, name);
+               '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml',
+               '.json': 'application/json', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8',
+               '.woff2': 'font/woff2', '.png': 'image/png' };
+function sendFile(res, f, cache) {
   let buf;
   try { buf = fs.readFileSync(f); } catch { return json(res, 404, { error: 'not found' }); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(name)] || 'application/octet-stream',
-                       'Cache-Control': 'no-cache' }); // no-cache: sửa file là thấy ngay
+  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream',
+                       'Cache-Control': cache || 'no-cache' });
   return res.end(buf);
+}
+function serveWeb(res, name) {
+  return sendFile(res, path.join(LEGACY_DIR, name)); // no-cache: sửa file là thấy ngay
+}
+// Tài nguyên Next: /_next/... đặt tên theo hash nội dung nên cache vĩnh viễn được.
+// Chặn ../ bằng cách kiểm tra đường dẫn thật vẫn nằm trong NEXT_DIR.
+function serveNext(res, urlPath) {
+  const f = path.join(NEXT_DIR, urlPath === '/' ? 'index.html' : urlPath);
+  if (!path.resolve(f).startsWith(path.resolve(NEXT_DIR))) return json(res, 404, { error: 'not found' });
+  const immutable = urlPath.startsWith('/_next/static/');
+  return sendFile(res, f, immutable ? 'public, max-age=31536000, immutable' : 'no-cache');
 }
 
 /* ---------------- server ---------------- */
@@ -1059,14 +1077,22 @@ const server = http.createServer(async (req, res) => {
 
   // Vỏ app + PWA cho qua (không có dữ liệu nhạy cảm, cần cho màn nhập token & offline).
   // Mọi thứ còn lại — kể cả GET /api/* vì chúng lộ nội dung hội thoại — đều cần token.
-  const isShell = p === '/' || p === '/manifest.json' || p === '/sw.js' || p === '/icon.svg';
+  // Vỏ app gồm cả JS/CSS của giao diện — không có dữ liệu nhạy cảm, mà thiếu chúng thì
+  // màn nhập token không hiện được (trang trắng) và offline cũng hỏng.
+  const isShell = p === '/' || p === '/index.html' || p === '/manifest.json' || p === '/sw.js'
+    || p === '/icon.svg' || p === '/favicon.ico' || p === '/app.css'
+    || p.startsWith('/_next/') || /^\/js\/[a-z-]+\.js$/.test(p);
   if (!isShell && !isLoopback(req) && !tokenOk(req, url)) {
     return json(res, 401, { error: 'cần token truy cập' });
   }
 
-  // Giao diện: phục vụ file tĩnh trong web/legacy. Trước đây HTML/CSS/JS nhúng trong
-  // template literal -> viết \\n hay dấu backtick là âm thầm làm vỡ cả trang mà node -c
-  // không phát hiện. Tách ra file thật thì kiểm tra được bằng node -c và sửa thấy ngay.
+  // Giao diện mới (Next.js, kiểu Atlas) — NEW_UI=0 để quay về bản cũ tức thì
+  if (USE_NEW_UI && (p === '/' || p === '/index.html')) return serveNext(res, '/');
+  if (USE_NEW_UI && p.startsWith('/_next/')) return serveNext(res, p);
+  if (USE_NEW_UI && p === '/favicon.ico') return serveNext(res, p);
+
+  // Giao diện cũ: file tĩnh trong web/legacy. Trước đây HTML/CSS/JS nhúng trong template
+  // literal -> viết \\n hay dấu backtick là âm thầm làm vỡ cả trang mà node -c không thấy.
   if (p === '/' || p === '/index.html') return serveWeb(res, 'index.html');
   if (p === '/app.css') return serveWeb(res, 'app.css');
   // client JS chia theo tính năng: /js/core.js, /js/chat.js, /js/agy.js…

@@ -7,3 +7,8 @@ node_modules/
 dashboard-token.json
 dashboard-uploads/
 dashboard-uploads/
+
+# Next.js — node_modules nặng, chỉ cần khi SỬA giao diện.
+# web-next/out ĐƯỢC commit để máy mới chạy được ngay không cần cài gì.
+web-next/node_modules/
+web-next/.next/
