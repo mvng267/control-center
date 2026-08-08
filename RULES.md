@@ -54,16 +54,27 @@ Chuẩn bị sẵn sàng cho: Add to Home Screen (iOS/Android), shortcut desktop
 ## CẤU TRÚC
 ```
 src/server/    backend Node thuần — index.js (định tuyến + logic), tools.js, config.js, http-utils.js
-web/legacy/    giao diện — index.html, app.css, js/*.js (14 module theo tính năng)
+web-next/      GIAO DIỆN CHÍNH — Next.js + React + shadcn/ui, kiểu Atlas
+  app/         layout, page (chuyển tab client-side)
+  components/  layout/ cli/ agy/ hermes/ stats/ ui(shadcn)
+  lib/         api, types, use-stream, use-pwa
+  out/         bản build tĩnh — ĐƯỢC COMMIT để máy mới chạy ngay
+web/legacy/    giao diện cũ — giữ làm đường lui (NEW_UI=0)
 tests/         e2e, push, push-browser, keyboard, safearea
 scripts/       verify, bench, check-procs
 docs/          FEATURES.md (bảng kiểm 62 tính năng), CLAUDE-DATA.md (cấu trúc ~/.claude)
 ```
 
 ## TECH STACK
-- Node.js thuần (http server), **zero dependency ở backend** — Web Push tự cài đặt VAPID + RFC 8291.
-- Vanilla JS frontend, Tailwind+daisyUI CDN, Chart.js CDN, marked+dompurify CDN, Lucide CDN.
-- KHÔNG dùng build step (giữ đơn giản, dễ sửa trực tiếp). Sửa file trong `web/legacy/` là thấy ngay, không cần restart.
+- **Backend Node.js thuần, zero dependency** — Web Push tự cài đặt VAPID + RFC 8291. Không đổi.
+- **Frontend: Next.js 16 + React 19 + Tailwind v4 + shadcn/ui**, static export vào `web-next/out`,
+  server Node phục vụ ở **cùng cổng 7799** (một tiến trình, một URL — bắt buộc để Web Push và
+  service worker không vỡ khi vào từ iPhone qua Tailscale).
+- ReUI đòi license trả phí (mọi style trả 401) → dùng shadcn/ui gốc rồi tự dựng theo mẫu Atlas.
+- Sửa giao diện: `cd web-next && npm run dev` (hot reload) → `npm run build` khi xong.
+- `web-next/out` **được commit**: máy mới chỉ cần `node src/server/index.js`, không cài gì.
+  `node_modules` (590MB) chỉ cần khi SỬA giao diện — người dùng vẫn zero-dependency.
+- `NEW_UI=0 npm start` quay về giao diện cũ tức thì.
 - Port 7799, bind 0.0.0.0 (Tailscale accessible). Mọi request từ ngoài máy phải có token.
 
 ## BẪY ĐÃ GẶP — đọc trước khi sửa

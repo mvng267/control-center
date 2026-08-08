@@ -35,15 +35,15 @@ Máy trong cùng Wi-Fi thì thay bằng IP LAN.
 ## Cấu trúc
 
 ```
-src/server/
+src/server/        backend Node thuần, zero dependency
   index.js         định tuyến + logic (33 endpoint)
   tools.js         tool_use/tool_result -> dữ liệu cho tool card
   config.js        hằng số dùng chung
   http-utils.js    json, readBody, hostAllowed
-web/legacy/
-  index.html
-  app.css
-  js/              14 module theo tính năng — core, chat, agy, hermes, stats…
+web-next/          GIAO DIỆN CHÍNH — Next.js + shadcn/ui, kiểu Atlas
+  app/ components/ lib/
+  out/             bản build tĩnh (được commit)
+web/legacy/        giao diện cũ — đường lui, bật bằng NEW_UI=0
 tests/             e2e (147), push (19), push-browser, keyboard, safearea
 scripts/           verify, bench, check-procs
 docs/
@@ -52,9 +52,18 @@ docs/
 RULES.md           quy tắc thiết kế + bẫy đã gặp
 ```
 
-**Sửa giao diện:** file trong `web/legacy/` phục vụ trực tiếp (`Cache-Control: no-cache`) — sửa xong tải lại trang là thấy, không cần restart server.
+### Sửa giao diện
 
-**Thêm module client mới:** tạo `web/legacy/js/<tên>.js` rồi thêm thẻ `<script src="/js/<tên>.js">` vào `index.html`. Các file **dùng chung scope**, nên biến dùng xuyên file phải khai báo ở `js/core.js` (nạp đầu tiên) — `npm run verify` sẽ báo nếu sai.
+```bash
+cd web-next
+npm install        # lần đầu (~590MB, chỉ cần khi SỬA giao diện)
+npm run dev        # hot reload ở cổng 3000, API vẫn gọi sang 7799
+npm run build      # xong thì build lại vào out/
+```
+
+`web-next/out` **được commit**, nên trên máy mới chỉ cần `node src/server/index.js` là chạy — không phải cài gì.
+
+**Quay về giao diện cũ:** `NEW_UI=0 node src/server/index.js`. Bản cũ nằm ở `web/legacy/`, vẫn hoạt động đầy đủ.
 
 ## Test
 
