@@ -165,9 +165,11 @@ function buildInputDetail(name, input) {
   return clampText(s, TOOL_INPUT_CAP);
 }
 
-// tool_result.content: string HOẶC mảng block {type:'text'|'image'} -> nối text, đếm ảnh
+// tool_result.content: string HOẶC mảng block {type:'text'|'image'} -> nối text, GIỮ ảnh.
+// Ảnh base64 ~100KB/tấm: KHÔNG nhồi vào payload poll 2s -> chỉ trả metadata + media_type,
+// client tải riêng qua /api/toolimg khi thật sự cần hiển thị.
 function toolResultPreview(content) {
-  let text = '', images = 0;
+  let text = '', images = [];
   if (typeof content === 'string') text = content;
   else if (Array.isArray(content)) {
     const buf = [];
@@ -175,11 +177,43 @@ function toolResultPreview(content) {
       if (typeof b === 'string') buf.push(b);
       else if (!b) continue;
       else if (b.type === 'text') buf.push(b.text || '');
-      else if (b.type === 'image') images++;
+      else if (b.type === 'image') {
+        const src = b.source || {};
+        images.push({ i: images.length, mt: src.media_type || 'image/png', bytes: (src.data || '').length });
+      }
     }
     text = buf.filter(Boolean).join('\n');
   }
   return { text: clampText(text, TOOL_RESULT_CAP), images };
+}
+
+// Lấy base64 ảnh thứ idx của 1 tool_result — đọc lại file, KHÔNG cache trong parse
+// (giữ payload history nhẹ; ảnh chỉ tải khi user mở card ra xem)
+function findToolImage(file, toolId, idx) {
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch { return null; }
+  for (const line of raw.split('\n')) {
+    if (!line.trim() || line.indexOf(toolId) < 0) continue; // lọc nhanh trước khi parse
+    let obj;
+    try { obj = JSON.parse(line); } catch { continue; }
+    const c = (obj.message || obj).content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (!b || b.type !== 'tool_result' || b.tool_use_id !== toolId) continue;
+      if (!Array.isArray(b.content)) continue;
+      let n = 0;
+      for (const x of b.content) {
+        if (!x || x.type !== 'image') continue;
+        if (n === idx) {
+          const src = x.source || {};
+          if (!src.data) return null;
+          return { mt: src.media_type || 'image/png', buf: Buffer.from(src.data, 'base64') };
+        }
+        n++;
+      }
+    }
+  }
+  return null;
 }
 
 // Chuỗi phẳng dựng lại từ parts — giữ y hệt format cũ để stats/unread/export cũ không đổi
@@ -199,7 +233,7 @@ function mdForMessage(msg) {
       + ' — ' + (TOOL_ST_LABEL[p.status] || p.status);
     if (p.input) s += '\n\n```input\n' + p.input + '\n```';
     if (p.result) s += '\n\n```result\n' + p.result + '\n```';
-    if (p.images) s += '\n\n_[+' + p.images + ' image]_';
+    if (p.images && p.images.length) s += '\n\n_[' + p.images.length + ' ảnh]_';
     return s;
   }).filter(Boolean).join('\n\n');
 }
@@ -240,7 +274,7 @@ function parseSessionFile(file) {
             input: buildInputDetail(b.name, b.input),
             status: 'pending',
             result: '',
-            images: 0,
+            images: [],
           };
           parts.push(part);
           if (b.id) toolIndex.set(b.id, part);
@@ -984,6 +1018,20 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { sid, messages, total, start, typing, status: statusOf(sid, mt) });
   }
 
+  // ---- ảnh trong tool_result (screenshot...): trả binary, cache lâu vì nội dung bất biến ----
+  if ((m = p.match(/^\/api\/toolimg\/([\w-]+)\/([\w-]+)\/(\d+)$/))) {
+    const file = findSessionFile(m[1]);
+    if (!file) return json(res, 404, { error: 'session not found' });
+    const img = findToolImage(file, m[2], +m[3]);
+    if (!img) return json(res, 404, { error: 'image not found' });
+    res.writeHead(200, {
+      'Content-Type': img.mt,
+      'Content-Length': img.buf.length,
+      'Cache-Control': 'public, max-age=31536000, immutable', // tool_result đã ghi thì không đổi
+    });
+    return res.end(img.buf);
+  }
+
   if ((m = p.match(/^\/api\/status\/([\w-]+)$/))) {
     const sid = m[1];
     const file = findSessionFile(sid);
@@ -1425,8 +1473,12 @@ const HTML = `<!doctype html>
     border: 1px solid #262a36; background: #141722; border-radius: 12px; overflow: hidden;
     transition: border-color .2s ease;
   }
-  .tcard.t-err { border-color: rgba(248, 113, 113, .4); }
-  .tcard.t-run { border-color: rgba(251, 191, 36, .35); }
+  /* lỗi phải NHÌN LÀ THẤY: viền đỏ rõ + nền ám đỏ + vạch trái, không chỉ mỗi dấu ✗ nhỏ */
+  .tcard.t-err {
+    border-color: rgba(248, 113, 113, .55); background: rgba(248, 113, 113, .06);
+    box-shadow: inset 3px 0 0 #f87171;
+  }
+  .tcard.t-run { border-color: rgba(251, 191, 36, .45); box-shadow: inset 3px 0 0 #fbbf24; }
   /* head là <button>: tap được trên mobile, focus được bằng bàn phím, cao ≥44px (Apple HIG) */
   .tcard-head {
     display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px;
@@ -1437,9 +1489,14 @@ const HTML = `<!doctype html>
   /* hover chỉ là bonus desktop — mobile không có hover, mọi thứ vẫn tap được */
   @media (min-width: 768px) { .tcard-head:hover { background: #1a1e2b; } }
   .tcard-ic { flex-shrink: 0; display: flex; color: #8b5cf6; }
-  .tcard-name { flex-shrink: 0; font-weight: 600; }
+  /* tên MCP có thể rất dài (claude ai Figma · get design context) -> cho phép co + ellipsis,
+     nhưng ưu tiên giữ tên hơn summary (flex-shrink nhỏ hơn) và không bao giờ nuốt chevron */
+  .tcard-name {
+    flex: 0 1 auto; min-width: 0; max-width: 52%; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .tcard-sum {
-    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: #8b8fa3; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .tcard-st { flex-shrink: 0; display: flex; align-items: center; color: #4b5163; }
@@ -1447,6 +1504,7 @@ const HTML = `<!doctype html>
   .tcard-st-err { color: #f87171; }
   /* pulse 2 nhịp rồi ĐỨNG YÊN (giống .st-RUNNING) — RULES: không animation lặp vô hạn */
   .tcard-st-run { color: #fbbf24; animation: dot-pulse 2s ease-in-out 2; border-radius: 50%; }
+  .tcard-st-pend { color: #4b5163; }
   .tcard-chev { flex-shrink: 0; display: flex; color: #666b7d; transition: transform .2s ease; }
   .tcard.open .tcard-chev { transform: rotate(180deg); }
   /* body mở/đóng bằng grid-template-rows 0fr->1fr: transition 1 lần 200ms, không phải keyframe lặp */
@@ -1455,6 +1513,9 @@ const HTML = `<!doctype html>
   .tcard-body > .tinner { overflow: hidden; min-height: 0; }
   .tsec { padding: 0 12px 10px; }
   .tsec .codewrap { margin: 0; }
+  /* kết quả 40+ dòng từng đẩy card cao 600px+ -> cuộn trong khối, card giữ chiều cao xem được */
+  .tsec .codeblock { max-height: 260px; overflow-y: auto; }
+  @media (max-width: 767px) { .tsec .codeblock { max-height: 200px; } }
   .tlbl { font-size: 10px; font-weight: 600; letter-spacing: .5px; color: #666b7d; margin: 0 0 4px 2px; }
   .tsec-err .tlbl { color: #f87171; }
   .tsec-err .codeblock { border-color: rgba(248, 113, 113, .3); }
@@ -1465,6 +1526,75 @@ const HTML = `<!doctype html>
   #compare .msgwrap { max-width: 94%; }
   #compare .tcard-head { font-size: 12px; min-height: 40px; }
   #compare .tcard-sum { font-size: 11px; }
+  /* ---- thời gian + trạng thái dưới bubble (kiểu Telegram/iMessage) ---- */
+  /* message user: cả wrapper dạt phải, bubble co theo nội dung (không kéo full 76%) */
+  .msgwrap.mw-user { align-self: flex-end; align-items: flex-end; width: auto; }
+  .msgwrap.mw-user .bub { width: auto; }
+  .bmeta {
+    display: flex; align-items: center; gap: 6px; padding: 0 4px;
+    font-size: 10.5px; color: #5c6175; line-height: 1;
+  }
+  .bmeta-r { align-self: flex-end; }
+  .bmeta-tools { color: #6f7488; }
+  .bmeta-tools::before { content: '·'; margin-right: 6px; }
+  .bmeta-err { color: #f87171; }
+  .bmeta-run { color: #fbbf24; }
+  /* vạch ngăn ngày */
+  .daydiv { display: flex; align-items: center; gap: 10px; margin: 10px 2px 4px; }
+  .daydiv::before, .daydiv::after { content: ''; flex: 1; height: 1px; background: #262a36; }
+  .daydiv span {
+    font-size: 10.5px; color: #6f7488; letter-spacing: .3px; white-space: nowrap;
+    background: #141722; border: 1px solid #262a36; border-radius: 999px; padding: 3px 10px;
+  }
+
+  /* ---- nhãn ngôn ngữ cạnh INPUT/KẾT QUẢ ---- */
+  .tlang {
+    margin-left: 6px; padding: 1px 6px; border-radius: 4px; font-weight: 500; letter-spacing: 0;
+    background: rgba(59, 130, 246, .12); color: #60a5fa; font-size: 9.5px; text-transform: none;
+  }
+
+  /* ---- diff Edit: xanh thêm / đỏ bớt, thay vì khối chữ xám phẳng ---- */
+  .diffblock { padding: 0; white-space: normal; }
+  .dline { padding: 1px 12px; white-space: pre; }
+  .dhead {
+    padding: 3px 12px; font-size: 10px; font-weight: 600; letter-spacing: .5px;
+    position: sticky; top: 0; backdrop-filter: blur(2px);
+  }
+  .dhead.d-del { color: #f87171; background: rgba(248, 113, 113, .1); }
+  .dhead.d-add { color: #34d399; background: rgba(52, 211, 153, .1); }
+  .dline.d-del { background: rgba(248, 113, 113, .07); box-shadow: inset 2px 0 0 rgba(248,113,113,.5); }
+  .dline.d-add { background: rgba(52, 211, 153, .07); box-shadow: inset 2px 0 0 rgba(52,211,153,.5); }
+
+  /* ---- văn bản thường: cho xuống dòng mềm thay vì cuộn ngang như code ---- */
+  .proseblock { white-space: normal; font-family: inherit; font-size: 13px; line-height: 1.55; color: #c2c7d4; }
+  .proseblock .md p { margin: 3px 0; }
+
+  /* ---- ẢNH trong tool_result: hiện ảnh thật, tap để phóng to ---- */
+  .timgs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .timgbtn {
+    padding: 0; border: 1px solid #262a36; border-radius: 10px; overflow: hidden;
+    background: #0b0d13; cursor: pointer; line-height: 0; max-width: 100%;
+    transition: border-color .2s ease;
+  }
+  .timgbtn:focus-visible { outline: 2px solid rgba(59, 130, 246, .6); outline-offset: 2px; }
+  @media (min-width: 768px) { .timgbtn:hover { border-color: rgba(59, 130, 246, .6); } }
+  .timgbtn img { display: block; max-width: 100%; max-height: 260px; width: auto; height: auto; object-fit: contain; }
+  .timgbtn.timg-fail { padding: 10px 12px; font-size: 12px; color: #f87171; line-height: 1.4; }
+  /* xem ảnh full màn hình */
+  .imgov {
+    position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, .88);
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+    padding-top: calc(16px + env(safe-area-inset-top)); padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    cursor: zoom-out;
+  }
+  .imgov img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; }
+
+  /* tôn trọng cài đặt giảm chuyển động của hệ điều hành (iOS: Settings > Accessibility > Motion) */
+  @media (prefers-reduced-motion: reduce) {
+    .tcard, .tcard-head, .tcard-chev, .tcard-body { transition: none; }
+    .tcard-st-run { animation: none; }
+    .tcard.fadein, .msgwrap.fadein { animation: none; }
+  }
 
   /* code block trong bubble */
   .codewrap { position: relative; margin: 8px 0; }
@@ -2831,6 +2961,8 @@ function clearChatLocal() {
   chatRendered = 0;
   chatStart = -1;      // window bắt đầu lại từ vị trí mới, đừng so với start cũ
   chatCards.clear();   // card vừa bị xoá khỏi DOM -> bỏ khỏi Map reconcile
+  chatLastN = 0;
+  lastDayKey = '';
   document.getElementById('bubbles').innerHTML = '';
   toast('Đã clear chat view (local)');
 }
@@ -2860,7 +2992,7 @@ function mdParts(msg) {
       + ' — ' + (TOOL_ST_TXT[p.status] || p.status);
     if (p.input) s += NL + NL + F + 'input' + NL + p.input + NL + F;
     if (p.result) s += NL + NL + F + 'result' + NL + p.result + NL + F;
-    if (p.images) s += NL + NL + '_[+' + p.images + ' image]_';
+    if (p.images && p.images.length) s += NL + NL + '_[' + p.images.length + ' ảnh]_';
     return s;
   }).filter(Boolean).join(NL + NL);
 }
@@ -2975,6 +3107,8 @@ let chatRendered = 0; // số bubble đã render cho session đang mở
 let chatTotal = 0;    // tổng messages trong history lần fetch cuối
 let chatStart = -1;   // chỉ số tuyệt đối của bubble đầu tiên đang render (-1 = chưa render gì)
 let chatCards = new Map(); // tool_use_id -> {card, chip, status} để cập nhật chip khi tool xong
+let chatLastN = 0;    // số message đã gộp vào lượt CUỐI (lượt đang chạy còn phình thêm)
+let reopenTids = [];  // card đang mở, cần mở lại sau khi buộc phải vẽ lại
 
 // Parse markdown an toàn: marked (render) + DOMPurify (sanitize chống XSS).
 // Fallback textContent nếu CDN chưa load — không bao giờ vỡ render.
@@ -3072,22 +3206,40 @@ function toolIcon(name) {
 }
 
 function statusIcon(st) {
-  if (st === 'ok') return { html: ICON_OK, cls: 'tcard-st-ok' };
-  if (st === 'error') return { html: ICON_ERR, cls: 'tcard-st-err' };
-  if (st === 'running') return { html: ICON_RUN, cls: 'tcard-st-run' };
-  return { html: ICON_DASH, cls: '' }; // pending: run bị ngắt / chưa có kết quả
+  if (st === 'ok') return { html: ICON_OK, cls: 'tcard-st-ok', tip: 'Thành công' };
+  if (st === 'error') return { html: ICON_ERR, cls: 'tcard-st-err', tip: 'Lỗi' };
+  if (st === 'running') return { html: ICON_RUN, cls: 'tcard-st-run', tip: 'Đang chạy…' };
+  // pending: session đã dừng mà tool chưa có kết quả (bị kill / ngắt giữa chừng)
+  return { html: ICON_DASH, cls: 'tcard-st-pend', tip: 'Không có kết quả (bị ngắt)' };
 }
 
-// 1 section (Input / Result) trong body card — dùng lại .codewrap + copybtn của code block
-function toolSection(label, text, isErr) {
-  const sec = document.createElement('div');
-  sec.className = 'tsec' + (isErr ? ' tsec-err' : '');
-  const lb = document.createElement('div');
-  lb.className = 'tlbl';
-  lb.textContent = label;
-  sec.appendChild(lb);
-  const wrap = document.createElement('div');
-  wrap.className = 'codewrap';
+// Ngôn ngữ theo đuôi file -> nhãn code block ("ts", "py"...) cho dễ nhận ra
+const EXT_LANG = {
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
+  py: 'python', rb: 'ruby', go: 'go', rs: 'rust', java: 'java', kt: 'kotlin', swift: 'swift',
+  c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', cs: 'csharp', php: 'php', sh: 'bash', bash: 'bash', zsh: 'bash',
+  json: 'json', yml: 'yaml', yaml: 'yaml', toml: 'toml', xml: 'xml', html: 'html', css: 'css',
+  scss: 'scss', sql: 'sql', md: 'markdown', txt: '', log: '',
+};
+function langOf(p) {
+  const f = String((p && p.summary) || '').split(' ')[0].split(':')[0];
+  const ext = f.indexOf('.') > 0 ? f.split('.').pop().toLowerCase() : '';
+  return EXT_LANG[ext] || '';
+}
+
+// Text dài mà không phải code -> có xuống dòng mềm, dễ đọc hơn <pre> cuộn ngang
+function looksLikeProse(t) {
+  if (!t) return false;
+  // dùng fromCharCode(10): backslash-n trong template literal của server bị nuốt thành xuống dòng thật
+  const lines = t.split(String.fromCharCode(10));
+  if (lines.length > 12) return false;                       // log/list -> giữ pre
+  const longLines = lines.filter(l => l.length > 90).length; // câu văn dài -> nên wrap
+  const head = lines[0] || '';
+  const isStructured = /^[{[<]/.test(head.trim()); // JSON/XML -> giữ dạng code
+  return longLines > 0 && !isStructured && t.indexOf('  ') < 0;
+}
+
+function copyBtnFor(text) {
   const btn = document.createElement('button');
   btn.className = 'copybtn';
   btn.innerHTML = ICON_COPY + '<span>Copy</span>';
@@ -3098,13 +3250,109 @@ function toolSection(label, text, isErr) {
       setTimeout(function () { btn.querySelector('span').textContent = 'Copy'; }, 1200);
     });
   };
+  return btn;
+}
+
+// Diff của Edit: tô xanh dòng thêm / đỏ dòng bớt thay vì một khối chữ xám phẳng
+function renderDiff(text) {
   const pre = document.createElement('pre');
-  pre.className = 'codeblock';
-  pre.textContent = text;
-  wrap.appendChild(btn);
-  wrap.appendChild(pre);
+  pre.className = 'codeblock diffblock';
+  let mode = '';
+  for (const line of text.split(String.fromCharCode(10))) {
+    if (line === '--- old') { mode = 'del'; appendDiffHead(pre, 'Trước', 'del'); continue; }
+    if (line === '+++ new') { mode = 'add'; appendDiffHead(pre, 'Sau', 'add'); continue; }
+    const row = document.createElement('div');
+    row.className = 'dline' + (mode ? ' d-' + mode : '');
+    row.textContent = line;
+    pre.appendChild(row);
+  }
+  return pre;
+}
+function appendDiffHead(pre, label, cls) {
+  const h = document.createElement('div');
+  h.className = 'dhead d-' + cls;
+  h.textContent = label;
+  pre.appendChild(h);
+}
+
+// 1 section (Input / Result) trong body card
+function toolSection(label, text, isErr, opts) {
+  opts = opts || {};
+  const sec = document.createElement('div');
+  sec.className = 'tsec' + (isErr ? ' tsec-err' : '');
+  const lb = document.createElement('div');
+  lb.className = 'tlbl';
+  lb.textContent = label;
+  if (opts.lang) {
+    const tag = document.createElement('span');
+    tag.className = 'tlang';
+    tag.textContent = opts.lang;
+    lb.appendChild(tag);
+  }
+  sec.appendChild(lb);
+  const wrap = document.createElement('div');
+  wrap.className = 'codewrap';
+  wrap.appendChild(copyBtnFor(text));
+  if (opts.diff) {
+    wrap.appendChild(renderDiff(text));
+  } else if (opts.prose) {
+    // văn bản thường (câu chữ) -> markdown + wrap, không phải khối code cuộn ngang
+    const box = document.createElement('div');
+    box.className = 'codeblock proseblock';
+    box.appendChild(mdToNode(text));
+    wrap.appendChild(box);
+  } else {
+    const pre = document.createElement('pre');
+    pre.className = 'codeblock';
+    pre.textContent = text;
+    wrap.appendChild(pre);
+  }
   sec.appendChild(wrap);
   return sec;
+}
+
+// Ảnh trong tool_result (screenshot...) -> render <img> THẬT, lazy, tap để phóng to
+function toolImages(part) {
+  const sec = document.createElement('div');
+  sec.className = 'tsec';
+  const lb = document.createElement('div');
+  lb.className = 'tlbl';
+  lb.textContent = part.images.length > 1 ? part.images.length + ' ẢNH' : 'ẢNH';
+  sec.appendChild(lb);
+  const grid = document.createElement('div');
+  grid.className = 'timgs';
+  part.images.forEach(function (im, idx) {
+    const url = '/api/toolimg/' + currentSid + '/' + part.id + '/' + idx;
+    const fig = document.createElement('button');
+    fig.type = 'button';
+    fig.className = 'timgbtn';
+    fig.title = 'Bấm để xem full';
+    const img = document.createElement('img');
+    img.loading = 'lazy';            // chỉ tải khi cuộn tới — ảnh ~100KB/tấm
+    img.decoding = 'async';
+    img.src = url;
+    img.alt = 'ảnh kết quả ' + (idx + 1);
+    img.onerror = function () { fig.classList.add('timg-fail'); fig.textContent = 'Không tải được ảnh'; };
+    fig.appendChild(img);
+    fig.onclick = function (ev) { ev.stopPropagation(); openImageOverlay(url); };
+    grid.appendChild(fig);
+  });
+  sec.appendChild(grid);
+  return sec;
+}
+
+// Xem ảnh full màn hình: tap nền / Esc để đóng
+function openImageOverlay(url) {
+  const ov = document.createElement('div');
+  ov.className = 'imgov fadein';
+  const img = document.createElement('img');
+  img.src = url;
+  ov.appendChild(img);
+  const close = function () { ov.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = function (e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  ov.onclick = close;
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(ov);
 }
 
 // Dựng nội dung body — LAZY, chỉ chạy lần mở đầu tiên (30 msg x N tool mà dựng sẵn hết thì phí)
@@ -3112,20 +3360,25 @@ function buildToolBody(card) {
   const inner = card.querySelector('.tinner');
   inner.innerHTML = '';
   const p = card._part;
-  if (p.input) inner.appendChild(toolSection('INPUT', p.input, false));
+  const isDiff = p.name === 'Edit' && p.input && p.input.indexOf('--- old') === 0;
+  if (p.input) {
+    inner.appendChild(toolSection(isDiff ? 'THAY ĐỔI' : 'INPUT', p.input, false, {
+      diff: isDiff,
+      lang: isDiff ? '' : langOf(p),
+    }));
+  }
   const isErr = p.status === 'error';
   const hasResult = p.result || p.status === 'ok' || isErr;
   if (hasResult) {
-    const sec = toolSection(isErr ? 'ERROR' : 'RESULT', p.result || '(empty)', isErr);
+    const txt = p.result || '(trống)';
+    const sec = toolSection(isErr ? 'LỖI' : 'KẾT QUẢ', txt, isErr, {
+      prose: !isErr && looksLikeProse(txt),
+      lang: p.name === 'Read' ? langOf(p) : '',
+    });
     sec.dataset.role = 'result';
     inner.appendChild(sec);
   }
-  if (p.images) {
-    const im = document.createElement('div');
-    im.className = 'timg tsec';
-    im.textContent = '[+' + p.images + ' image]';
-    inner.appendChild(im);
-  }
+  if (p.images && p.images.length) inner.appendChild(toolImages(p));
   card._built = true;
 }
 
@@ -3149,10 +3402,14 @@ function renderToolCard(part) {
   const sum = document.createElement('span');
   sum.className = 'tcard-sum';
   sum.textContent = part.summary || '';
+  // summary bị ellipsis trên mobile -> giữ bản đầy đủ ở title (hover desktop / long-press)
+  if (part.summary) sum.title = part.summary;
+  nm.title = part.name; // tên MCP rút gọn -> title giữ tên gốc đầy đủ
   const si = statusIcon(part.status);
   const st = document.createElement('span');
   st.className = 'tcard-st ' + si.cls;
   st.innerHTML = si.html;
+  st.title = si.tip;
   const chev = document.createElement('span');
   chev.className = 'tcard-chev';
   chev.innerHTML = ICON_CHEV;
@@ -3179,30 +3436,129 @@ function renderToolCard(part) {
   return card;
 }
 
+/* ---- thời gian kiểu app chat: giờ dưới bubble + vạch ngăn ngày ---- */
+function fmtClock(ts) {
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function dayKey(ts) {
+  const d = new Date(ts);
+  return isNaN(d) ? '' : d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+}
+function fmtDay(ts) {
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  const today = new Date();
+  const y = new Date(today.getTime() - 86400000);
+  if (dayKey(d) === dayKey(today)) return 'Hôm nay';
+  if (dayKey(d) === dayKey(y)) return 'Hôm qua';
+  return d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear();
+}
+function dayDivider(ts) {
+  const div = document.createElement('div');
+  div.className = 'daydiv';
+  const s = document.createElement('span');
+  s.textContent = fmtDay(ts);
+  div.appendChild(s);
+  return div;
+}
+// giờ + trạng thái, đặt dưới bubble như Telegram/iMessage
+function metaLine(msg, align) {
+  const meta = document.createElement('div');
+  meta.className = 'bmeta' + (align === 'right' ? ' bmeta-r' : '');
+  const t = document.createElement('span');
+  t.textContent = fmtClock(msg.ts);
+  meta.appendChild(t);
+  if (msg.parts) {
+    const tools = msg.parts.filter(p => p.t === 'tool');
+    if (tools.length) {
+      const nErr = tools.filter(p => p.status === 'error').length;
+      const nRun = tools.filter(p => p.status === 'running').length;
+      const s = document.createElement('span');
+      s.className = 'bmeta-tools' + (nErr ? ' bmeta-err' : nRun ? ' bmeta-run' : '');
+      s.textContent = nRun ? tools.length + ' tool · đang chạy'
+        : nErr ? tools.length + ' tool · ' + nErr + ' lỗi'
+        : tools.length + ' tool';
+      meta.appendChild(s);
+    }
+  }
+  return meta;
+}
+
 function bubbleFor(msg) {
   const hasTool = msg.parts && msg.parts.some(p => p.t === 'tool');
+  const w = document.createElement('div');
+  w.className = 'msgwrap fadein' + (msg.role === 'user' ? ' mw-user' : '');
   if (!hasTool) {
     const b = document.createElement('div');
     const cls = msg.role === 'user' ? 'bub-user' : msg.role === 'tool' ? 'bub-tool' : 'bub-assistant';
-    b.className = 'bub ' + cls + ' fadein'; // fade-in MỘT LẦN khi xuất hiện
+    b.className = 'bub ' + cls;
     renderContent(b, msg.content);
-    return b;
-  }
-  // message có tool: text bubble + card xếp dọc trong 1 wrapper
-  const w = document.createElement('div');
-  w.className = 'msgwrap fadein';
-  for (const p of msg.parts) {
-    if (p.t === 'text') {
-      if (!p.text || !p.text.trim()) continue;
-      const b = document.createElement('div');
-      b.className = 'bub ' + (msg.role === 'user' ? 'bub-user' : 'bub-assistant');
-      renderContent(b, p.text);
-      w.appendChild(b);
-    } else {
-      w.appendChild(renderToolCard(p));
+    w.appendChild(b);
+  } else {
+    // message có tool: text bubble + card xếp dọc trong 1 wrapper
+    for (const p of mergeTextParts(msg.parts)) {
+      if (p.t === 'text') {
+        if (!p.text || !p.text.trim()) continue;
+        const b = document.createElement('div');
+        b.className = 'bub ' + (msg.role === 'user' ? 'bub-user' : 'bub-assistant');
+        renderContent(b, p.text);
+        w.appendChild(b);
+      } else {
+        w.appendChild(renderToolCard(p));
+      }
     }
   }
+  if (msg.ts) w.appendChild(metaLine(msg, msg.role === 'user' ? 'right' : 'left'));
   return w;
+}
+
+// Gộp các message assistant LIÊN TIẾP trong cùng ~2 phút thành 1 lượt.
+// Claude CLI tách mỗi tool_use thành 1 message riêng -> không gộp thì câu văn và tool
+// của cùng một lượt bị xé rời, kèm theo hàng loạt dòng "15:18 · 1 tool" lặp lại rất rối.
+const GROUP_GAP_MS = 120000;
+// 2 đoạn văn liền nhau (không có tool xen giữa) -> 1 bubble liền mạch, không phải 2 bong bóng rời
+function mergeTextParts(parts) {
+  const out = [];
+  for (const p of parts) {
+    const prev = out[out.length - 1];
+    if (p.t === 'text' && prev && prev.t === 'text') {
+      const NL = String.fromCharCode(10);
+      out[out.length - 1] = { t: 'text', text: prev.text + NL + NL + p.text };
+    } else out.push(p);
+  }
+  return out;
+}
+function groupMessages(msgs) {
+  const out = [];
+  for (const m of msgs) {
+    const prev = out[out.length - 1];
+    const near = prev && prev.ts && m.ts && Math.abs(Date.parse(m.ts) - Date.parse(prev.ts)) < GROUP_GAP_MS;
+    if (prev && prev.role === 'assistant' && m.role === 'assistant' && near) {
+      prev.parts = mergeTextParts(
+        (prev.parts || [{ t: 'text', text: prev.content }]).concat(m.parts || [{ t: 'text', text: m.content }]));
+      prev.content = (prev.content ? prev.content + String.fromCharCode(10) : '') + (m.content || '');
+      prev.ts = m.ts;   // giờ hiển thị = lúc lượt kết thúc
+      prev.n = (prev.n || 1) + 1;
+      continue;
+    }
+    out.push(Object.assign({}, m));
+  }
+  return out;
+}
+
+// Chèn bubble + vạch ngăn ngày khi sang ngày mới (so với bubble trước đó)
+let lastDayKey = '';
+function appendMessage(box, msg) {
+  if (msg.ts) {
+    const k = dayKey(msg.ts);
+    if (k && k !== lastDayKey) {
+      box.appendChild(dayDivider(msg.ts));
+      lastDayKey = k;
+    }
+  }
+  box.appendChild(bubbleFor(msg));
 }
 
 // Tool chạy xong trong lúc đang xem -> chỉ đổi CHIP + border của card đó, không đụng node khác
@@ -3220,6 +3576,7 @@ function reconcileToolStatus(msgs) {
       const si = statusIcon(p.status);
       ent.chip.className = 'tcard-st ' + si.cls;
       ent.chip.innerHTML = si.html;
+      ent.chip.title = si.tip;
       ent.card.classList.toggle('t-err', p.status === 'error');
       ent.card.classList.toggle('t-run', p.status === 'running');
       // card đang mở -> dựng lại body cho khớp kết quả mới; đang đóng thì để lazy build lo
@@ -3236,6 +3593,9 @@ function openChat(sid) {
   chatTotal = 0;
   chatStart = -1;
   chatCards = new Map();
+  chatLastN = 0;
+  reopenTids = [];
+  lastDayKey = '';
   delete clearOffsets[sid];
   document.getElementById('list').classList.add('hidden');
   const chat = document.getElementById('chat');
@@ -3318,10 +3678,11 @@ async function refreshCompare() {
     const cls = 'chip ml-auto st-' + r.status;
     if (st.className !== cls) st.className = cls;
     const box = document.getElementById('cmp-bub-' + i);
-    if (r.messages.length < cmpRendered[i]) { box.innerHTML = ''; cmpRendered[i] = 0; }
-    for (let k = cmpRendered[i]; k < r.messages.length; k++) box.appendChild(bubbleFor(r.messages[k]));
-    if (cmpRendered[i] !== r.messages.length) {
-      cmpRendered[i] = r.messages.length;
+    const cg = groupMessages(r.messages); // gộp lượt như chat view cho nhất quán
+    if (cg.length < cmpRendered[i]) { box.innerHTML = ''; cmpRendered[i] = 0; }
+    for (let k = cmpRendered[i]; k < cg.length; k++) box.appendChild(bubbleFor(cg[k]));
+    if (cmpRendered[i] !== cg.length) {
+      cmpRendered[i] = cg.length;
       box.scrollTop = box.scrollHeight;
     }
   }
@@ -3429,27 +3790,59 @@ async function refreshChat() {
   // start: vị trí TUYỆT ĐỐI của msgs[0]. Chỉ so length là không đủ — khi window 30 trượt
   // (msg mới đẩy msg cũ ra) length không đổi -> vòng append bên dưới không chạy lần nào
   // -> client đứng hình, im lặng bỏ lỡ mọi message mới.
+  // Window trượt (msg mới đẩy msg cũ ra): messages.length KHÔNG đổi, nên chỉ so length là
+  // client đứng hình, im lặng bỏ lỡ mọi msg mới. So start tuyệt đối mới phát hiện được.
+  // Vì bubble được GỘP theo lượt, số bubble != số message -> vẽ lại rồi mở lại đúng card cũ,
+  // đơn giản và chắc hơn là cố cắt từng node ở đầu.
   const start = (r.start != null ? r.start : dropped) + skip;
   if (chatStart === -1) chatStart = start;
   if (start !== chatStart || msgs.length < chatRendered) {
-    const delta = start - chatStart;
-    if (delta > 0 && delta <= chatRendered && msgs.length >= chatRendered - delta) {
-      // window trượt: cắt bubble đầu, GIỮ NGUYÊN node còn lại (card đang mở không bị giết)
-      for (let i = 0; i < delta; i++) { if (box.firstChild) box.firstChild.remove(); }
-      // bỏ card đã detach khỏi Map, tránh phình + reconcile lên node không còn trong DOM
-      for (const [tid, ent] of chatCards) { if (!ent.card.isConnected) chatCards.delete(tid); }
-      chatRendered -= delta;
-    } else {
-      // hiếm: file bị cắt / nhảy quá xa -> render lại từ đầu
-      box.innerHTML = '';
-      chatRendered = 0;
-      chatCards.clear();
-    }
+    reopenTids = [...box.querySelectorAll('.tcard.open')].map(c => c.dataset.tid).filter(Boolean);
+    box.innerHTML = '';
+    chatRendered = 0;
+    chatLastN = 0;
+    chatCards.clear();
     chatStart = start;
   }
-  // STABLE: chỉ append phần mới, không đụng bubble cũ
-  for (let i = chatRendered; i < msgs.length; i++) box.appendChild(bubbleFor(msgs[i]));
-  chatRendered = msgs.length;
+  // Gộp lượt assistant liên tiếp -> số BUBBLE khác số message, nên append theo nhóm.
+  const groups = groupMessages(msgs);
+  if (chatRendered === 0) lastDayKey = '';
+  // Nhóm cuối có thể "lớn thêm" khi Claude gọi tiếp tool trong cùng lượt -> vẽ lại RIÊNG nhóm đó.
+  // Không đụng nhóm trước, nên card đang mở ở các lượt cũ vẫn nguyên.
+  if (chatRendered > 0 && chatRendered <= groups.length) {
+    const lastIdx = chatRendered - 1;
+    const g = groups[lastIdx];
+    if (g && (g.n || 1) !== chatLastN) {
+      const node = box.querySelector('[data-gi="' + lastIdx + '"]');
+      if (node) {
+        const wasOpen = [...node.querySelectorAll('.tcard.open')].map(c => c.dataset.tid);
+        const fresh = bubbleFor(g);
+        fresh.dataset.gi = lastIdx;
+        node.replaceWith(fresh);
+        // giữ lại card user đang mở trong chính lượt này
+        wasOpen.forEach(tid => {
+          const c = fresh.querySelector('.tcard[data-tid="' + tid + '"]');
+          if (c && !c.classList.contains('open')) c.querySelector('.tcard-head').click();
+        });
+      }
+    }
+  }
+  for (let i = chatRendered; i < groups.length; i++) {
+    const before = box.lastElementChild;
+    appendMessage(box, groups[i]);
+    const added = box.lastElementChild;
+    if (added && added !== before) added.dataset.gi = i;
+  }
+  chatRendered = groups.length;
+  chatLastN = groups.length ? (groups[groups.length - 1].n || 1) : 0;
+  // sau khi vẽ lại vì window trượt: mở lại đúng những card user đang xem dở
+  if (reopenTids.length) {
+    reopenTids.forEach(tid => {
+      const c = box.querySelector('.tcard[data-tid="' + tid + '"]');
+      if (c && !c.classList.contains('open')) c.querySelector('.tcard-head').click();
+    });
+    reopenTids = [];
+  }
   reconcileToolStatus(msgs); // tool xong -> đổi chip tại chỗ (không rebuild)
   document.getElementById('typingind').classList.toggle('hidden', !r.typing);
   if (atBottom) box.scrollTop = box.scrollHeight;
