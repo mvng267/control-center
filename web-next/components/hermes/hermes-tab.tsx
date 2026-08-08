@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Send, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Send, MessageSquare, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Card } from '@/components/ui/card';
+import { PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -25,8 +26,14 @@ function niceTitle(c: { title: string; source: string }) {
 }
 
 // Tin đầu tiên của người dùng làm phụ đề — biết hội thoại nói về gì mà không phải mở.
+// Bỏ qua tin do HỆ THỐNG chèn vào luồng user: thông báo tiến trình nền, nhắc nhở,
+// kết quả tool… Không lọc thì phụ đề thành "[IMPORTANT: Background process proc_7ff…
+// completed normally (exit code 0)" — chẳng nói lên điều gì về hội thoại.
+const NOISE = /^\s*(\[IMPORTANT|<[a-z-]+>|\[Request interrupted|Caveat:|\[system\])/i;
+
 function firstLine(c: { messages?: { role: string; content: string }[] }) {
-  const first = (c.messages || []).find((m) => m.role === 'user' && m.content.trim());
+  const first = (c.messages || []).find(
+    (m) => m.role === 'user' && m.content.trim() && !NOISE.test(m.content));
   if (!first) return '';
   return first.content.replace(/\s+/g, ' ').trim().slice(0, 90);
 }
@@ -43,6 +50,7 @@ function saveExtra(e: Record<string, HMsg[]>) {
 export function HermesTab() {
   const [convs, setConvs] = useState<HConv[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [q, setQ] = useState('');
   const [extra, setExtra] = useState<Record<string, HMsg[]>>({});
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -90,12 +98,29 @@ export function HermesTab() {
   };
 
   if (!openId) {
+    const needle = q.trim().toLowerCase();
+    const shown = needle
+      ? convs.filter((c) => (niceTitle(c) + ' ' + firstLine(c) + ' ' + c.source).toLowerCase().includes(needle))
+      : convs;
     return (
-      <div className="mx-auto flex max-w-[1000px] flex-col gap-2 p-4 pb-24 md:pb-6" data-testid="hermes-list">
-        {convs.length === 0 && (
-          <div className="py-10 text-center text-[13px] text-muted-foreground">Chưa có hội thoại nào</div>
+      <div className="pb-24 md:pb-6">
+        <PageHeader title="Hermes" count={convs.length}
+          desc="Hội thoại của Hermes từ Telegram và CLI, gộp về một chỗ."
+          actions={
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} data-testid="hermes-search"
+                placeholder="Tìm hội thoại…" className="h-8 w-[180px] pl-8 text-[16px] md:text-[12.5px]" />
+            </div>
+          } />
+
+      <div className="mx-auto flex max-w-[1000px] flex-col gap-2 px-4 md:px-6" data-testid="hermes-list">
+        {shown.length === 0 && (
+          <div className="py-10 text-center text-[13px] text-muted-foreground">
+            {needle ? `Không có hội thoại nào khớp “${q}”` : 'Chưa có hội thoại nào'}
+          </div>
         )}
-        {convs.map((c) => (
+        {shown.map((c) => (
           <Card key={c.id} data-testid="hermes-conv"
             className="cursor-pointer gap-0 p-3 transition-colors hover:bg-accent/50"
             onClick={() => setOpenId(c.id)}>
@@ -115,6 +140,7 @@ export function HermesTab() {
             </div>
           </Card>
         ))}
+      </div>
       </div>
     );
   }
