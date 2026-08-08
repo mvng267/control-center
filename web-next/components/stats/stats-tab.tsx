@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { PageHeader } from '@/components/layout/app-shell';
 import { Card } from '@/components/ui/card';
 import type { Session } from '@/lib/types';
 
@@ -31,7 +32,8 @@ export function StatsTab({ sessions }: { sessions: Session[] }) {
   }, [sessions]);
 
   return (
-    <div className="mx-auto flex max-w-[1000px] flex-col gap-4 p-4 pb-24 md:pb-6" data-testid="stats-tab">
+    <><PageHeader title="Thống kê" count={d.total} desc="Tổng quan phiên và tin nhắn theo dự án." />
+    <div className="flex flex-col gap-4 px-4 pb-24 md:px-6 md:pb-6" data-testid="stats-tab">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="TỔNG PHIÊN" value={d.total} testid="stat-total" />
         <Stat label="ĐANG HOẠT ĐỘNG" value={d.active} tone="text-status-ok" testid="stat-active" />
@@ -79,6 +81,7 @@ export function StatsTab({ sessions }: { sessions: Session[] }) {
         </Card>
       </div>
     </div>
+    </>
   );
 }
 

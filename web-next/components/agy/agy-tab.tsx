@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Play, Square, RotateCw, Search, ChevronDown } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { AgyStatus, AgyUsage } from '@/lib/types';
+import { PageHeader } from '@/components/layout/app-shell';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,7 +56,10 @@ export function AgyTab() {
     api('/api/agy/' + seg, { method: 'POST', body: JSON.stringify(name ? { name } : {}) }).catch(() => {});
 
   return (
-    <div className="mx-auto flex max-w-[1000px] flex-col gap-4 p-4 pb-24 md:pb-6">
+    <>
+      <PageHeader title="Agy Proxy" count={st.models.length}
+        desc="Trạng thái gateway, lưu lượng và sức khoẻ tài khoản." />
+    <div className="flex flex-col gap-4 px-4 pb-24 md:px-6 md:pb-6">
       {/* thẻ trạng thái — mọi thứ quan trọng ở một chỗ */}
       <Card
         className={cn('gap-0 p-4', st.running ? 'border-status-ok/35' : 'border-status-error/35')}
@@ -248,6 +252,7 @@ export function AgyTab() {
         </div>
       </Card>
     </div>
+    </>
   );
 }
 

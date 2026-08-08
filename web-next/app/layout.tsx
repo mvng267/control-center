@@ -1,7 +1,11 @@
 import type { Metadata, Viewport } from 'next';
+import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
+
+// Inter — cùng font Atlas dùng. next/font tự nhúng nên không phụ thuộc mạng ngoài.
+const inter = Inter({ subsets: ['latin', 'vietnamese'], variable: '--font-sans', display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'Claude Control Center',
@@ -27,7 +31,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   // suppressHydrationWarning: next-themes gắn class vào <html> trước khi React hydrate
   return (
-    <html lang="vi" suppressHydrationWarning>
+    <html lang="vi" className={inter.variable} suppressHydrationWarning>
       <body className="antialiased">
         <ThemeProvider>
           {children}
