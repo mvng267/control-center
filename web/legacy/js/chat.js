@@ -1,9 +1,9 @@
 /* ================= chat view: STABLE RENDER (append-only) ================= */
-let chatRendered = 0; // số bubble đã render cho session đang mở
-let chatTotal = 0;    // tổng messages trong history lần fetch cuối
-let chatStart = -1;   // chỉ số tuyệt đối của bubble đầu tiên đang render (-1 = chưa render gì)
-let chatCards = new Map(); // tool_use_id -> {card, chip, status} để cập nhật chip khi tool xong
-let chatLastN = 0;    // số message đã gộp vào lượt CUỐI (lượt đang chạy còn phình thêm)
+chatRendered = 0; // số bubble đã render cho session đang mở
+chatTotal = 0;    // tổng messages trong history lần fetch cuối
+chatStart = -1;   // chỉ số tuyệt đối của bubble đầu tiên đang render (-1 = chưa render gì)
+chatCards = new Map(); // tool_use_id -> {card, chip, status} để cập nhật chip khi tool xong
+chatLastN = 0;    // số message đã gộp vào lượt CUỐI (lượt đang chạy còn phình thêm)
 let reopenTids = [];  // card đang mở, cần mở lại sau khi buộc phải vẽ lại
 
 // Parse markdown an toàn: marked (render) + DOMPurify (sanitize chống XSS).
@@ -538,7 +538,7 @@ function groupMessages(msgs) {
 }
 
 // Chèn bubble + vạch ngăn ngày khi sang ngày mới (so với bubble trước đó)
-let lastDayKey = '';
+lastDayKey = '';
 function appendMessage(box, msg) {
   if (msg.ts) {
     const k = dayKey(msg.ts);

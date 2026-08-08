@@ -62,6 +62,32 @@ if (fs.existsSync(idx)) {
   }
 }
 
+// Thứ tự nạp: file nạp TRƯỚC không được dùng biến let/const khai báo ở file nạp SAU.
+// node --check không bắt được (cú pháp vẫn hợp lệ) nhưng lúc chạy sẽ ném
+// "x is not defined" — đã từng làm vỡ trang vì stream.js đọc permBusy quá sớm.
+if (fs.existsSync(idx)) {
+  const order = [...fs.readFileSync(idx, 'utf8').matchAll(/src="\/js\/([a-z-]+\.js)"/g)].map(x => x[1]);
+  const files = order.map(n => ({ n, s: fs.readFileSync(path.join(ROOT, 'web/legacy/js', n), 'utf8') }));
+  const declAt = {};
+  files.forEach(({ s }, i) => {
+    for (const m of s.matchAll(/^(?:let|const)\s+([A-Za-z_$][\w$]*)/gm)) {
+      if (!(m[1] in declAt)) declAt[m[1]] = i;
+    }
+  });
+  let tdz = 0;
+  files.forEach(({ n, s }, i) => {
+    for (const [v, di] of Object.entries(declAt)) {
+      if (di <= i) continue;
+      if (new RegExp('\\b' + v.replace(/\$/g, '\\$') + '\\b').test(s)) {
+        tdz++;
+        console.log('  LỖI  ' + n + ' dùng "' + v + '" nhưng nó khai báo ở ' + order[di] + ' (nạp sau)');
+      }
+    }
+  });
+  if (tdz) { bad++; console.log('       -> chuyển các biến này lên core.js'); }
+  else console.log('  ok   thứ tự nạp: không dùng biến khai báo ở file nạp sau');
+}
+
 // CSS: bắt lỗi ngoặc lệch — không phải parser đầy đủ, chỉ chốt chặn rẻ tiền
 const cssFile = path.join(ROOT, 'web/legacy/app.css');
 if (fs.existsSync(cssFile)) {

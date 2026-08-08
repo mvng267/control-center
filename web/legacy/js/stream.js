@@ -1,6 +1,6 @@
 /* ================= SSE ================= */
 // EventSource KHÔNG gửi được custom header -> token phải đi qua query string
-const es = new EventSource('/stream' + (dashToken ? '?t=' + encodeURIComponent(dashToken) : ''));
+es = new EventSource('/stream' + (dashToken ? '?t=' + encodeURIComponent(dashToken) : ''));
 es.onerror = () => {
   if (!dashToken) askToken();       // chưa có token thì hiện màn nhập mã
   setOffline(true);                 // SSE đứt = mất kết nối tới server

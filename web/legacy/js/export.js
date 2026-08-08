@@ -186,7 +186,7 @@ const PERM_UI = {
   bypassPermissions: { label: 'Bỏ mọi kiểm tra', cls: 'p-bypass', toast: 'CẨN THẬN: bỏ qua MỌI kiểm tra quyền, kể cả lệnh nguy hiểm' },
 };
 const PERM_CYCLE = ['acceptEdits', 'plan', 'default', 'bypassPermissions'];
-let permMode = 'acceptEdits';
+permMode = 'acceptEdits';
 
 function renderPerm() {
   const b = document.getElementById('permbtn');
@@ -198,8 +198,8 @@ function renderPerm() {
   b.title = 'Quyền của Claude: ' + ui.label + ' — bấm để đổi';
 }
 
-let permBusy = 0;      // >0 = đang chờ server xác nhận -> SSE tick cũ không được ghi đè
-let permChain = Promise.resolve(); // xếp hàng: bấm nhanh 2 lần vẫn nhảy đúng 2 nấc
+permBusy = 0;      // >0 = đang chờ server xác nhận -> SSE tick cũ không được ghi đè
+permChain = Promise.resolve(); // xếp hàng: bấm nhanh 2 lần vẫn nhảy đúng 2 nấc
 function cyclePerm() {
   const next = PERM_CYCLE[(PERM_CYCLE.indexOf(permMode) + 1) % PERM_CYCLE.length];
   permMode = next;
@@ -219,7 +219,7 @@ function cyclePerm() {
 }
 
 /* ---- model riêng từng phiên: /model đổi TOÀN CỤC nên phiên khác dính theo ---- */
-let chatModel = null; // model riêng của phiên đang mở (null = theo model toàn cục)
+chatModel = null; // model riêng của phiên đang mở (null = theo model toàn cục)
 function renderChatModel() {
   const el = document.getElementById('chatmodel');
   if (!el) return;
@@ -408,7 +408,7 @@ function approvePlan() {
 }
 
 /* ---- đổi tên phiên: lưu riêng ở dashboard, KHÔNG sửa .jsonl của Claude CLI ---- */
-let chatTitle = '';
+chatTitle = '';
 function renameSession() {
   if (!currentSid) return;
   const box = document.createElement('div');

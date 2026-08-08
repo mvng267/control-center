@@ -193,7 +193,7 @@ function attachHistory(input, key) {
   input.addEventListener('input', () => { idx = -1; }); // user gõ tay -> thoát chế độ history
 }
 
-const taskinput = document.getElementById('taskinput');
+taskinput = document.getElementById('taskinput');
 // Gõ "/" ở đầu input -> mở drawer palette thay vì dropdown
 taskinput.addEventListener('input', () => {
   if (taskinput.value === '/') { taskinput.value = ''; openPalette(''); }

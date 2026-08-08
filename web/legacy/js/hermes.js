@@ -1,8 +1,8 @@
 /* ================= HERMES tab: stable render ================= */
-let hermesConvos = [];
-let hermesMaxTs = 0;
-let hermesSeenTs = 0;
-let hermesOpenId = null;
+hermesConvos = [];
+hermesMaxTs = 0;
+hermesSeenTs = 0;
+hermesOpenId = null;
 let hermesRendered = 0; // số bubble đã render của conversation đang mở
 
 let hermesFetchBusy = false; // chống fetch chồng nhau khi mạng chậm hơn interval
@@ -60,7 +60,7 @@ function renderHermesList() {
 // Message local (user gửi + reply từ Hermes CLI) theo conversation id.
 // '__direct__' = chat trực tiếp không thuộc state.db.
 // Persist vào localStorage để reply KHÔNG mất khi F5 (state.db không lưu chat CLI trực tiếp).
-const hermesExtra = (function () {
+hermesExtra = (function () {
   try {
     const j = JSON.parse(localStorage.getItem('hermesExtra') || '{}');
     return (j && typeof j === 'object' && !Array.isArray(j)) ? j : {};

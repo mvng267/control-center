@@ -1,7 +1,7 @@
 /* ================= session compare: chọn 2 sessions -> split view ================= */
-let compareMode = false;   // đang ở chế độ chọn session để so sánh
-let compareSel = [];       // sids đã chọn (tối đa 2)
-let compareSids = null;    // [sidA, sidB] đang mở trong compare view
+compareMode = false;   // đang ở chế độ chọn session để so sánh
+compareSel = [];       // sids đã chọn (tối đa 2)
+compareSids = null;    // [sidA, sidB] đang mở trong compare view
 let compareTimer = null;
 const cmpRendered = [0, 0]; // số bubble đã render mỗi cột (append-only, không rebuild)
 

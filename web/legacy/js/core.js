@@ -1,3 +1,18 @@
+/* ================= trạng thái dùng chung giữa các file =================
+   Client JS chia theo tính năng nhưng nạp bằng nhiều thẻ <script> nên DÙNG CHUNG scope.
+   Biến khai báo bằng let/const trong file nạp SAU sẽ không tồn tại với file nạp TRƯỚC
+   (temporal dead zone) — SSE tick sớm từng làm vỡ trang vì stream.js đọc permBusy khi
+   export.js chưa nạp. Nên mọi biến dùng xuyên file khai báo hết ở đây, file đầu tiên. */
+let es = null;                                   // stream.js  — EventSource
+let taskinput = null;                            // palette.js — ô nhập task
+let chatRendered = 0, chatTotal = 0, chatStart = -1;  // chat.js
+let chatCards = new Map(), chatLastN = 0, lastDayKey = "";
+let chatModel = null, chatTitle = "";            // export.js  — model + tiêu đề phiên đang mở
+let compareSids = null, compareMode = false, compareSel = [];  // compare.js
+let permMode = "acceptEdits", permBusy = 0, permChain = Promise.resolve();  // export.js
+let hermesConvos = [], hermesMaxTs = 0, hermesSeenTs = 0;      // hermes.js
+let hermesOpenId = null, hermesExtra = {};
+
 /* ================= token truy cập =================
    Bọc fetch một lần để mọi lệnh gọi tự kèm token — khỏi sửa 26 chỗ và khỏi sót về sau.
    Token lấy từ ?t=... trên URL (link tiện mở máy khác) rồi lưu localStorage. */
