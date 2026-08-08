@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Send, Square, Check, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
+import { Markdown } from './markdown';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -161,13 +162,16 @@ export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
                   ) : p.text?.trim() ? (
                     <div key={i} data-testid="bubble"
                       className={cn(
-                        'max-w-full whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-[14px] leading-relaxed',
+                        'max-w-full break-words rounded-2xl px-3.5 py-2.5 text-[14px] leading-relaxed',
+                        (m.role === 'user' || p.t === 'think') && 'whitespace-pre-wrap',
                         m.role === 'user'
                           ? 'rounded-br-md bg-primary text-primary-foreground'
                           : 'rounded-bl-md border border-border border-l-2 border-l-primary/45 bg-card',
                         p.t === 'think' && 'border-dashed italic text-muted-foreground',
                       )}>
-                      {p.text}
+                      {m.role === 'user' || p.t === 'think'
+                        ? p.text
+                        : <Markdown>{p.text}</Markdown>}
                     </div>
                   ) : null,
                 )}
@@ -200,7 +204,8 @@ export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
                 style={{ animationDelay: `${i * 150}ms` }} />
             ))}
           </span>
-          <Button size="sm" variant="outline" className="h-[30px] text-status-error" onClick={stop}>
+          <Button size="sm" variant="outline" className="h-[30px] text-status-error" onClick={stop}
+            data-testid="stop-btn">
             <Square className="size-3" /> Dừng
           </Button>
         </div>
