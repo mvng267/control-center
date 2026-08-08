@@ -68,19 +68,50 @@ if (fs.existsSync(idx)) {
 if (fs.existsSync(idx)) {
   const order = [...fs.readFileSync(idx, 'utf8').matchAll(/src="\/js\/([a-z-]+\.js)"/g)].map(x => x[1]);
   const files = order.map(n => ({ n, s: fs.readFileSync(path.join(ROOT, 'web/legacy/js', n), 'utf8') }));
-  const declAt = {};
+  // Hai loại lỗi khác nhau, phải phân biệt:
+  //
+  // (a) BIẾN let/const dùng ở file nạp trước -> LUÔN vỡ (temporal dead zone).
+  // (b) HÀM gọi bên trong hàm khác -> vô hại, vì lúc gọi thì mọi file đã nạp xong.
+  //     Chỉ vỡ khi gọi ở CẤP FILE hoặc trong callback chạy sớm (SSE onmessage, timer).
+  //     Đây chính là ca renderPerm: stream.js nhận SSE trước khi export.js nạp xong.
+  const varAt = {}, fnAt = {};
   files.forEach(({ s }, i) => {
-    for (const m of s.matchAll(/^(?:let|const)\s+([A-Za-z_$][\w$]*)/gm)) {
-      if (!(m[1] in declAt)) declAt[m[1]] = i;
-    }
+    for (const m of s.matchAll(/^(?:let|const)\s+([A-Za-z_$][\w$]*)/gm)) if (!(m[1] in varAt)) varAt[m[1]] = i;
+    for (const m of s.matchAll(/^function\s+([A-Za-z_$][\w$]*)/gm)) if (!(m[1] in fnAt)) fnAt[m[1]] = i;
   });
+
+  // Dòng chạy NGAY khi nạp: không thụt lề (cấp file), hoặc nằm trong handler sự kiện
+  // gắn ở cấp file (es.onmessage = ..., addEventListener, setInterval).
+  const earlyLines = (s) => {
+    const out = [];
+    const lines = s.split('\n');
+    let inEarly = false, depth = 0;
+    for (const l of lines) {
+      if (/^(es\.on\w+|window\.on\w+|document\.on\w+)\s*=|^\s*(es|window|document)\.addEventListener|^set(Interval|Timeout)\(/.test(l)) inEarly = true;
+      if (inEarly) {
+        out.push(l);
+        depth += (l.match(/\{/g) || []).length - (l.match(/\}/g) || []).length;
+        if (depth <= 0 && /[});]\s*$/.test(l)) inEarly = false;
+      } else if (/^[A-Za-z_$]/.test(l) && !/^(function|const|let|var|class)\b/.test(l)) out.push(l);
+    }
+    return out.join('\n');
+  };
+
   let tdz = 0;
   files.forEach(({ n, s }, i) => {
-    for (const [v, di] of Object.entries(declAt)) {
+    const early = earlyLines(s);
+    for (const [v, di] of Object.entries(varAt)) {
       if (di <= i) continue;
       if (new RegExp('\\b' + v.replace(/\$/g, '\\$') + '\\b').test(s)) {
         tdz++;
-        console.log('  LỖI  ' + n + ' dùng "' + v + '" nhưng nó khai báo ở ' + order[di] + ' (nạp sau)');
+        console.log('  LỖI  ' + n + ' dùng biến "' + v + '" khai báo ở ' + order[di] + ' (nạp sau)');
+      }
+    }
+    for (const [f, di] of Object.entries(fnAt)) {
+      if (di <= i) continue;
+      if (new RegExp('\\b' + f.replace(/\$/g, '\\$') + '\\s*\\(').test(early)) {
+        tdz++;
+        console.log('  LỖI  ' + n + ' gọi sớm "' + f + '()" nhưng nó ở ' + order[di] + ' (nạp sau)');
       }
     }
   });

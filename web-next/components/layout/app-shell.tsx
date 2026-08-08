@@ -52,9 +52,8 @@ export function AppShell({
         data-testid="sidebar">
         {/* logo */}
         <div className="flex items-center gap-2.5 px-4 py-3.5">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Terminal className="size-4" />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon-192.png" alt="" width={28} height={28} className="size-7 shrink-0 rounded-lg" />
           <span className="flex-1 truncate text-[15px] font-semibold tracking-tight">Control</span>
           <MoreHorizontal className="size-4 shrink-0 text-muted-foreground" />
         </div>
@@ -120,9 +119,8 @@ export function AppShell({
         {/* header: breadcrumb (desktop) / logo (mobile) */}
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4 md:border-b-0"
           style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(56px + env(safe-area-inset-top))' }}>
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground md:hidden">
-            <Terminal className="size-4" />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon-192.png" alt="" width={28} height={28} className="size-7 shrink-0 rounded-lg md:hidden" />
           <nav className="flex min-w-0 items-center gap-1.5 text-[14px]" data-testid="breadcrumb">
             <span className="hidden text-muted-foreground md:inline">Dashboard</span>
             <ChevronRight className="hidden size-3.5 shrink-0 text-muted-foreground md:inline" />

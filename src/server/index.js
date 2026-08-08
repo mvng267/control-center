@@ -1044,6 +1044,9 @@ function tokenOk(req, url) {
    NEW_UI=0 để quay về bản cũ tức thì nếu bản mới có vấn đề. */
 const LEGACY_DIR = path.join(__dirname, '..', '..', 'web', 'legacy');
 const NEXT_DIR = path.join(__dirname, '..', '..', 'web-next', 'out');
+// icon nguồn: web-next/public (được Next copy sang out khi build, nhưng đọc thẳng
+// public thì dùng được cả khi chưa build)
+const NEXT_PUBLIC = path.join(__dirname, '..', '..', 'web-next', 'public');
 const USE_NEW_UI = process.env.NEW_UI !== '0' && fs.existsSync(path.join(NEXT_DIR, 'index.html'));
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
                '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml',
@@ -1080,7 +1083,8 @@ const server = http.createServer(async (req, res) => {
   // Vỏ app gồm cả JS/CSS của giao diện — không có dữ liệu nhạy cảm, mà thiếu chúng thì
   // màn nhập token không hiện được (trang trắng) và offline cũng hỏng.
   const isShell = p === '/' || p === '/index.html' || p === '/manifest.json' || p === '/sw.js'
-    || p === '/icon.svg' || p === '/favicon.ico' || p === '/app.css'
+    || p === '/favicon.ico' || p === '/app.css'
+    || /^\/(icon\.svg|icon-\d+\.png|icon-maskable-\d+\.png|apple-touch-icon\.png|favicon-\d+\.png)$/.test(p)
     || p.startsWith('/_next/') || /^\/js\/[a-z-]+\.js$/.test(p);
   if (!isShell && !isLoopback(req) && !tokenOk(req, url)) {
     return json(res, 401, { error: 'cần token truy cập' });
@@ -1109,9 +1113,17 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/javascript' });
     return res.end(SW_JS);
   }
-  if (p === '/icon.svg') {
-    res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'max-age=86400' });
-    return res.end(ICON_SVG);
+  // Icon: file thật sinh bởi scripts/make-icons.js (PNG bắt buộc — iOS bỏ qua SVG khi
+  // "Thêm vào Màn hình chính"). Chưa sinh thì rơi về ICON_SVG cũ để không bao giờ 404.
+  const iconFile = p.match(/^\/(icon\.svg|icon-192\.png|icon-512\.png|icon-maskable-512\.png|apple-touch-icon\.png|favicon-32\.png)$/);
+  if (iconFile) {
+    const f = path.join(NEXT_PUBLIC, iconFile[1]);
+    if (fs.existsSync(f)) return sendFile(res, f, 'public, max-age=604800');
+    if (p === '/icon.svg') {
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'max-age=86400' });
+      return res.end(ICON_SVG);
+    }
+    return json(res, 404, { error: 'not found' });
   }
 
   if (p === '/stream') {
@@ -1534,7 +1546,21 @@ const MANIFEST = JSON.stringify({
   background_color: '#0f1117',
   theme_color: '#0f1117',
   start_url: '/',
-  icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
+  scope: '/',
+  lang: 'vi',
+  categories: ['productivity', 'developer'],
+  // PNG là bắt buộc: iOS bỏ qua icon SVG khi "Thêm vào Màn hình chính".
+  // maskable có lề an toàn 10% để Android cắt tròn/squircle không cụt dấu nhắc.
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+    { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+  ],
+  shortcuts: [
+    { name: 'Giao task mới', url: '/?tab=cli', icons: [{ src: '/icon-192.png', sizes: '192x192' }] },
+    { name: 'Agy Proxy', url: '/?tab=agy', icons: [{ src: '/icon-192.png', sizes: '192x192' }] },
+  ],
 });
 
 // Service worker: network-only (đủ điều kiện PWA) + Web Push nhận notification thật

@@ -11,6 +11,16 @@ export const metadata: Metadata = {
   title: 'Claude Control Center',
   description: 'Quản lý Claude CLI, Hermes và agy-proxy',
   manifest: '/manifest.json',
+  // apple-touch-icon là BẮT BUỘC: iOS bỏ qua icon SVG khi "Thêm vào Màn hình chính",
+  // thiếu nó thì shortcut hiện ảnh chụp màn hình mờ thay vì logo.
+  icons: {
+    icon: [
+      { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
   appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Claude CC' },
 };
 
