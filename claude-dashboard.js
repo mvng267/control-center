@@ -250,8 +250,9 @@ function listJobs() {
 
 /* ---------------- Hermes (state.db SQLite qua sqlite3 CLI) ---------------- */
 
-// Cache 3s — client poll 4s, tránh spawn sqlite3 dồn dập
+// Cache 1.5s — client poll 2.5s (realtime), vẫn tránh spawn sqlite3 dồn dập khi nhiều client
 let hermesCache = { at: 0, data: null };
+let hermesSending = 0; // số hermes CLI process đang chờ reply — client hiện typing indicator thật
 
 function sqliteJson(sql) {
   return new Promise(resolve => {
@@ -283,7 +284,7 @@ function hermesFromLog() {
 
 // GET /api/hermes -> { conversations: [{id,title,source,count,lastTs,messages:[{role,content,ts}]}] }
 async function getHermesData() {
-  if (hermesCache.data && Date.now() - hermesCache.at < 3000) return hermesCache.data;
+  if (hermesCache.data && Date.now() - hermesCache.at < 1500) return hermesCache.data;
   let conversations = null;
 
   if (fs.existsSync(HERMES_DB)) {
@@ -765,7 +766,8 @@ const server = http.createServer(async (req, res) => {
 
   // ---- Hermes: stream hội thoại của orchestrator (read-only) ----
   if (p === '/api/hermes' && req.method === 'GET') {
-    return json(res, 200, await getHermesData());
+    // sending nằm NGOÀI cache: typing indicator phải realtime, không trễ theo cache 1.5s
+    return json(res, 200, { ...(await getHermesData()), sending: hermesSending > 0 });
   }
   // Chat 2 chiều: gọi THẬT Hermes CLI (-z "<text>" -m <model>), đợi stdout -> reply
   if (p === '/api/hermes/send' && req.method === 'POST') {
@@ -773,9 +775,12 @@ const server = http.createServer(async (req, res) => {
     try { body = await readBody(req); } catch { return json(res, 400, { ok: false, error: 'bad json' }); }
     const text = (body.text || '').trim();
     if (!text) return json(res, 400, { ok: false, error: 'text required' });
+    hermesSending++;
     execFile(HERMES_BIN, ['-z', text, '-m', HERMES_MODEL],
       { maxBuffer: 10 * 1024 * 1024, timeout: 180000, env: process.env },
       (err, stdout, stderr) => {
+        hermesSending = Math.max(0, hermesSending - 1);
+        hermesCache.at = 0; // reply có thể đã ghi vào state.db -> poll kế tiếp đọc data mới ngay
         if (err) {
           const msg = ((stderr || '').trim() || err.message || 'hermes error').slice(-2000);
           return json(res, 500, { ok: false, error: msg });
@@ -1029,7 +1034,7 @@ const HTML = `<!doctype html>
     backdrop-filter: blur(3px);
   }
   #toast {
-    position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%); z-index: 70;
+    position: fixed; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 70;
     background: #1a1d27; border: 1px solid #262a36; color: #e4e4e7;
     padding: 9px 16px; border-radius: 12px; font-size: 13px; max-width: 88%;
     box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
@@ -1052,7 +1057,7 @@ const HTML = `<!doctype html>
                 opacity: 0; transition: opacity .2s ease; }
   #drawerwrap.open #drawerback { opacity: 1; }
   #drawer {
-    position: absolute; left: 0; right: 0; bottom: 0; max-height: 78vh;
+    position: absolute; left: 0; right: 0; bottom: 0; max-height: 78vh; max-height: 78dvh;
     background: #12141c; border-top: 1px solid #262a36; border-radius: 18px 18px 0 0;
     display: flex; flex-direction: column; box-shadow: 0 -12px 40px rgba(0,0,0,.5);
     transform: translateY(105%); transition: transform .2s ease; /* chỉ chạy 1 lần khi mở/đóng */
@@ -1138,7 +1143,10 @@ const HTML = `<!doctype html>
   @media (min-width: 768px) { #collapsebtn { display: flex; } }
 </style>
 </head>
-<body class="bg-[#0f1117] text-[#e4e4e7] h-screen flex flex-col overflow-hidden text-[14px]">
+<!-- height dvh (không phải h-screen/100vh): iOS Safari tính 100vh gồm cả vùng sau toolbar/home
+     indicator -> bottom tab bar + input bar bị đẩy xuống dưới nút home. dvh = viewport thật. -->
+<body class="bg-[#0f1117] text-[#e4e4e7] flex flex-col overflow-hidden text-[14px]"
+      style="height:100vh;height:100dvh">
 
 <!-- ================= header ================= -->
 <header class="flex items-center gap-3 px-4 py-2.5 border-b border-[#262a36] bg-[#12141c] shrink-0"
@@ -1409,7 +1417,8 @@ const HTML = `<!doctype html>
 
     <!-- ============ TAB 4: STATS (Chart.js) ============ -->
     <div id="tab-stats" class="hidden flex-1 flex-col min-h-0 overflow-y-auto">
-      <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto">
+      <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto"
+           style="padding-bottom:calc(env(safe-area-inset-bottom) + 16px)">
         <!-- stat cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div class="statcard"><div id="stat-total" class="statnum text-[#e4e4e7]">0</div><div class="statlbl">TOTAL SESSIONS</div></div>
@@ -1455,7 +1464,8 @@ const HTML = `<!doctype html>
 
 <!-- overlay modal dùng chung -->
 <div id="overlay">
-  <div id="overlaybox" class="bg-[#12141c] border border-[#262a36] rounded-2xl shadow-2xl w-[min(640px,92vw)] max-h-[80vh] flex flex-col fadein">
+  <div id="overlaybox" class="bg-[#12141c] border border-[#262a36] rounded-2xl shadow-2xl w-[min(640px,92vw)] flex flex-col fadein"
+       style="max-height:80vh;max-height:80dvh">
     <div class="flex items-center justify-between px-5 py-3.5 border-b border-[#262a36]">
       <span id="overlaytitle" class="font-semibold text-[14px]"></span>
       <button class="w-7 h-7 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3]"
@@ -2602,22 +2612,28 @@ let hermesSeenTs = 0;
 let hermesOpenId = null;
 let hermesRendered = 0; // số bubble đã render của conversation đang mở
 
+let hermesFetchBusy = false; // chống fetch chồng nhau khi mạng chậm hơn interval
 async function refreshHermes() {
+  if (hermesFetchBusy) return;
+  hermesFetchBusy = true;
   const r = await fetch('/api/hermes').then(r => r.json()).catch(() => null);
+  hermesFetchBusy = false;
   if (!r) return;
   hermesConvos = r.conversations || [];
+  hermesWaitServer = !!r.sending; // hermes CLI đang xử lý (kể cả gửi từ client/tab khác)
   let max = 0;
   hermesConvos.forEach(c => c.messages.forEach(m => { if (m.ts > max) max = m.ts; }));
   if (hermesSeenTs === 0) hermesSeenTs = max; // lần đầu: không báo unread cũ
   hermesMaxTs = max;
   if (activeTab === 'hermes') {
     hermesSeenTs = max;
-    if (hermesOpenId) renderHermesChat();
+    if (hermesOpenId) renderHermesChat(); // append-only: chỉ bubble MỚI được thêm, không rebuild
     else renderHermesList();
+    updateHermesTyping();
   }
   updateBadges();
 }
-setInterval(refreshHermes, 4000); // poll nền: badge nhảy cả khi ở tab CLI
+setInterval(refreshHermes, 2500); // poll realtime (server cache 1.5s); nền: badge nhảy cả khi ở tab CLI
 refreshHermes();
 
 // List conversations: diff theo data-hid
@@ -2635,7 +2651,7 @@ function renderHermesList() {
         '<span class="chip h-src" style="background:rgba(139,92,246,.14);color:#a78bfa"></span>' +
         '<span class="h-title text-[13px] font-medium truncate"></span>' +
         '<span class="h-meta text-xs text-[#666b7d] ml-auto whitespace-nowrap"></span>';
-      row.onclick = () => { hermesOpenId = c.id; hermesRendered = 0; hermesExtraRendered = 0; document.getElementById('hermes-bubbles').innerHTML = ''; renderHermesChat(); };
+      row.onclick = () => { hermesOpenId = c.id; hermesRendered = 0; hermesExtraRendered = 0; document.getElementById('hermes-bubbles').innerHTML = ''; renderHermesChat(); updateHermesTyping(); };
       cont.appendChild(row);
     }
     setText(row.querySelector('.h-src'), c.source);
@@ -2674,6 +2690,7 @@ function openHermesDirect() {
   hermesExtraRendered = 0;
   document.getElementById('hermes-bubbles').innerHTML = '';
   renderHermesChat();
+  updateHermesTyping();
 }
 
 // Chat hermes: append-only theo số message đã render (server msgs + local extras)
@@ -2716,6 +2733,15 @@ function hermesBack() {
   renderHermesList();
 }
 
+// Typing indicator Hermes: hiện khi CHỜ THẬT — request của client này đang chờ reply,
+// hoặc server báo hermes CLI đang chạy (r.sending — gửi từ client/tab khác).
+let hermesWaitLocal = false;
+let hermesWaitServer = false;
+function updateHermesTyping() {
+  const on = !!hermesOpenId && (hermesWaitLocal || hermesWaitServer);
+  document.getElementById('hermes-typing').classList.toggle('hidden', !on);
+}
+
 // Gửi tin cho Hermes: server gọi Hermes CLI thật, reply hiển thị như assistant message
 function hermesSend(text) {
   switchTab('hermes');
@@ -2724,7 +2750,8 @@ function hermesSend(text) {
   (hermesExtra[convId] = hermesExtra[convId] || []).push({ role: 'user', content: text });
   saveHermesExtra();
   renderHermesChat();
-  document.getElementById('hermes-typing').classList.remove('hidden');
+  hermesWaitLocal = true;
+  updateHermesTyping();
   busy(true);
   return fetch('/api/hermes/send', {
     method: 'POST',
@@ -2748,7 +2775,9 @@ function hermesSend(text) {
     })
     .finally(() => {
       busy(false);
-      document.getElementById('hermes-typing').classList.add('hidden');
+      hermesWaitLocal = false;
+      updateHermesTyping();
+      refreshHermes(); // reply có thể đã vào state.db -> kéo data mới ngay, không đợi tick 2.5s
     });
 }
 function submitHermes() {
