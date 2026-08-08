@@ -42,18 +42,23 @@ function Spark({ data, tone }: { data: number[]; tone: Tone }) {
 
 export function StatCard({
   title, sub, value, delta, deltaLabel, spark, tone = 'primary', dot, testid,
+  tangLaTot = true,
 }: {
   title: string;
   sub?: string;
   value: string | number;
   delta?: number;            // % thay đổi; âm = giảm
   deltaLabel?: string;       // chú thích cạnh badge, ví dụ "5 phiên"
+  tangLaTot?: boolean;       // false cho thẻ mà TĂNG là xấu (lỗi, độ trễ)
   spark?: number[];
   tone?: Tone;
   dot?: Tone;                // chấm trạng thái góc phải
   testid?: string;
 }) {
+  // Tăng KHÔNG phải lúc nào cũng tốt. Thẻ "Lỗi" tăng 55% mà tô xanh lá thì đọc thành
+  // tin mừng — ngược hẳn ý nghĩa. `tangLaTot=false` để loại thẻ đó tô đỏ khi tăng.
   const up = (delta ?? 0) >= 0;
+  const tot = tangLaTot ? up : !up;
   return (
     <Card className="gap-0 p-4" data-testid={testid}>
       <div className="flex items-start gap-2">
@@ -81,7 +86,7 @@ export function StatCard({
           {delta !== undefined && (
             <span className={cn(
               'rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
-              up ? 'bg-status-ok/12 text-status-ok' : 'bg-status-error/12 text-status-error',
+              tot ? 'bg-status-ok/12 text-status-ok' : 'bg-status-error/12 text-status-error',
             )}>
               {up ? '+' : ''}{delta}%
             </span>

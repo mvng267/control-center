@@ -1,8 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Search, Trash2, ChevronsUpDown, ChevronLeft, ChevronRight, Plus, SlidersHorizontal } from 'lucide-react';
+import {
+  Search, ChevronsUpDown, ChevronLeft, ChevronRight, Plus, SlidersHorizontal,
+  MoreHorizontal, MessageSquare, Download, Square,
+} from 'lucide-react';
 import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { Session, Job } from '@/lib/types';
 import { PageHeader } from '@/components/layout/app-shell';
 import { Input } from '@/components/ui/input';
@@ -34,13 +41,24 @@ export function SessionList({
   const [proj, setProj] = useState('');
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: 'mtimeMs', dir: -1 });
   const [page, setPage] = useState(0);
+  const [stat, setStat] = useState('');       // lọc theo trạng thái ('' = tất cả)
 
   const projects = useMemo(() => [...new Set(sessions.map((s) => s.project))].sort(), [sessions]);
+
+  // Đếm theo trạng thái cho dải tóm tắt. RUNNING/ACTIVE đều là "đang chạy" dưới góc
+  // nhìn người dùng; chỉ server mới phân biệt tiến trình còn sống hay file vừa đổi.
+  const tally = useMemo(() => {
+    let run = 0, idle = 0;
+    for (const s of sessions) (['RUNNING', 'ACTIVE'].includes(s.status) ? run++ : idle++);
+    return { run, idle, all: sessions.length };
+  }, [sessions]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const out = sessions.filter((s) => {
       if (proj && s.project !== proj) return false;
+      if (stat === 'run' && !['RUNNING', 'ACTIVE'].includes(s.status)) return false;
+      if (stat === 'idle' && ['RUNNING', 'ACTIVE'].includes(s.status)) return false;
       if (needle && !(s.sid + ' ' + s.project + ' ' + (s.title || '')).toLowerCase().includes(needle)) return false;
       return true;
     });
@@ -50,7 +68,7 @@ export function SessionList({
       return String(A).localeCompare(String(B)) * sort.dir;
     });
     return out;
-  }, [sessions, q, proj, sort]);
+  }, [sessions, q, proj, stat, sort]);
 
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   const cur = Math.min(page, pages - 1);
@@ -74,11 +92,16 @@ export function SessionList({
         desc="Quản lý các phiên Claude CLI đang có trên máy."
         actions={
           <>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5">
-              <SlidersHorizontal className="size-3.5" /> Lọc
+            {/* Nút này trước đây KHÔNG có onClick — bấm không xảy ra gì. Giờ mở/đóng
+                hàng lọc theo trạng thái. */}
+            <Button variant={stat ? 'default' : 'outline'} size="sm" className="h-9 gap-1.5"
+              data-testid="filter-btn" onClick={() => setStat((v) => (v ? '' : 'run'))}>
+              <SlidersHorizontal className="size-3.5" />
+              {stat === 'run' ? 'Đang chạy' : stat === 'idle' ? 'Đã nghỉ' : 'Lọc'}
             </Button>
-            <Button size="sm" className="h-9 gap-1.5"
-              onClick={() => document.querySelector<HTMLInputElement>('[data-testid=search-box]')?.focus()}>
+            {/* Trước đây focus vào Ô TÌM — sai chỗ. Giao việc mới nằm ở ô task dưới đáy. */}
+            <Button size="sm" className="h-9 gap-1.5" data-testid="new-session"
+              onClick={() => document.querySelector<HTMLInputElement>('[data-testid=task-input]')?.focus()}>
               <Plus className="size-3.5" /> Phiên mới
             </Button>
           </>
@@ -86,6 +109,39 @@ export function SessionList({
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6">
+        {/* Dải tóm tắt kiểu Atlas: một con số lớn bên trái, phần chia nhỏ + thanh tỉ lệ
+            bên phải. Bấm vào từng mảng để lọc luôn — đỡ phải mò trong bảng. */}
+        <div className="mb-3 flex flex-col gap-3 rounded-xl border border-border bg-card p-4 md:flex-row md:items-center md:gap-6"
+          data-testid="cli-summary">
+          <div className="shrink-0">
+            <div className="text-[12px] uppercase tracking-wide text-muted-foreground">Tổng số phiên</div>
+            <div className="text-[26px] font-bold leading-tight tabular-nums">{tally.all}</div>
+          </div>
+          <div className="min-w-0 flex-1 md:border-l md:border-border md:pl-6">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px]">
+              <button onClick={() => { setStat(stat === 'run' ? '' : 'run'); setPage(0); }}
+                data-testid="sum-run" className="flex items-center gap-1.5 transition-opacity hover:opacity-75">
+                <span className="size-2 rounded-full bg-status-ok" />
+                Đang chạy: <b className="tabular-nums">{tally.run}</b>
+              </button>
+              <button onClick={() => { setStat(stat === 'idle' ? '' : 'idle'); setPage(0); }}
+                data-testid="sum-idle" className="flex items-center gap-1.5 transition-opacity hover:opacity-75">
+                <span className="size-2 rounded-full bg-muted-foreground/60" />
+                Đã nghỉ: <b className="tabular-nums">{tally.idle}</b>
+              </button>
+              {stat && (
+                <button onClick={() => { setStat(''); setPage(0); }} data-testid="sum-clear"
+                  className="text-muted-foreground underline-offset-2 hover:underline">bỏ lọc</button>
+              )}
+            </div>
+            <div className="mt-2 flex h-2 gap-[2px] overflow-hidden rounded-full bg-muted/40">
+              <span className="bg-status-ok transition-[width] duration-500"
+                style={{ width: (tally.all ? (tally.run / tally.all) * 100 : 0) + '%' }} />
+              <span className="flex-1 bg-muted-foreground/35" />
+            </div>
+          </div>
+        </div>
+
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           {/* thanh công cụ trên bảng */}
           <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
@@ -151,12 +207,7 @@ export function SessionList({
                       <td className="px-3 text-right align-middle tabular-nums">{s.msgs}</td>
                       <td className="px-3 align-middle text-muted-foreground">{ago(s.mtimeMs)}</td>
                       <td className="px-3 align-middle">
-                        {s.status === 'RUNNING' && (
-                          <Button variant="ghost" size="icon" className="size-7 text-status-error" title="Dừng phiên"
-                            onClick={(e) => { e.stopPropagation(); api('/api/kill/' + s.sid, { method: 'POST' }).catch(() => {}); }}>
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        )}
+                        <RowMenu s={s} onOpen={onOpen} />
                       </td>
                     </tr>
                   );
@@ -222,5 +273,43 @@ export function SessionList({
       </div>
       <TaskBar perm={perm} onOpen={onOpen} />
     </div>
+  );
+}
+
+/* Menu ⋯ cuối mỗi dòng — Atlas có ở mọi bảng. Việc hay làm nhất với một phiên là
+   dừng nó hoặc lấy bản ghi ra, mà trước đây phải MỞ phiên rồi mới thấy nút. Ở đây
+   làm được ngay từ danh sách. */
+function RowMenu({ s, onOpen }: { s: Session; onOpen: (sid: string) => void }) {
+  const running = ['RUNNING', 'ACTIVE'].includes(s.status);
+  const stop = () => {
+    api('/api/kill/' + s.sid, { method: 'POST' })
+      .then(() => toast('Đã dừng phiên'))
+      .catch(() => toast.error('Không dừng được'));
+  };
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="ghost" size="icon" className="size-7" title="Thêm"
+            data-testid="row-menu" onClick={(e) => e.stopPropagation()}>
+            <MoreHorizontal className="size-4" />
+          </Button>
+        } />
+      <DropdownMenuContent align="end" className="w-48"
+        onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem onClick={() => onOpen(s.sid)} data-testid="row-open">
+          <MessageSquare className="size-4" /> Mở phiên
+        </DropdownMenuItem>
+        <DropdownMenuItem data-testid="row-export"
+          onClick={() => { location.href = '/api/export/' + s.sid + '?fmt=md'; }}>
+          <Download className="size-4" /> Tải bản ghi (.md)
+        </DropdownMenuItem>
+        {running && (
+          <DropdownMenuItem onClick={stop} data-testid="row-stop" className="text-status-error">
+            <Square className="size-4" /> Dừng phiên
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

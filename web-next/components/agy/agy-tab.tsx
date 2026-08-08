@@ -118,7 +118,7 @@ export function AgyTab() {
             <StatCard title="Request" sub="24 giờ qua" value={shortNum(usage.reqs)}
               spark={usage.hours.map((h) => h.n)} tone="primary" dot="primary" testid="agy-reqs" />
             <StatCard title="Lỗi" sub="tỉ lệ thất bại" value={usage.errs ? shortNum(usage.errs) : '0'}
-              delta={errPct} deltaLabel="trên tổng request"
+              delta={errPct} deltaLabel="trên tổng request" tangLaTot={false}
               spark={usage.hours.map((h) => h.e)} tone={errPct >= 20 ? 'error' : 'ok'}
               dot={errPct >= 20 ? 'error' : 'ok'} testid="agy-errs" />
             <StatCard title="Token" sub="đã dùng" value={shortNum(usage.tokens)}
