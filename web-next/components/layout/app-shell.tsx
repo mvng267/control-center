@@ -46,7 +46,11 @@ export function AppShell({
   const active = TABS.find((t) => t.id === tab);
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-background text-foreground">
+    /* Chiều cao trừ đi phần bàn phím che (--kb do use-soft-keyboard bơm vào).
+       Trên iOS layout viewport KHÔNG co khi bàn phím bật, kể cả dùng dvh — nên
+       phải tự trừ, nếu không ô nhập nằm sau bàn phím. */
+    <div className="flex overflow-hidden bg-background text-foreground"
+      style={{ height: 'calc(100dvh - var(--kb, 0px))' }}>
       {/* ---- SIDEBAR 256px — chỉ desktop, dựng theo Atlas ---- */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-sidebar md:flex"
         data-testid="sidebar">
@@ -136,8 +140,10 @@ export function AppShell({
 
         <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
 
-        {/* tab bar mobile — position sticky vì iPhone thật vẫn che dù đã có safe-area */}
-        <nav className="flex shrink-0 items-stretch border-t border-border bg-sidebar md:hidden"
+        {/* Tab bar mobile. Bàn phím bật (body.kb-open) thì ẨN hẳn: màn iPhone lúc đó chỉ
+            còn ~300px, nhường chỗ cho tin nhắn và ô nhập. Legacy cũng chọn hy sinh tab
+            bar — ô nhập quan trọng hơn. Xem lib/use-soft-keyboard.ts. */}
+        <nav className="flex shrink-0 items-stretch border-t border-border bg-sidebar md:hidden [body.kb-open_&]:hidden"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
           {TABS.map(({ id, short, icon: Icon }) => (
             <button key={id} onClick={() => onTab(id)} data-testid={`tabbar-${id}`} data-active={tab === id}

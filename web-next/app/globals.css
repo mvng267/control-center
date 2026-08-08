@@ -147,3 +147,6 @@
     @apply font-sans;
   }
 }
+/* Bàn phím ảo iOS/Android — lib/use-soft-keyboard.ts đo visualViewport rồi bơm --kb.
+   Khai báo mặc định 0px ở đây để calc() luôn hợp lệ ngay cả trước khi JS chạy. */
+:root { --kb: 0px; }

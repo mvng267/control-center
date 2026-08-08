@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AppShell, type TabId } from '@/components/layout/app-shell';
+import { RefreshCw } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { AppShell, TABS, type TabId } from '@/components/layout/app-shell';
+import { usePullToRefresh, useSwipeTabs } from '@/lib/use-gestures';
 import { TokenGate } from '@/components/token-gate';
 import { AgyTab } from '@/components/agy/agy-tab';
 import { StatsTab } from '@/components/stats/stats-tab';
@@ -11,6 +14,7 @@ import { ChatView } from '@/components/cli/chat-view';
 import { initToken, api } from '@/lib/api';
 import { useStream } from '@/lib/use-stream';
 import { usePwa } from '@/lib/use-pwa';
+import { useSoftKeyboard } from '@/lib/use-soft-keyboard';
 import { CommandPalette } from '@/components/command-palette';
 import { toast } from 'sonner';
 
@@ -52,6 +56,20 @@ export default function Page() {
   const [ready, setReady] = useState(false);
   const { data, offline, unauthorized } = useStream();
   usePwa();
+  useSoftKeyboard();   // bàn phím ảo iPhone che ô nhập — xem lib/use-soft-keyboard.ts
+
+  // Kéo-để-làm-mới: dữ liệu vốn tự về qua SSE mỗi 2s, nên đây là để yên tâm khi
+  // mạng Tailscale chập chờn — tải lại trang là cách chắc chắn nhất nối lại luồng.
+  const { pull, busy: refreshing } = usePullToRefresh(() => { location.reload(); });
+
+  // Vuốt ngang chuyển tab. Đang mở một phiên thì KHÔNG chuyển: lúc đó vuốt ngang
+  // thường là thao tác trên nội dung (bảng, code) chứ không phải muốn đổi tab.
+  useSwipeTabs((dir) => {
+    if (openSid) return;
+    const i = TABS.findIndex((t) => t.id === tab);
+    const next = TABS[i + dir];
+    if (next) setTab(next.id);
+  });
 
   useEffect(() => {
     initToken();
@@ -64,6 +82,18 @@ export default function Page() {
 
   return (
     <>
+      {/* Chỉ báo kéo-để-làm-mới: đi theo ngón tay, quay tròn khi đang tải lại */}
+      {(pull > 0 || refreshing) && (
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-[120] flex justify-center md:hidden"
+          style={{ transform: `translateY(${refreshing ? 46 : pull}px)`, opacity: refreshing ? 1 : Math.min(1, pull / 45) }}
+          data-testid="pull-indicator">
+          <div className="mt-2 rounded-full border border-border bg-card p-2 shadow-lg">
+            <RefreshCw className={cn('size-4 text-primary', refreshing && 'animate-spin')}
+              style={refreshing ? undefined : { transform: `rotate(${pull * 3}deg)` }} />
+          </div>
+        </div>
+      )}
+
       <AppShell tab={tab} onTab={setTab} badges={{ cli: unread }}>
         {tab === 'cli' && (openSid
           ? <ChatView sid={openSid} onBack={() => setOpenSid(null)} />
