@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { AppShell, type TabId } from '@/components/layout/app-shell';
 import { TokenGate } from '@/components/token-gate';
 import { AgyTab } from '@/components/agy/agy-tab';
+import { StatsTab } from '@/components/stats/stats-tab';
+import { HermesTab } from '@/components/hermes/hermes-tab';
 import { initToken } from '@/lib/api';
 import { useStream } from '@/lib/use-stream';
 
@@ -25,9 +27,9 @@ export default function Page() {
     <>
       <AppShell tab={tab} onTab={setTab} badges={{ cli: unread }}>
         {tab === 'cli' && <Placeholder name="Claude CLI" />}
-        {tab === 'hermes' && <Placeholder name="Hermes" />}
+        {tab === 'hermes' && <HermesTab />}
         {tab === 'agy' && <AgyTab />}
-        {tab === 'stats' && <Placeholder name="Thống kê" />}
+        {tab === 'stats' && <StatsTab sessions={data?.sessions || []} />}
       </AppShell>
 
       {offline && (
