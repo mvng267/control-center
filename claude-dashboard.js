@@ -416,6 +416,24 @@ function titleOf(sid, parsedTitle) {
   return loadTitles()[sid] || parsedTitle || '';
 }
 
+/* ---- model riêng từng phiên ----
+   /model trước đây đổi model TOÀN CỤC, nên đang chạy Opus cho việc khó mà mở phiên
+   khác là dính theo. Lưu riêng theo sid, ưu tiên hơn model toàn cục. */
+const MODELS_FILE = path.join(os.homedir(), '.claude', 'dashboard-models.json');
+let sessionModels = null;
+function loadModels() {
+  if (sessionModels) return sessionModels;
+  try { sessionModels = JSON.parse(fs.readFileSync(MODELS_FILE, 'utf8')); } catch { sessionModels = {}; }
+  return sessionModels;
+}
+function setSessionModel(sid, model) {
+  const t = loadModels();
+  if (model) t[sid] = model; else delete t[sid]; // xoá = quay về model toàn cục
+  try { fs.writeFileSync(MODELS_FILE, JSON.stringify(t, null, 2)); } catch { return false; }
+  return true;
+}
+function modelFor(sid) { return loadModels()[sid] || currentModel || null; }
+
 // Nhãn cho thông báo đẩy: ưu tiên tiêu đề, không có mới rơi về ID
 // (thông báo "Claude 7e31e9e3 đã trả lời xong" đọc xong vẫn không biết là phiên nào)
 function sessionLabel(sid) {
@@ -1028,7 +1046,8 @@ function json(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
-function readBody(req) {
+function readBody(req, maxBytes) {
+  const cap = maxBytes || 1e6;
   return new Promise((resolve, reject) => {
     // Bắt buộc Content-Type JSON: fetch cross-origin với JSON header phải qua CORS preflight
     // (server này không trả CORS header) -> chặn CSRF kiểu gửi text/plain từ trang web lạ.
@@ -1039,7 +1058,7 @@ function readBody(req) {
     let overflow = false;
     req.on('data', c => {
       buf += c;
-      if (buf.length > 1e6) { overflow = true; reject(new Error('body too large')); req.destroy(); }
+      if (buf.length > cap) { overflow = true; reject(new Error('body too large')); req.destroy(); }
     });
     req.on('end', () => {
       if (overflow) return;
@@ -1184,6 +1203,26 @@ function notifyPush(msg, sid) {
   pushAll({ title: 'Claude Control Center', body: msg, tag: 'ccc-done', sid: sid || null, url: '/' }).catch(() => {});
 }
 
+/* ---------------- ảnh gửi từ điện thoại ----------------
+   Lưu ra đĩa rồi đưa Claude đường dẫn (CLI đọc ảnh qua tool Read). Tự dọn ảnh cũ
+   để thư mục không phình vô hạn. */
+const UPLOAD_DIR = path.join(os.homedir(), '.claude', 'dashboard-uploads');
+const UPLOAD_KEEP_MS = 7 * 24 * 3600 * 1000; // giữ 7 ngày
+const UPLOAD_KEEP_N = 200;                    // hoặc tối đa 200 ảnh gần nhất
+function pruneUploads() {
+  let files;
+  try {
+    files = fs.readdirSync(UPLOAD_DIR)
+      .map(f => { const p2 = path.join(UPLOAD_DIR, f); try { return { p: p2, t: fs.statSync(p2).mtimeMs }; } catch { return null; } })
+      .filter(Boolean)
+      .sort((a, b) => b.t - a.t);
+  } catch { return; }
+  const now = Date.now();
+  files.forEach((f, i) => {
+    if (i >= UPLOAD_KEEP_N || now - f.t > UPLOAD_KEEP_MS) { try { fs.unlinkSync(f.p); } catch {} }
+  });
+}
+
 /* ---------------- token truy cập ----------------
    hostAllowed() KHÔNG phải cơ chế bảo mật: nó đọc header Host do client tự khai,
    `curl -H "Host: fake.ts.net"` là vượt qua. Mà /api/task giao việc cho Claude ở chế độ
@@ -1279,7 +1318,10 @@ const server = http.createServer(async (req, res) => {
     const msg = (body.message || '').trim();
     if (!msg) return json(res, 400, { error: 'message required' });
     if (procs.has(sid)) return json(res, 409, { error: 'session is busy' });
-    spawnClaude(['-p', msg, '--resume', sid].concat(permArgs()), sid, { task: msg });
+    const cargs = ['-p', msg, '--resume', sid].concat(permArgs());
+    const mdl = modelFor(sid);              // model riêng phiên > model toàn cục
+    if (mdl) cargs.push('--model', mdl);
+    spawnClaude(cargs, sid, { task: msg });
     return json(res, 200, { ok: true, sid });
   }
 
@@ -1328,7 +1370,39 @@ const server = http.createServer(async (req, res) => {
       // đang chờ duyệt kế hoạch: có file plan ở lượt cuối và Claude đã dừng
       awaiting: !!(parsed && parsed.planFile && !typing),
       usage: parsed ? parsed.usage : null, // token đã dùng (thay cho /cost)
+      model: loadModels()[sid] || null,    // model riêng phiên (null = theo model toàn cục)
     });
+  }
+
+  // ---- model riêng cho 1 phiên (để trống = dùng lại model toàn cục) ----
+  if ((m = p.match(/^\/api\/model\/([\w-]+)$/)) && req.method === 'POST') {
+    const sid = m[1];
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const mv = String(body.model || '').trim();
+    if (!setSessionModel(sid, mv)) return json(res, 500, { error: 'không ghi được file model' });
+    return json(res, 200, { ok: true, model: mv || null, effective: modelFor(sid) });
+  }
+
+  // ---- nhận ảnh từ điện thoại: lưu ra file rồi trả đường dẫn để chèn vào prompt.
+  // Claude CLI đọc ảnh qua tool Read, nên chỉ cần đưa nó đường dẫn trên đĩa. ----
+  if (p === '/api/upload' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 12e6); }   // 12MB base64 ≈ ảnh gốc ~9MB
+    catch (e) { return json(res, 400, { error: /large/.test(e.message) ? 'ảnh quá lớn (tối đa ~8MB)' : 'body lỗi' }); }
+    const m2 = String(body.data || '').match(/^data:(image\/[a-z.+-]+);base64,(.+)$/i);
+    if (!m2) return json(res, 400, { error: 'chỉ nhận ảnh' });
+    const ext = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp',
+                   'image/gif': 'gif', 'image/heic': 'heic' })[m2[1].toLowerCase()] || 'png';
+    let buf;
+    try { buf = Buffer.from(m2[2], 'base64'); } catch { return json(res, 400, { error: 'dữ liệu ảnh hỏng' }); }
+    if (!buf.length) return json(res, 400, { error: 'ảnh rỗng' });
+    try { fs.mkdirSync(UPLOAD_DIR, { recursive: true }); } catch {}
+    const name = 'img-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex') + '.' + ext;
+    const dest = path.join(UPLOAD_DIR, name);
+    try { fs.writeFileSync(dest, buf); } catch (e) { return json(res, 500, { error: 'không lưu được ảnh' }); }
+    pruneUploads();
+    return json(res, 200, { ok: true, path: dest, name, bytes: buf.length });
   }
 
   // ---- duyệt kế hoạch: chạy tiếp lượt đang chờ, lần này CHO PHÉP sửa file ----
@@ -1342,7 +1416,10 @@ const server = http.createServer(async (req, res) => {
       ? 'Duyệt kế hoạch, làm luôn. Lưu ý thêm: ' + note
       : 'Duyệt kế hoạch. Thực hiện đúng như đã trình bày.';
     // ép acceptEdits cho lượt này, bất kể công tắc đang ở chế độ nào — người dùng vừa duyệt rồi
-    spawnClaude(['-p', msg, '--resume', sid, '--permission-mode', 'acceptEdits'], sid, { task: msg });
+    const aargs = ['-p', msg, '--resume', sid, '--permission-mode', 'acceptEdits'];
+    const amdl = modelFor(sid);
+    if (amdl) aargs.push('--model', amdl);
+    spawnClaude(aargs, sid, { task: msg });
     return json(res, 200, { ok: true, sid });
   }
 
@@ -1986,6 +2063,37 @@ const HTML = `<!doctype html>
   }
   .ptr.on { height: 34px; }
   .ptr.ready { color: #60a5fa; }
+
+  /* chip model riêng phiên trong header chat */
+  .modelchip {
+    flex-shrink: 0; padding: 3px 9px; border-radius: 999px; cursor: pointer;
+    background: var(--g-soft); border: 1px solid var(--g-line); color: #8b8fa3;
+    font: inherit; font-size: 11px; transition: color .2s ease, border-color .2s ease;
+  }
+  .modelchip.set { color: #a78bfa; border-color: rgba(167, 139, 250, .4); }
+  /* nút model đang được chọn trong hộp thoại */
+  .agybtn.agybtn-on { color: #a78bfa; border-color: rgba(167, 139, 250, .55); background: rgba(167, 139, 250, .12); }
+  @media (min-width: 768px) { .modelchip:hover { color: #e4e4e7; border-color: rgba(59, 130, 246, .5); } }
+
+  /* đính kèm ảnh */
+  .attachbtn {
+    width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0; cursor: pointer;
+    background: var(--g-soft); border: 1px solid var(--g-line); color: #8b8fa3;
+    font-size: 17px; line-height: 1; transition: border-color .2s ease;
+  }
+  @media (min-width: 768px) { .attachbtn:hover { border-color: rgba(59, 130, 246, .5); } }
+  .attachchip {
+    display: flex; align-items: center; gap: 7px; max-width: 100%;
+    background: var(--g-soft); border: 1px solid var(--g-line); border-radius: 10px;
+    padding: 5px 8px; font-size: 12px; color: #c2c7d4;
+  }
+  .attachchip img { width: 34px; height: 34px; border-radius: 7px; object-fit: cover; flex-shrink: 0; }
+  .attachchip .axname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attachx {
+    margin-left: 2px; background: none; border: 0; color: #8b8fa3; cursor: pointer;
+    font-size: 15px; line-height: 1; padding: 2px 4px; flex-shrink: 0;
+  }
+  .attachx:hover { color: #f87171; }
 
   /* nút dừng Claude giữa chừng — cạnh chấm "đang gõ" cho dễ thấy */
   .stopbtn {
@@ -2742,6 +2850,8 @@ const HTML = `<!doctype html>
           <button id="chatsid" class="chattitle text-[13px] font-medium text-[#a5a9b8] truncate text-left"
                   onclick="renameSession()" title="Bấm để đổi tên phiên"></button>
           <span id="chatstatus" class="chip st-IDLE"><span class="chip-dot"></span><span class="chip-label">IDLE</span></span>
+          <!-- model riêng cho phiên này; bấm để đổi, mặc định theo model toàn cục -->
+          <button id="chatmodel" class="modelchip" onclick="pickSessionModel()" title="Model dùng cho phiên này"></button>
           <button id="exportbtn" class="ml-auto w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
                   onclick="exportCurrent()" title="Export session (.md / .json)"><i data-lucide="download" class="w-4 h-4"></i></button>
           <button class="w-8 h-8 rounded-lg hover:bg-[#2a1518] flex items-center justify-center text-[#ef4444] transition-colors"
@@ -2768,7 +2878,13 @@ const HTML = `<!doctype html>
           <button class="apvbtn" onclick="document.getElementById('chatinput').focus()">✎ Sửa</button>
         </div>
         <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
+          <!-- ảnh đã đính kèm, hiện trước khi gửi để biết mình chọn đúng chưa -->
+          <div id="attachbar" class="hidden flex items-center gap-2 mb-2"></div>
           <div class="flex items-center gap-2">
+            <!-- gửi ảnh từ điện thoại: capture cho phép mở thẳng camera trên iOS -->
+            <input id="filepick" type="file" accept="image/*" class="hidden" onchange="pickImage(this)">
+            <button id="attachbtn" class="attachbtn" onclick="document.getElementById('filepick').click()"
+                    title="Đính kèm ảnh" aria-label="Đính kèm ảnh">📎</button>
             <div class="inputwrap flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
                         focus-within:border-[#3b82f6]/60 transition-colors">
               <input id="chatinput" class="flex-1 bg-transparent outline-none py-2.5 text-[16px] placeholder-[#666b7d]"
@@ -4689,6 +4805,8 @@ function openChat(sid) {
   chatTitle = (known && known.title) || '';
   setText(document.getElementById('chatsid'), chatTitle || sid.slice(0, 8));
   document.getElementById('chatsid').title = sid;
+  chatModel = (known && known.model) || null;
+  renderChatModel();
   document.getElementById('bubbles').innerHTML = '';
   document.getElementById('typingind').classList.add('hidden');
   document.getElementById('chaterr').classList.add('hidden');
@@ -4950,6 +5068,7 @@ async function refreshChat() {
   const ce = document.getElementById('chaterr');
   if (r.error) { setText(ce, r.error); ce.classList.remove('hidden'); }
   else ce.classList.add('hidden');
+  if (r.model !== undefined && r.model !== chatModel) { chatModel = r.model; renderChatModel(); }
   // chờ duyệt kế hoạch -> hiện thanh Duyệt/Sửa (rung nhẹ 1 lần khi vừa xuất hiện)
   const ap = document.getElementById('chatapprove');
   const wasHidden = ap.classList.contains('hidden');
@@ -4985,20 +5104,148 @@ function renderPerm() {
   b.title = 'Quyền của Claude: ' + ui.label + ' — bấm để đổi';
 }
 
-let permBusy = false; // đang chờ server xác nhận -> SSE tick cũ không được ghi đè
+let permBusy = 0;      // >0 = đang chờ server xác nhận -> SSE tick cũ không được ghi đè
+let permChain = Promise.resolve(); // xếp hàng: bấm nhanh 2 lần vẫn nhảy đúng 2 nấc
 function cyclePerm() {
   const next = PERM_CYCLE[(PERM_CYCLE.indexOf(permMode) + 1) % PERM_CYCLE.length];
   permMode = next;
-  permBusy = true;
+  permBusy++;
   renderPerm();
-  fetch('/api/perm', {
+  permChain = permChain.then(() =>
+    fetch('/api/perm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: next }),
+    }).then(r => r.json()).then(r => {
+      // chỉ nhận kết quả của lượt CUỐI, tránh phản hồi cũ kéo ngược trạng thái
+      if (r.mode && permBusy === 1) { permMode = r.mode; renderPerm(); }
+      toast(PERM_UI[permMode].toast);
+    }).catch(() => toast('Không đổi được chế độ quyền'))
+      .finally(() => { permBusy--; }));
+  return permChain;
+}
+
+/* ---- model riêng từng phiên: /model đổi TOÀN CỤC nên phiên khác dính theo ---- */
+let chatModel = null; // model riêng của phiên đang mở (null = theo model toàn cục)
+function renderChatModel() {
+  const el = document.getElementById('chatmodel');
+  if (!el) return;
+  setText(el, chatModel || 'model: mặc định');
+  const cls = 'modelchip' + (chatModel ? ' set' : '');
+  if (el.className !== cls) el.className = cls;
+}
+function pickSessionModel() {
+  if (!currentSid) return;
+  const sid = currentSid;
+  const box = document.createElement('div');
+  box.className = 'flex flex-col gap-2';
+  const hint = document.createElement('div');
+  hint.className = 'text-[12px] text-[#7f8598] leading-relaxed';
+  hint.textContent = 'Chỉ áp dụng cho phiên này. Chọn "Mặc định" để dùng lại model chung.';
+  box.appendChild(hint);
+  const apply = mv => {
+    fetch('/api/model/' + sid, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: mv }),
+    }).then(r => r.json()).then(r => {
+      if (currentSid === sid) { chatModel = r.model || null; renderChatModel(); }
+      const s = allSessions.find(x => x.sid === sid);
+      if (s) s.model = r.model || null;
+      closeOverlay();
+      toast(r.model ? 'Phiên này dùng ' + r.model : 'Phiên này dùng model mặc định');
+    }).catch(() => toast('Không đổi được model'));
+  };
+  const btns = MODELS.concat(['default']).map(mv => {
+    const b = document.createElement('button');
+    b.className = 'agybtn' + (chatModel === mv ? ' agybtn-on' : '');
+    b.textContent = mv === 'default' ? 'Mặc định' : mv;
+    b.onclick = () => apply(mv === 'default' ? '' : mv);
+    return b;
+  });
+  const row = document.createElement('div');
+  row.className = 'flex flex-wrap gap-2';
+  btns.forEach(b => row.appendChild(b));
+  box.appendChild(row);
+  showOverlay('Model cho phiên này', box, [overlayButton('Đóng', closeOverlay)]);
+}
+
+/* ---- đính kèm ảnh: chọn -> thu nhỏ nếu quá lớn -> upload -> chèn đường dẫn vào prompt.
+   Claude CLI đọc ảnh bằng tool Read nên chỉ cần đưa nó đường dẫn trên đĩa. ---- */
+let attachments = []; // [{path, name, thumb}]
+
+// Ảnh iPhone 12MP ~4-6MB, gửi thẳng thì nặng và chậm qua Tailscale -> thu nhỏ cạnh dài
+// về 1600px, xuất JPEG chất lượng 0.85. Đủ nét để Claude đọc chữ trong ảnh chụp màn hình.
+function shrinkImage(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error('không đọc được file'));
+    fr.onload = () => {
+      const img = new Image();
+      img.onerror = () => resolve(fr.result); // định dạng lạ (HEIC…) -> gửi nguyên bản
+      img.onload = () => {
+        const MAX = 1600;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        if (scale === 1 && fr.result.length < 3e6) return resolve(fr.result);
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * scale);
+        cv.height = Math.round(img.height * scale);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        try { resolve(cv.toDataURL('image/jpeg', 0.85)); } catch { resolve(fr.result); }
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+async function pickImage(input) {
+  const file = input.files && input.files[0];
+  input.value = ''; // reset để chọn lại đúng ảnh đó vẫn kích hoạt onchange
+  if (!file) return;
+  // dùng indexOf thay regex: dấu gạch chéo ngược trong template literal của server bị nuốt
+  if (String(file.type || '').indexOf('image/') !== 0) return toast('Chỉ gửi được ảnh');
+  toast('Đang xử lý ảnh…');
+  let data;
+  try { data = await shrinkImage(file); } catch { return toast('Không đọc được ảnh'); }
+  const r = await fetch('/api/upload', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: next }),
-  }).then(r => r.json()).then(r => {
-    if (r.mode) { permMode = r.mode; renderPerm(); }
-    toast(PERM_UI[permMode].toast);
-  }).catch(() => toast('Không đổi được chế độ quyền'))
-    .finally(() => { permBusy = false; });
+    body: JSON.stringify({ data }),
+  }).then(x => x.json()).catch(() => null);
+  if (!r || !r.ok) return toast('Gửi ảnh lỗi: ' + ((r && r.error) || '?'));
+  attachments.push({ path: r.path, name: file.name || r.name, thumb: data });
+  renderAttachments();
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+
+function renderAttachments() {
+  const bar = document.getElementById('attachbar');
+  bar.innerHTML = '';
+  bar.classList.toggle('hidden', !attachments.length);
+  attachments.forEach((a, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'attachchip';
+    const im = document.createElement('img');
+    im.src = a.thumb; im.alt = '';
+    const nm = document.createElement('span');
+    nm.className = 'axname';
+    nm.textContent = a.name;
+    const x = document.createElement('button');
+    x.className = 'attachx';
+    x.textContent = '✕';
+    x.title = 'Bỏ ảnh này';
+    x.onclick = () => { attachments.splice(i, 1); renderAttachments(); };
+    chip.appendChild(im); chip.appendChild(nm); chip.appendChild(x);
+    bar.appendChild(chip);
+  });
+}
+
+// Ghép đường dẫn ảnh vào cuối prompt rồi xoá khay đính kèm
+function consumeAttachments(text) {
+  if (!attachments.length) return text;
+  const NL = String.fromCharCode(10);
+  const list = attachments.map(a => a.path).join(NL);
+  attachments = [];
+  renderAttachments();
+  return (text ? text + NL + NL : '') + 'Ảnh đính kèm:' + NL + list;
 }
 
 /* ---- /cost: token đã dùng của phiên (đọc từ JSONL, không gọi CLI) ---- */
@@ -5044,13 +5291,12 @@ function compactSession() {
   }).catch(() => toast('Không chạy được /compact'));
 }
 
-/* ---- dừng Claude giữa chừng (nút ⏹ hoặc Esc khi đang chạy) ---- */
+/* ---- dừng Claude giữa chừng (nút ⏹, /stop, hoặc Esc khi đang chạy).
+   Uỷ quyền cho stopChat() — bản đó cập nhật cả trạng thái nút gửi. ---- */
 function stopCurrent() {
   if (!currentSid) return;
-  fetch('/api/kill/' + currentSid, { method: 'POST' })
-    .then(r => r.json())
-    .then(() => { toast('Đã dừng Claude'); if (navigator.vibrate) navigator.vibrate([20, 40, 20]); refreshChat(); })
-    .catch(() => toast('Không dừng được'));
+  if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+  stopChat();
 }
 
 /* ---- duyệt kế hoạch: chạy tiếp lượt đang chờ, lần này cho phép sửa file ---- */
@@ -5126,15 +5372,17 @@ function submitChat() {
   if (chatRunning) return stopChat();
   const inp = document.getElementById('chatinput');
   const v = inp.value.trim();
-  if (!v || !currentSid) return;
-  histPush('hist:chat', v);
+  // có ảnh đính kèm thì gửi được dù chưa gõ chữ nào
+  if ((!v && !attachments.length) || !currentSid) return;
+  if (v) histPush('hist:chat', v);
   inp.value = '';
   scrollChatsToEnd(); // tin mới gửi phải visible ngay, kể cả khi bàn phím đang bật
-  if (v[0] === '/') return routeSlash(v);
+  if (v && v[0] === '/') return routeSlash(v);
+  const msg = consumeAttachments(v); // ghép đường dẫn ảnh vào cuối prompt
   fetch('/api/chat/' + currentSid, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: v }),
+    body: JSON.stringify({ message: msg }),
   }).then(r => r.json())
     .then(r => {
       // 409 session busy / lỗi khác: trả lại tin nhắn vào input, không mất im lặng

@@ -5,3 +5,4 @@ node_modules/
 
 # token truy cập dashboard — KHÔNG commit
 dashboard-token.json
+dashboard-uploads/

@@ -527,6 +527,50 @@ function cleanFixture() {
     ok(label + ': token — client gắn token vào /api/*, vỏ app không cần token',
       tok.withTok === 200 && tok.shell === true, JSON.stringify(tok));
 
+    // ---- model riêng từng phiên: /model đổi toàn cục, cái này chỉ đổi 1 phiên ----
+    const mdl = await page.evaluate(async sid => {
+      const other = (allSessions.find(s => s.sid !== sid) || {}).sid;
+      const set = await fetch('/api/model/' + sid, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'opus' }) })
+        .then(r => r.json());
+      const mine = await fetch('/api/history/' + sid).then(r => r.json());
+      const theirs = other ? await fetch('/api/history/' + other).then(r => r.json()) : { model: null };
+      const cleared = await fetch('/api/model/' + sid, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: '' }) })
+        .then(r => r.json());
+      const after = await fetch('/api/history/' + sid).then(r => r.json());
+      return { set: set.model, mine: mine.model, theirs: theirs.model,
+               cleared: cleared.model, after: after.model };
+    }, FIX_SID);
+    ok(label + ': model riêng phiên — đặt/xoá được, phiên khác KHÔNG dính theo',
+      mdl.set === 'opus' && mdl.mine === 'opus' && mdl.theirs === null
+      && mdl.cleared === null && mdl.after === null, JSON.stringify(mdl));
+
+    // ---- gửi ảnh: endpoint nhận ảnh, từ chối dữ liệu không phải ảnh ----
+    const up = await page.evaluate(async () => {
+      const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const okr = await fetch('/api/upload', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: PNG }) })
+        .then(r => r.json());
+      const bad = await fetch('/api/upload', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: 'data:text/plain;base64,aGk=' }) }).then(r => r.status);
+      // khay đính kèm: thêm rồi bỏ
+      attachments.push({ path: okr.path, name: 'test.png', thumb: PNG });
+      renderAttachments();
+      const shown = document.querySelectorAll('.attachchip').length;
+      document.querySelector('.attachx').click();
+      return { ok: okr.ok, hasPath: !!(okr.path || '').length, bad, shown,
+               afterRemove: document.querySelectorAll('.attachchip').length,
+               hasBtn: !!document.getElementById('attachbtn') };
+    });
+    ok(label + ': gửi ảnh — lưu được, chặn dữ liệu lạ, khay đính kèm thêm/bỏ đúng',
+      up.ok && up.hasPath && up.bad === 400 && up.shown === 1
+      && up.afterRemove === 0 && up.hasBtn, JSON.stringify(up));
+    // request 400 ở trên là CHỦ Ý (test chặn dữ liệu không phải ảnh) -> loại khỏi đếm lỗi console
+    const iUp400 = errors.findIndex(x => x.includes('400'));
+    if (iUp400 >= 0) errors.splice(iUp400, 1);
+
     // ---- lệnh mới + nút dừng ----
     const newCmds = await page.evaluate(() => ({
       cmds: COMMANDS.filter(c => ['/cost', '/compact', '/stop'].includes(c.cmd)).map(c => c.cmd).sort(),
@@ -616,11 +660,8 @@ function cleanFixture() {
                       cls: document.getElementById('permbtn').className };
       const seen = [];
       for (let i = 0; i < 4; i++) {  // 1 vòng: acceptEdits -> plan -> default -> bypass -> về đầu
-        const before = permMode;
-        cyclePerm();
-        // đợi server xác nhận đổi xong; SSE tick 2s có thể đẩy giá trị cũ về giữa chừng
-        for (let w = 0; w < 30 && permMode === before; w++) await new Promise(r => setTimeout(r, 50));
-        await new Promise(r => setTimeout(r, 120));
+        await cyclePerm();          // cyclePerm trả promise -> đợi server xác nhận xong hẳn
+        await new Promise(r => setTimeout(r, 80));
         seen.push({ mode: permMode, label: document.getElementById('permlabel').textContent,
                     cls: document.getElementById('permbtn').className });
       }
