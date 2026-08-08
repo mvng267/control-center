@@ -54,7 +54,7 @@ function req(method, url, body) {
   await new Promise(r => pushSvc.listen(PUSHSVC_PORT, '127.0.0.1', r));
 
   // ---- spawn dashboard ----
-  const dash = spawn('node', [path.join(__dirname, 'claude-dashboard.js')], {
+  const dash = spawn('node', [path.join(__dirname, '..', 'src', 'server', 'index.js')], {
     env: { ...process.env, PORT: String(DASH_PORT), PUSH_STATE_FILE: STATE_FILE },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

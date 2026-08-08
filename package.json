@@ -1,0 +1,21 @@
+{
+  "name": "claude-control-center",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dashboard quản lý Claude CLI sessions + Hermes chat + agy-proxy",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server/index.js",
+    "test": "node tests/e2e.js",
+    "test:push": "node tests/push.js",
+    "test:kb": "node tests/keyboard.js",
+    "test:safearea": "node tests/safearea.js",
+    "test:all": "npm run test && npm run test:push",
+    "verify": "node scripts/verify.js",
+    "procs": "node scripts/check-procs.js",
+    "bench": "node scripts/bench.js",
+    "setup": "npm i --no-save playwright-core"
+  },
+  "keywords": ["claude", "dashboard", "cli"],
+  "license": "UNLICENSED"
+}

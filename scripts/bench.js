@@ -4,7 +4,7 @@ const http = require('http');
 const { spawn } = require('child_process');
 
 const PORT = 7894;
-const srv = spawn('node', ['claude-dashboard.js'], {
+const srv = spawn('node', [require('path').join(__dirname, '..', 'src', 'server', 'index.js')], {
   cwd: __dirname,
   env: Object.assign({}, process.env, { PORT: String(PORT) }),
   stdio: ['ignore', 'ignore', 'ignore'],

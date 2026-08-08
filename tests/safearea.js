@@ -1,4 +1,4 @@
-// Test safe-area tab bar mobile — chạy: PORT=7801 node claude-dashboard.js & DASH_URL=http://localhost:7801/ node safearea-test.js
+// Test safe-area tab bar mobile — chạy: PORT=7801 node src/server/index.js & DASH_URL=http://localhost:7801/ node tests/safearea.js
 // Chromium KHÔNG giả lập env(safe-area-inset-bottom) (luôn = 0) nên e2e cũ "PASS" mà máy thật vẫn hỏng.
 // Ở đây: (1) assert #sidenav position:fixed bám đáy viewport, (2) inject 34px giả lập home indicator
 // iPhone 15 Pro rồi ĐO boundingBox: tab button phải nằm TRÊN vùng 34px, input bar không bị tab bar đè.

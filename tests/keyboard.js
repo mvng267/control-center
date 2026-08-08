@@ -1,4 +1,4 @@
-// Test soft keyboard iOS — chạy: PORT=7802 node claude-dashboard.js & DASH_URL=http://localhost:7802/ node kb-test.js
+// Test soft keyboard iOS — chạy: PORT=7802 node src/server/index.js & DASH_URL=http://localhost:7802/ node tests/keyboard.js
 // Chromium KHÔNG giả lập được bàn phím ảo iOS (visualViewport không co) -> fake visualViewport
 // bằng addInitScript TRƯỚC khi script trang chạy, rồi bơm resize như iOS thật:
 // height co 336px (bàn phím iPhone), đo boundingBox input bar phải nằm TRÊN mép bàn phím.

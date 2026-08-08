@@ -1,0 +1,457 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Claude">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<title>Claude Control Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<!-- markdown renderer + sanitizer (chống XSS) -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<!-- Chart.js cho tab Stats (donut + bar) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="/app.css">
+</head>
+<!-- height dvh (không phải h-screen/100vh): iOS Safari tính 100vh gồm cả vùng sau toolbar/home
+     indicator -> bottom tab bar + input bar bị đẩy xuống dưới nút home. dvh = viewport thật. -->
+<!-- KHÔNG đặt bg ở đây: nền gradient của lớp glass (khối GLASS trong <style>) lo phần này;
+     class bg-* của Tailwind sẽ đè mất nền kính -->
+<body class="text-[#e4e4e7] flex flex-col overflow-hidden text-[14px]"
+      style="height:100vh;height:100dvh">
+
+<!-- báo mất mạng: vỏ app vẫn mở được nhờ service worker, nhưng dữ liệu thì đứng im -->
+<div id="offbar" class="hidden">Mất kết nối — dữ liệu đang hiển thị là bản cũ</div>
+
+<!-- ================= màn nhập mã truy cập ================= -->
+<div id="tokengate" class="hidden">
+  <div class="tokenbox">
+    <div class="text-[15px] font-semibold mb-1">Nhập mã truy cập</div>
+    <div class="text-[12.5px] text-[#8b8fa3] mb-3 leading-relaxed">
+      Mã in ra ở cửa sổ chạy dashboard (dòng “mã truy cập”). Nhập một lần, máy này nhớ luôn.
+    </div>
+    <input id="tokeninput" class="tokeninput" placeholder="dán mã vào đây" autocomplete="off"
+           onkeydown="if(event.key==='Enter')saveToken()">
+    <button class="tokenbtn" onclick="saveToken()">Vào dashboard</button>
+  </div>
+</div>
+
+<!-- ================= header ================= -->
+<header class="flex items-center gap-3 px-4 py-2.5 shrink-0"
+        style="padding-top:calc(env(safe-area-inset-top) + 10px)">
+  <div class="logoglow w-8 h-8 rounded-[10px] bg-[#3b82f6]/15 flex items-center justify-center text-[#3b82f6] shrink-0">
+    <i data-lucide="terminal" class="w-4 h-4"></i>
+  </div>
+  <h1 class="apptitle font-semibold text-[15px] tracking-tight whitespace-nowrap">Claude Control Center</h1>
+  <span id="busyind" class="loading loading-dots loading-xs text-[#3b82f6] hidden"></span>
+  <div class="ml-auto flex items-center gap-3">
+    <span id="runpill" class="runpill hidden"><span class="chip-dot"></span><span id="runpill-n">0</span>&nbsp;running</span>
+    <span id="modeltag" class="hidden sm:inline text-xs text-[#8b8fa3] bg-[#1a1d27] border border-[#262a36] rounded-full px-3 py-1">default</span>
+    <span id="clock" class="hidden sm:inline text-xs text-[#666b7d] tabular-nums"></span>
+    <button class="w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
+            onclick="showShortcuts()" title="Keyboard shortcuts (?)">
+      <i data-lucide="circle-help" class="w-4 h-4"></i>
+    </button>
+  </div>
+</header>
+
+<!-- ================= app: sidebar + content ================= -->
+<div id="app" class="flex-1 flex flex-col md:flex-row min-h-0">
+
+  <!-- sidebar: desktop trái (collapsible), mobile thành bottom tab bar 🖥️/💬/📊 -->
+  <nav id="sidenav" class="order-2 md:order-1 flex md:flex-col items-stretch justify-around md:justify-start gap-1
+              border-t md:border-t-0 md:border-r border-[#262a36] bg-[#12141c] md:w-[76px] py-1 md:py-3 shrink-0"
+       style="padding-bottom:env(safe-area-inset-bottom)">
+    <button id="tabbtn-cli" class="tabbtn active" onclick="switchTab('cli')">
+      <i data-lucide="terminal" class="w-5 h-5"></i><span>CLAUDE</span>
+      <span id="badge-cli" class="tabbadge hidden"></span>
+    </button>
+    <button id="tabbtn-hermes" class="tabbtn hm" onclick="switchTab('hermes')">
+      <i data-lucide="bot" class="w-5 h-5"></i><span>HERMES</span>
+      <span id="badge-hermes" class="tabbadge hidden"></span>
+    </button>
+    <button id="tabbtn-agy" class="tabbtn" onclick="switchTab('agy')">
+      <i data-lucide="settings" class="w-5 h-5"></i><span>AGY-PROXY</span>
+    </button>
+    <button id="tabbtn-stats" class="tabbtn" onclick="switchTab('stats')">
+      <i data-lucide="chart-pie" class="w-5 h-5"></i><span>STATS</span>
+    </button>
+    <!-- collapse sidebar: chỉ desktop -->
+    <button id="collapsebtn" class="tabbtn md:mt-auto" onclick="toggleSidebar()" title="Thu gọn sidebar">
+      <i data-lucide="panel-left-close" class="w-5 h-5"></i>
+    </button>
+  </nav>
+
+  <div id="content" class="order-1 md:order-2 flex-1 flex flex-col min-h-0 min-w-0">
+
+    <!-- ============ TAB 1: CLAUDE CLI ============ -->
+    <div id="tab-cli" class="flex-1 flex flex-col min-h-0">
+
+      <!-- list view -->
+      <div id="list" class="flex-1 flex flex-col min-h-0">
+        <!-- toolbar: search + project filter -->
+        <div class="flex items-center gap-2 px-4 py-2.5 border-b border-[#262a36]">
+          <!-- min-w-0 cả wrapper lẫn input: input mặc định có min-width ~200px, không co được
+               trong flex -> đẩy nút compare ra ngoài viewport mobile 390px -->
+          <div class="inputwrap flex-1 min-w-0 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-[10px] px-3
+                      focus-within:border-[#3b82f6]/60 transition-colors">
+            <i data-lucide="search" class="w-3.5 h-3.5 text-[#666b7d] shrink-0"></i>
+            <input id="searchbox" class="flex-1 min-w-0 w-full bg-transparent outline-none py-1.5 text-[13px] placeholder-[#666b7d]"
+                   placeholder="Tìm session hoặc project…">
+          </div>
+          <select id="projfilter" class="select select-sm bg-[#1a1d27] border-[#262a36] text-[13px] text-[#e4e4e7] rounded-[10px] max-w-[130px] sm:max-w-[180px] shrink-0 focus:outline-none">
+            <option value="">Tất cả project</option>
+          </select>
+          <button id="comparebtn" class="w-11 h-11 rounded-[10px] bg-[#1a1d27] border border-[#262a36] hover:border-[#3b82f6]/60
+                                          flex items-center justify-center text-[#8b8fa3] transition-colors shrink-0"
+                  onclick="toggleCompareMode()" title="So sánh 2 sessions (bấm rồi chọn 2 session)">
+            <i data-lucide="git-compare" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div id="jobsbar" class="hidden border-b border-[#262a36] py-1"></div>
+        <div id="main" class="flex-1 overflow-y-auto py-2 relative">
+          <div id="ptr" class="ptr">kéo xuống để làm mới</div>
+          <!-- skeleton shimmer: chỉ hiện khi chờ SSE tick đầu tiên, renderList() remove -->
+          <div id="skelrows" class="flex flex-col gap-1 py-1">
+            <div class="flex items-center gap-3 px-4 py-2.5 mx-2"><span class="skel w-2 h-2 rounded-full shrink-0"></span><span class="skel w-9 h-9 rounded-[11px] shrink-0"></span><span class="flex-1 flex flex-col gap-2"><span class="skel h-3 w-2/5"></span><span class="skel h-2.5 w-3/5"></span></span></div>
+            <div class="flex items-center gap-3 px-4 py-2.5 mx-2"><span class="skel w-2 h-2 rounded-full shrink-0"></span><span class="skel w-9 h-9 rounded-[11px] shrink-0"></span><span class="flex-1 flex flex-col gap-2"><span class="skel h-3 w-1/3"></span><span class="skel h-2.5 w-1/2"></span></span></div>
+            <div class="flex items-center gap-3 px-4 py-2.5 mx-2"><span class="skel w-2 h-2 rounded-full shrink-0"></span><span class="skel w-9 h-9 rounded-[11px] shrink-0"></span><span class="flex-1 flex flex-col gap-2"><span class="skel h-3 w-1/2"></span><span class="skel h-2.5 w-2/3"></span></span></div>
+          </div>
+          <div id="sessrows"></div>
+          <div id="emptystate" class="hidden text-center text-[#666b7d] py-10 text-[13px]">Không có session nào khớp</div>
+        </div>
+
+        <!-- input bar -->
+        <div class="relative border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
+          <div class="flex items-center gap-2 flex-wrap">
+            <div class="flex items-center gap-2 w-full md:w-auto min-w-0">
+              <div id="modeseg" class="seg segscroll">
+                <button class="segbtn active" data-mode="">Normal</button>
+                <button class="segbtn" data-mode="research">Research</button>
+                <button class="segbtn" data-mode="coding">Coding</button>
+                <button class="segbtn" data-mode="creative">Creative</button>
+              </div>
+              <!-- công tắc quyền: quyết định Claude có tự sửa file được không -->
+              <button id="permbtn" class="permbtn ml-auto md:ml-0" onclick="cyclePerm()"
+                      title="Quyền của Claude khi làm việc — bấm để đổi">
+                <span id="permicon" class="permdot"></span><span id="permlabel">Tự sửa file</span>
+              </button>
+            </div>
+            <!-- nút / mở command palette drawer (cmd+K) -->
+            <button id="palbtn" class="w-11 h-11 rounded-xl bg-[#1a1d27] border border-[#262a36] hover:border-[#3b82f6]/60
+                                        flex items-center justify-center text-[#8b8fa3] font-mono font-bold text-[15px]
+                                        transition-colors shrink-0" title="Command palette (⌘K hoặc gõ /)">/</button>
+            <div class="inputwrap flex-1 min-w-[200px] flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
+                        focus-within:border-[#3b82f6]/60 transition-colors">
+              <input id="taskinput" class="flex-1 bg-transparent outline-none py-2.5 text-[16px] placeholder-[#666b7d]"
+                     placeholder="Giao task cho Claude — gõ / để xem lệnh…">
+            </div>
+            <button id="enhancebtn" class="w-11 h-11 rounded-xl bg-[#1a1d27] border border-[#262a36] hover:border-[#8b5cf6]/60
+                                           flex items-center justify-center text-[#a78bfa] transition-colors shrink-0"
+                    title="Enhance prompt bằng Claude">
+              <i data-lucide="sparkles" class="w-4 h-4"></i>
+            </button>
+            <button id="sendbtn" class="sendgrad w-11 h-11 rounded-xl flex items-center justify-center
+                                        text-white shrink-0" title="Gửi (Enter)">
+              <i data-lucide="send" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- chat view -->
+      <div id="chat" class="hidden flex-1 flex-col min-h-0">
+        <div class="flex items-center gap-3 px-4 py-2.5 border-b border-[#262a36]">
+          <button class="w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
+                  onclick="backToList()"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
+          <button id="chatsid" class="chattitle text-[13px] font-medium text-[#a5a9b8] truncate text-left"
+                  onclick="renameSession()" title="Bấm để đổi tên phiên"></button>
+          <span id="chatstatus" class="chip st-IDLE"><span class="chip-dot"></span><span class="chip-label">IDLE</span></span>
+          <!-- model riêng cho phiên này; bấm để đổi, mặc định theo model toàn cục -->
+          <button id="chatmodel" class="modelchip" onclick="pickSessionModel()" title="Model dùng cho phiên này"></button>
+          <button id="exportbtn" class="ml-auto w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
+                  onclick="exportCurrent()" title="Export session (.md / .json)"><i data-lucide="download" class="w-4 h-4"></i></button>
+          <button class="w-8 h-8 rounded-lg hover:bg-[#2a1518] flex items-center justify-center text-[#ef4444] transition-colors"
+                  onclick="killCurrent()" title="Kill session"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+        </div>
+        <div id="bubbles" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2.5" style="scroll-behavior:smooth"></div>
+        <!-- lỗi lần gửi gần nhất (vd claude không tìm thấy phiên) — trước đây thất bại IM LẶNG -->
+        <div id="chaterr" class="hidden chaterr">
+          <span id="chaterrmsg" class="flex-1 min-w-0"></span>
+          <button class="chaterrx" onclick="document.getElementById('chaterr').classList.add('hidden')"
+                  title="Đóng">✕</button>
+        </div>
+        <div id="typingind" class="hidden px-4 flex items-center gap-3">
+          <div class="tdots"><span></span><span></span><span></span></div>
+          <!-- dừng giữa chừng: nút Kill ở header là icon thùng rác, dễ tưởng "xoá session" -->
+          <button class="stopbtn" onclick="stopCurrent()" title="Dừng Claude (Esc)">⏹ Dừng</button>
+        </div>
+        <!-- lỗi khi chạy Claude (vd phiên không resume được) — trước đây bị nuốt im lặng -->
+        <div id="chaterr" class="hidden mx-4 mb-2 chaterrbox"></div>
+        <!-- chờ duyệt kế hoạch (chế độ plan): Claude đã trình bày, chờ người bấm -->
+        <div id="chatapprove" class="hidden mx-4 mb-2 approvebox">
+          <span class="flex-1 min-w-0">Claude đã trình bày kế hoạch và đang chờ duyệt.</span>
+          <button class="apvbtn apv-yes" onclick="approvePlan()">✓ Duyệt &amp; chạy</button>
+          <button class="apvbtn" onclick="document.getElementById('chatinput').focus()">✎ Sửa</button>
+        </div>
+        <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
+          <!-- ảnh đã đính kèm, hiện trước khi gửi để biết mình chọn đúng chưa -->
+          <div id="attachbar" class="hidden flex items-center gap-2 mb-2"></div>
+          <div class="flex items-center gap-2">
+            <!-- gửi ảnh từ điện thoại: capture cho phép mở thẳng camera trên iOS -->
+            <input id="filepick" type="file" accept="image/*" class="hidden" onchange="pickImage(this)">
+            <button id="attachbtn" class="attachbtn" onclick="document.getElementById('filepick').click()"
+                    title="Đính kèm ảnh" aria-label="Đính kèm ảnh">📎</button>
+            <div class="inputwrap flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
+                        focus-within:border-[#3b82f6]/60 transition-colors">
+              <input id="chatinput" class="flex-1 bg-transparent outline-none py-2.5 text-[16px] placeholder-[#666b7d]"
+                     placeholder="Tiếp tục cuộc trò chuyện…">
+            </div>
+            <button id="chatsendbtn" class="sendgrad w-11 h-11 rounded-xl flex items-center justify-center
+                                            text-white shrink-0" title="Gửi" aria-label="Gửi"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- compare view: 2 sessions side-by-side (read-only, poll 3s append-only) -->
+      <div id="compare" class="hidden flex-1 flex-col min-h-0">
+        <div class="flex items-center gap-3 px-4 py-2.5 border-b border-[#262a36]">
+          <button class="w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
+                  onclick="closeCompare()"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
+          <span class="text-[13px] font-medium text-[#a5a9b8]">So sánh sessions</span>
+        </div>
+        <div class="flex-1 grid grid-cols-2 min-h-0">
+          <div class="flex flex-col min-h-0 border-r border-[#262a36]">
+            <div class="flex items-center gap-2 px-3 py-2 border-b border-[#262a36]">
+              <span id="cmp-sid-0" class="text-[12px] font-medium text-[#a5a9b8] truncate"></span>
+              <span id="cmp-st-0" class="chip ml-auto st-IDLE">IDLE</span>
+            </div>
+            <div id="cmp-bub-0" class="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-2"></div>
+          </div>
+          <div class="flex flex-col min-h-0">
+            <div class="flex items-center gap-2 px-3 py-2 border-b border-[#262a36]">
+              <span id="cmp-sid-1" class="text-[12px] font-medium text-[#a5a9b8] truncate"></span>
+              <span id="cmp-st-1" class="chip ml-auto st-IDLE">IDLE</span>
+            </div>
+            <div id="cmp-bub-1" class="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ TAB 2: HERMES ============ -->
+    <div id="tab-hermes" class="hidden flex-1 flex-col min-h-0">
+      <div id="hermes-list" class="flex-1 overflow-y-auto py-2">
+        <!-- chat trực tiếp với Hermes CLI: pinned trên cùng, không thuộc state.db -->
+        <div class="srow" onclick="openHermesDirect()" style="border-color:rgba(139,92,246,.35)">
+          <span class="chip" style="background:rgba(139,92,246,.14);color:#a78bfa">CLI</span>
+          <span class="text-[13px] font-medium">Chat trực tiếp với Hermes</span>
+          <span class="text-xs text-[#666b7d] ml-auto whitespace-nowrap">hermes -z</span>
+        </div>
+        <div id="hermesrows"></div>
+        <div id="hermesempty" class="hidden text-center text-[#666b7d] py-10 text-[13px]">
+          Chưa có data — không tìm thấy conversations trong ~/.hermes/state.db
+        </div>
+      </div>
+      <div id="hermes-chat" class="hidden flex-1 flex-col min-h-0">
+        <div class="flex items-center gap-3 px-4 py-2.5 border-b border-[#262a36]">
+          <button class="w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
+                  onclick="hermesBack()"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
+          <span id="hermes-title" class="text-[13px] font-medium text-[#a5a9b8] truncate"></span>
+          <button id="hermes-exportbtn" class="ml-auto w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
+                  onclick="hermesExport()" title="Export chat (.md / .json)"><i data-lucide="download" class="w-4 h-4"></i></button>
+        </div>
+        <div id="hermes-bubbles" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2.5" style="scroll-behavior:smooth"></div>
+        <div id="hermes-typing" class="hidden px-4"><div class="tdots"><span></span><span></span><span></span></div></div>
+        <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
+          <div class="flex items-center gap-2">
+            <div class="inputwrap-hm flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
+                        focus-within:border-[#8b5cf6]/60 transition-colors">
+              <input id="hermes-input" class="flex-1 bg-transparent outline-none py-2.5 text-[16px] placeholder-[#666b7d]"
+                     placeholder="Trò chuyện với Hermes…">
+            </div>
+            <button id="hermessendbtn" class="sendgrad hm w-11 h-11 rounded-xl flex items-center justify-center
+                                              text-white shrink-0"><i data-lucide="send" class="w-4 h-4"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ TAB 3: AGY-PROXY CONFIG (gọi CLI, không tự implement proxy) ============ -->
+    <div id="tab-agy" class="hidden flex-1 flex-col min-h-0 overflow-y-auto">
+      <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto safepad-lg">
+        <!-- THẺ TRẠNG THÁI: thông tin quan trọng nhất, 1 chỗ duy nhất -->
+        <div id="agy-hero" class="agyhero">
+          <div class="flex items-center gap-3 flex-wrap">
+            <span class="agyhero-dot" id="agy-hero-dot"></span>
+            <span id="agy-status" class="agyhero-state">đang kiểm tra…</span>
+            <span id="agy-hero-meta" class="agyhero-meta"></span>
+            <span id="agy-hero-tag" class="agyhero-tag hidden"></span>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button id="agy-btn-start" class="agybtn" onclick="agyAction('start')">
+              <i data-lucide="play" class="w-4 h-4"></i><span>Start</span></button>
+            <button id="agy-btn-stop" class="agybtn agybtn-red" onclick="agyAction('stop')">
+              <i data-lucide="square" class="w-4 h-4"></i><span>Stop</span></button>
+            <button id="agy-btn-restart" class="agybtn" onclick="agyAction('restart')">
+              <i data-lucide="rotate-cw" class="w-4 h-4"></i><span>Restart</span></button>
+          </div>
+          <div id="agy-note" class="hidden agyhero-note">
+            Proxy đang chạy NGOÀI dashboard nên Stop/Restart không tác dụng — dừng nó ở nơi đã khởi chạy.
+          </div>
+        </div>
+
+        <!-- LƯU LƯỢNG THẬT: đọc bảng gateway_usage trong state.db -->
+        <div id="agy-usagebox" class="chartbox hidden">
+          <div class="flex items-baseline justify-between mb-3 gap-2 flex-wrap">
+            <span class="text-[13px] font-semibold text-[#a5a9b8]">Lưu lượng 24 giờ</span>
+            <span id="agy-u-avg" class="text-[11.5px] text-[#666b7d]"></span>
+          </div>
+          <div class="ustats">
+            <div><div id="agy-u-reqs" class="ustat-n">–</div><div class="ustat-l">request</div></div>
+            <div><div id="agy-u-errs" class="ustat-n">–</div><div class="ustat-l">lỗi</div></div>
+            <div><div id="agy-u-tok" class="ustat-n">–</div><div class="ustat-l">token</div></div>
+          </div>
+          <div id="agy-u-alert" class="hidden uabox"></div>
+          <div id="agy-u-hours" class="uhours"></div>
+          <div id="agy-u-hourlbl" class="uhours-lbl"></div>
+          <div id="agy-u-models" class="mt-3 flex flex-col gap-1.5"></div>
+          <div id="agy-u-codes" class="mt-3 pt-2.5 border-t border-[#262a36] flex flex-wrap gap-2"></div>
+        </div>
+
+        <!-- SỨC KHOẺ TÀI KHOẢN: thanh phân bổ thay cho con số trơ trọi -->
+        <div class="chartbox">
+          <div class="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
+            <span class="text-[13px] font-semibold text-[#a5a9b8]">Tài khoản
+              <span id="agy-accounts" class="text-[#e4e4e7]">–</span></span>
+            <span id="agy-acc-recent" class="text-[11.5px] text-[#666b7d]"></span>
+          </div>
+          <div id="agy-accbar" class="accbar"></div>
+          <div id="agy-acclegend" class="flex flex-wrap gap-x-4 gap-y-1 mt-2.5"></div>
+          <div id="agy-kiro" class="text-[11.5px] text-[#666b7d] mt-2.5 pt-2.5 border-t border-[#262a36]"></div>
+        </div>
+
+        <!-- KIỂM TRA: gộp nút chạy + kết quả lần cuối vào cùng chỗ -->
+        <div class="chartbox">
+          <div class="text-[13px] font-semibold mb-2.5 text-[#a5a9b8]">Kiểm tra</div>
+          <div class="flex flex-wrap gap-2">
+            <button id="agy-btn-typecheck" class="agybtn" onclick="agyAction('run', 'typecheck')">
+              <i data-lucide="badge-check" class="w-4 h-4"></i><span>Typecheck</span></button>
+            <button id="agy-btn-test" class="agybtn" onclick="agyAction('run', 'test')">
+              <i data-lucide="flask-conical" class="w-4 h-4"></i><span>Test</span></button>
+            <button id="agy-btn-build" class="agybtn" onclick="agyAction('run', 'build')">
+              <i data-lucide="hammer" class="w-4 h-4"></i><span>Build</span></button>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-2.5">
+            <span id="agy-last-typecheck" class="agychip">TYPECHECK: —</span>
+            <span id="agy-last-test" class="agychip">TEST: —</span>
+            <span id="agy-last-build" class="agychip">BUILD: —</span>
+          </div>
+        </div>
+
+        <!-- MODELS: gom nhóm theo nhà cung cấp + tìm kiếm, thay khối chữ 43 model -->
+        <div class="chartbox">
+          <div class="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
+            <span class="text-[13px] font-semibold text-[#a5a9b8]">Models
+              <span id="agy-models" class="text-[#e4e4e7]">–</span></span>
+            <input id="agy-modelsearch" class="modelsearch" placeholder="tìm model…" oninput="renderAgyModels()">
+          </div>
+          <div id="agy-modellist" class="flex flex-col gap-1.5"></div>
+        </div>
+
+        <!-- config .env: chỉ field whitelist, save ghi lại file -->
+        <div class="chartbox">
+          <div class="text-[13px] font-semibold mb-1 text-[#a5a9b8]">Config (.env của agy-proxy)</div>
+          <div class="text-[11.5px] text-[#666b7d] mb-3">Lưu ý: giá trị đổi từ dashboard riêng của agy-proxy (settings DB) sẽ đè .env.</div>
+          <div id="agy-config" class="flex flex-col gap-3">
+            <div class="text-[12.5px] text-[#666b7d]">Đang tải config...</div>
+          </div>
+        </div>
+
+        <!-- log panel realtime -->
+        <div class="chartbox">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[13px] font-semibold text-[#a5a9b8]">Log (dev / build / test / typecheck)</span>
+            <button class="text-[11.5px] text-[#8b8fa3] hover:text-[#e4e4e7] border border-[#262a36] rounded-lg px-3 py-1.5 transition-colors"
+                    onclick="agyClearLog()">Clear</button>
+          </div>
+          <div id="agy-log" class="agylog">(chưa có log — bấm Start/Build/Test/Typecheck)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ TAB 4: STATS (Chart.js) ============ -->
+    <div id="tab-stats" class="hidden flex-1 flex-col min-h-0 overflow-y-auto">
+      <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto safepad-lg">
+        <!-- stat cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="statcard"><div id="stat-total" class="statnum text-[#e4e4e7]">0</div><div class="statlbl">TOTAL SESSIONS</div></div>
+          <div class="statcard"><div id="stat-active" class="statnum text-[#60a5fa]">0</div><div class="statlbl">ACTIVE / RUNNING</div></div>
+          <div class="statcard"><div id="stat-idle" class="statnum text-[#8b8fa3]">0</div><div class="statlbl">IDLE</div></div>
+          <div class="statcard"><div id="stat-msgs" class="statnum text-[#a78bfa]">0</div><div class="statlbl">TOTAL MESSAGES</div></div>
+        </div>
+        <!-- charts: donut sessions/project + bar messages top 5 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="chartbox">
+            <div class="text-[13px] font-semibold mb-3 text-[#a5a9b8]">Sessions theo project</div>
+            <div class="relative h-[260px]"><canvas id="chart-donut"></canvas></div>
+          </div>
+          <div class="chartbox">
+            <div class="text-[13px] font-semibold mb-3 text-[#a5a9b8]">Messages per project (top 5)</div>
+            <div class="relative h-[260px]"><canvas id="chart-bar"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ command palette DRAWER (slide-up) ============ -->
+<div id="drawerwrap">
+  <div id="drawerback" onclick="closePalette()"></div>
+  <div id="drawer">
+    <div class="drawerhandle"></div>
+    <!-- filter input -->
+    <div class="px-4 pt-3 pb-2">
+      <div class="inputwrap flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
+                  focus-within:border-[#3b82f6]/60 transition-colors">
+        <i data-lucide="search" class="w-4 h-4 text-[#666b7d] shrink-0"></i>
+        <input id="palfilter" class="flex-1 bg-transparent outline-none py-2.5 text-[16px] placeholder-[#666b7d]"
+               placeholder="Lọc lệnh... (↑↓ chọn, Enter chạy, Esc đóng)">
+      </div>
+    </div>
+    <!-- cards build 1 lần trong JS, filter chỉ ẩn/hiện -->
+    <div id="palbody" class="flex-1 overflow-y-auto px-4 pb-4"></div>
+  </div>
+</div>
+
+<!-- overlay modal dùng chung -->
+<div id="overlay">
+  <div id="overlaybox" class="bg-[#12141c] border border-[#262a36] rounded-2xl shadow-2xl w-[min(640px,92vw)] flex flex-col fadein"
+       style="max-height:80vh;max-height:80dvh">
+    <div class="flex items-center justify-between px-5 py-3.5 border-b border-[#262a36]">
+      <span id="overlaytitle" class="font-semibold text-[14px]"></span>
+      <button class="w-7 h-7 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3]"
+              onclick="closeOverlay()"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <div id="overlaybody" class="px-5 py-4 overflow-y-auto whitespace-pre-wrap break-words text-[13.5px] leading-relaxed"></div>
+    <div id="overlayfoot" class="px-5 py-3 border-t border-[#262a36] flex gap-2 justify-end empty:hidden"></div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

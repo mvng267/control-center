@@ -37,7 +37,7 @@ function req(method, url, body) {
 
 (async () => {
   try { fs.unlinkSync(STATE_FILE); } catch {}
-  const dash = spawn('node', [path.join(__dirname, 'claude-dashboard.js')], {
+  const dash = spawn('node', [path.join(__dirname, '..', 'src', 'server', 'index.js')], {
     env: { ...process.env, PORT: String(DASH_PORT), PUSH_STATE_FILE: STATE_FILE },
     stdio: 'ignore',
   });
