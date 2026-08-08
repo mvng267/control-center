@@ -35,15 +35,26 @@ Máy trong cùng Wi-Fi thì thay bằng IP LAN.
 ## Cấu trúc
 
 ```
-src/server/        backend Node thuần (zero dependency)
-web/               giao diện
-tests/             test tự động (cần playwright-core)
-scripts/           tiện ích: verify, bench, check-procs
+src/server/
+  index.js         định tuyến + logic (33 endpoint)
+  tools.js         tool_use/tool_result -> dữ liệu cho tool card
+  config.js        hằng số dùng chung
+  http-utils.js    json, readBody, hostAllowed
+web/legacy/
+  index.html
+  app.css
+  js/              14 module theo tính năng — core, chat, agy, hermes, stats…
+tests/             e2e (147), push (19), push-browser, keyboard, safearea
+scripts/           verify, bench, check-procs
 docs/
   FEATURES.md      bảng kiểm 62 tính năng — dùng khi sửa lớn
   CLAUDE-DATA.md   cấu trúc ~/.claude, dashboard đọc/ghi gì
-RULES.md           quy tắc thiết kế (mobile là ưu tiên cao nhất)
+RULES.md           quy tắc thiết kế + bẫy đã gặp
 ```
+
+**Sửa giao diện:** file trong `web/legacy/` phục vụ trực tiếp (`Cache-Control: no-cache`) — sửa xong tải lại trang là thấy, không cần restart server.
+
+**Thêm module client mới:** tạo `web/legacy/js/<tên>.js` rồi thêm thẻ `<script src="/js/<tên>.js">` vào `index.html`. Các file **dùng chung scope**, nên biến dùng xuyên file phải khai báo ở `js/core.js` (nạp đầu tiên) — `npm run verify` sẽ báo nếu sai.
 
 ## Test
 

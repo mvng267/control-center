@@ -47,11 +47,27 @@ Chuẩn bị sẵn sàng cho: Add to Home Screen (iOS/Android), shortcut desktop
 
 ## QUY TRÌNH PHÁT TRIỂN
 - Mọi thay đổi qua Claude CLI session (resume để giữ context).
-- Test: `node -c claude-dashboard.js` (syntax) + khởi động server + curl endpoints.
+- Verify: `npm run verify` (cú pháp server + client + thứ tự nạp + CSS) → `npm test` (e2e 147) → `npm run test:push` (19).
 - Commit thường xuyên, KHÔNG push nếu Vinh chưa duyệt.
-- Verify trước khi báo "xong": typecheck, test, build, mobile/desktop render, PWA.
+- Sửa lớn thì tick lại `docs/FEATURES.md` — test bắt được selector gãy, KHÔNG bắt được tính năng biến mất.
+
+## CẤU TRÚC
+```
+src/server/    backend Node thuần — index.js (định tuyến + logic), tools.js, config.js, http-utils.js
+web/legacy/    giao diện — index.html, app.css, js/*.js (14 module theo tính năng)
+tests/         e2e, push, push-browser, keyboard, safearea
+scripts/       verify, bench, check-procs
+docs/          FEATURES.md (bảng kiểm 62 tính năng), CLAUDE-DATA.md (cấu trúc ~/.claude)
+```
 
 ## TECH STACK
-- Node.js thuần (http server), vanilla JS frontend, Tailwind+daisyUI CDN, Chart.js CDN, marked+dompurify CDN, Lucide CDN.
-- KHÔNG dùng build step (giữ đơn giản, dễ sửa trực tiếp).
-- Port 7799, bind 0.0.0.0 (Tailscale accessible).
+- Node.js thuần (http server), **zero dependency ở backend** — Web Push tự cài đặt VAPID + RFC 8291.
+- Vanilla JS frontend, Tailwind+daisyUI CDN, Chart.js CDN, marked+dompurify CDN, Lucide CDN.
+- KHÔNG dùng build step (giữ đơn giản, dễ sửa trực tiếp). Sửa file trong `web/legacy/` là thấy ngay, không cần restart.
+- Port 7799, bind 0.0.0.0 (Tailscale accessible). Mọi request từ ngoài máy phải có token.
+
+## BẪY ĐÃ GẶP — đọc trước khi sửa
+- **Client JS dùng chung scope.** 14 file nạp bằng thẻ `<script>` tuần tự, không phải module. Biến dùng xuyên file phải khai báo ở **`js/core.js`** (nạp đầu tiên); khai báo ở file nạp sau thì file nạp trước không thấy → `x is not defined` lúc chạy. `npm run verify` có bước quét chặn việc này.
+- **Đường dẫn file trạng thái phải neo vào gốc dự án**, không dùng `__dirname`. Khoá VAPID từng bị sinh lại khi tách file, làm chết mọi đăng ký thông báo mà không báo lỗi gì.
+- **Không sửa file `.jsonl` của Claude CLI** — dữ liệu gốc, CLI ghi đè bất cứ lúc nào. Thứ dashboard cần lưu để ở `~/.claude/dashboard-*.json`.
+- `hostAllowed` chỉ đọc header `Host` (client tự khai được) → **không phải** cơ chế bảo mật. Token mới là.
