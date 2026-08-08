@@ -849,12 +849,14 @@ const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 
 // Manifest để "Add to Home Screen" chạy standalone như app native
 const MANIFEST = JSON.stringify({
-  name: 'Claude Control Center',
-  short_name: 'Claude',
-  start_url: '/',
+  name: 'Claude Control',
+  short_name: 'Control',
   display: 'standalone',
+  // iOS standalone: env(safe-area-inset-bottom) chỉ đúng khi viewport-fit=cover ở cả manifest lẫn meta viewport
+  viewport: { 'viewport-fit': 'cover' },
   background_color: '#0f1117',
   theme_color: '#0f1117',
+  start_url: '/',
   icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
 });
 
@@ -1132,6 +1134,29 @@ const HTML = `<!doctype html>
   .agycfgsave:hover { color: #e4e4e7; border-color: rgba(59, 130, 246, .55); }
   .agycfgsave.dirty { color: #3b82f6; border-color: rgba(59, 130, 246, .55); }
 
+  /* ---- mobile: tab bar FIXED nổi trên home indicator ----
+     Trước đây #sidenav là flex item (order-2) nằm trong flow: khi content tràn /
+     iOS standalone tính viewport lệch, cả bar bị đẩy xuống dưới home indicator.
+     fixed + bottom:0 + env() đảm bảo bar luôn bám đáy viewport THẬT và tự chừa safe-area. */
+  @media (max-width: 767px) {
+    #sidenav {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    /* sidenav ra khỏi flow -> content phải tự chừa chỗ cho bar (56px) + safe-area */
+    #content { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  }
+
+  /* padding đáy các bar trong content: desktop/tablet (sidebar trái) bar nằm sát đáy
+     viewport nên cần env(); mobile tab bar fixed đã che vùng safe-area -> chỉ padding thường,
+     tránh double-padding. !important vì Tailwind CDN inject py-3 sau style block này. */
+  .safepad { padding-bottom: calc(env(safe-area-inset-bottom) + 12px) !important; }
+  .safepad-lg { padding-bottom: calc(env(safe-area-inset-bottom) + 16px) !important; }
+  @media (max-width: 767px) {
+    .safepad { padding-bottom: 12px !important; }
+    .safepad-lg { padding-bottom: 16px !important; }
+  }
+
   /* ---- sidebar desktop collapsible ---- */
   @media (min-width: 768px) {
     #sidenav { transition: width .2s ease; }
@@ -1226,8 +1251,7 @@ const HTML = `<!doctype html>
         </div>
 
         <!-- input bar -->
-        <div class="relative border-t border-[#262a36] bg-[#12141c] px-3 py-3"
-             style="padding-bottom:calc(env(safe-area-inset-bottom) + 12px)">
+        <div class="relative border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
           <div class="flex items-center gap-2 flex-wrap">
             <div id="modeseg" class="seg">
               <button class="segbtn active" data-mode="">Normal</button>
@@ -1271,8 +1295,7 @@ const HTML = `<!doctype html>
         </div>
         <div id="bubbles" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2.5" style="scroll-behavior:smooth"></div>
         <div id="typingind" class="hidden px-4"><div class="tdots"><span></span><span></span><span></span></div></div>
-        <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3"
-             style="padding-bottom:calc(env(safe-area-inset-bottom) + 12px)">
+        <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
           <div class="flex items-center gap-2">
             <div class="flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
                         focus-within:border-[#3b82f6]/60 transition-colors">
@@ -1335,8 +1358,7 @@ const HTML = `<!doctype html>
         </div>
         <div id="hermes-bubbles" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2.5" style="scroll-behavior:smooth"></div>
         <div id="hermes-typing" class="hidden px-4"><div class="tdots"><span></span><span></span><span></span></div></div>
-        <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3"
-             style="padding-bottom:calc(env(safe-area-inset-bottom) + 12px)">
+        <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
           <div class="flex items-center gap-2">
             <div class="flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
                         focus-within:border-[#8b5cf6]/60 transition-colors">
@@ -1352,8 +1374,7 @@ const HTML = `<!doctype html>
 
     <!-- ============ TAB 3: AGY-PROXY CONFIG (gọi CLI, không tự implement proxy) ============ -->
     <div id="tab-agy" class="hidden flex-1 flex-col min-h-0 overflow-y-auto">
-      <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto"
-           style="padding-bottom:calc(env(safe-area-inset-bottom) + 16px)">
+      <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto safepad-lg">
         <!-- status cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div class="statcard"><div id="agy-status" class="statnum text-[#8b8fa3]">–</div><div class="statlbl">STATUS</div></div>
@@ -1417,8 +1438,7 @@ const HTML = `<!doctype html>
 
     <!-- ============ TAB 4: STATS (Chart.js) ============ -->
     <div id="tab-stats" class="hidden flex-1 flex-col min-h-0 overflow-y-auto">
-      <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto"
-           style="padding-bottom:calc(env(safe-area-inset-bottom) + 16px)">
+      <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto safepad-lg">
         <!-- stat cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div class="statcard"><div id="stat-total" class="statnum text-[#e4e4e7]">0</div><div class="statlbl">TOTAL SESSIONS</div></div>
