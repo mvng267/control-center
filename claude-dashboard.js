@@ -898,47 +898,104 @@ const HTML = `<!doctype html>
   :root { color-scheme: dark; }
   * { -webkit-tap-highlight-color: transparent; }
   body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-  ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-thumb { background: #262a36; border-radius: 4px; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-thumb { background: #2d3140; border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3f50; }
   ::-webkit-scrollbar-track { background: transparent; }
 
   /* fade-in MỘT LẦN cho phần tử mới xuất hiện — không có animation lặp */
   .fadein { animation: fadein .2s ease-out; }
   @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  /* các keyframes khác — tất cả chạy 1 LẦN (trừ typing/shimmer chỉ hiện khi đang chờ) */
+  @keyframes pill-pop { 0% { box-shadow: 0 0 0 0 rgba(16,185,129,.4); } 70% { box-shadow: 0 0 0 7px rgba(16,185,129,0); } 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); } }
+  @keyframes badgepop { 0% { transform: scale(.4); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
+  @keyframes pillin { from { transform: scaleX(.5); opacity: 0; } to { transform: scaleX(1); opacity: 1; } }
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  @keyframes tbounce { 0%, 60%, 100% { transform: none; opacity: .35; } 30% { transform: translateY(-3px); opacity: 1; } }
+
+  /* header: title gradient + logo glow + pill RUNNING (pulse 1 lần khi xuất hiện) */
+  .apptitle {
+    background: linear-gradient(90deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .logoglow svg { filter: drop-shadow(0 0 6px rgba(59, 130, 246, .55)); }
+  .runpill {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    font-size: 11px; font-weight: 600; letter-spacing: .3px; padding: 3px 10px; border-radius: 999px;
+    background: rgba(16, 185, 129, .12); color: #34d399; border: 1px solid rgba(16, 185, 129, .25);
+    animation: pill-pop 1.1s ease 1; /* nhấp nháy 1 lần lúc hiện, sau đó static */
+  }
+  .runpill .chip-dot { background: #10b981; }
+
+  /* skeleton shimmer: CHỈ hiện lúc chờ data đầu tiên, bị remove ngay khi SSE về */
+  .skel {
+    border-radius: 8px;
+    background: linear-gradient(90deg, #1a1d27 25%, #242938 37%, #1a1d27 63%);
+    background-size: 200% 100%; animation: shimmer 1.2s linear infinite;
+  }
 
   /* tab sidebar */
   .tabbtn {
-    position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    position: relative; z-index: 0; display: flex; flex-direction: column; align-items: center; gap: 3px;
     padding: 10px 6px; border-radius: 10px; color: #666b7d; min-height: 48px; flex: 1;
     transition: color .15s, background .15s; cursor: pointer; border: none; background: none;
     font: inherit; font-size: 10px; font-weight: 600; letter-spacing: .3px;
   }
   @media (min-width: 768px) { .tabbtn { flex: none; margin: 0 10px; } }
   .tabbtn:hover { color: #a5a9b8; background: #1a1d27; }
-  .tabbtn.active { color: #3b82f6; background: rgba(59, 130, 246, .12); }
-  .tabbtn.hm.active { color: #8b5cf6; background: rgba(139, 92, 246, .12); }
+  /* pill nền active nằm ở ::before -> slide/scale-in 200ms MỘT LẦN khi chuyển tab */
+  .tabbtn.active::before {
+    content: ''; position: absolute; inset: 3px; z-index: -1; border-radius: 10px;
+    background: rgba(59, 130, 246, .12);
+    box-shadow: 0 0 14px rgba(59, 130, 246, .12);
+    animation: pillin .2s ease;
+  }
+  .tabbtn.active { color: #3b82f6; }
+  .tabbtn.active svg { filter: drop-shadow(0 0 5px rgba(59, 130, 246, .45)); }
+  .tabbtn.hm.active { color: #8b5cf6; }
+  .tabbtn.hm.active::before { background: rgba(139, 92, 246, .12); box-shadow: 0 0 14px rgba(139, 92, 246, .12); }
+  .tabbtn.hm.active svg { filter: drop-shadow(0 0 5px rgba(139, 92, 246, .45)); }
   .tabbadge {
     position: absolute; top: 2px; right: 6px; background: #ef4444; color: #fff;
     border-radius: 999px; font-size: 10px; line-height: 15px; padding: 0 5px; font-weight: 600;
+    animation: badgepop .3s ease; /* pop 1 lần mỗi khi badge xuất hiện (display none -> block restart) */
   }
 
   /* session / conversation row */
   .srow {
     display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin: 2px 10px;
-    border-radius: 10px; cursor: pointer; border: 1px solid transparent;
-    transition: background .15s, border-color .15s;
+    border-radius: 12px; cursor: pointer; border: 1px solid transparent;
+    transition: background .15s, border-color .15s, box-shadow .15s;
   }
-  .srow:hover { background: #1a1d27; }
-  .srow.selected { border-color: rgba(59, 130, 246, .55); background: #1a1d27; }
+  .srow:hover { background: #161921; box-shadow: inset 3px 0 0 #3b82f6; } /* glow bar trái, inset -> không shift layout */
+  .srow.selected { border-color: rgba(59, 130, 246, .45); background: #161921; }
 
   /* status chip */
-  .chip { font-size: 10px; font-weight: 600; letter-spacing: .4px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
-  .st-RUNNING { background: rgba(245, 158, 11, .16); color: #f59e0b; }
+  .chip { font-size: 10px; font-weight: 600; letter-spacing: .4px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+  .chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .st-RUNNING { background: rgba(16, 185, 129, .14); color: #34d399; }
+  /* dot RUNNING: pulse 2 nhịp khi mới render rồi ĐỨNG YÊN — tuân thủ rule không animation lặp */
+  .st-RUNNING .chip-dot { background: #10b981; box-shadow: 0 0 0 2px rgba(16,185,129,.25); animation: dot-pulse 2s ease-in-out 2; }
+  @keyframes dot-pulse { 0%,100% { box-shadow: 0 0 0 2px rgba(16,185,129,.25); } 50% { box-shadow: 0 0 0 4px rgba(16,185,129,.1); } }
   .st-ACTIVE { background: rgba(59, 130, 246, .16); color: #60a5fa; }
-  .st-IDLE { background: #1e222d; color: #666b7d; }
+  .st-ACTIVE .chip-dot { background: #3b82f6; }
+  .st-IDLE { background: #1e222d; color: #4b5163; }
+  .st-IDLE .chip-dot { background: #3a3f50; }
+  /* status dot dùng trong session row (không phải chip, chỉ dot) */
+  .sdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .sdot-RUNNING { background: #10b981; animation: dot-pulse 2s ease-in-out 2; }
+  .sdot-ACTIVE { background: #3b82f6; }
+  .sdot-IDLE { background: #2d3140; }
 
-  /* unread badge nhỏ trên card */
-  .ubadge { background: #ef4444; color: #fff; border-radius: 999px; font-size: 10px; line-height: 16px; padding: 0 6px; font-weight: 600; }
+  /* unread badge nhỏ trên card — pop 1 lần khi xuất hiện */
+  .ubadge { background: #ef4444; color: #fff; border-radius: 999px; font-size: 10px; line-height: 16px; padding: 0 6px; font-weight: 600; animation: badgepop .3s ease; }
+
+  /* project name trong row: đậm hơn + fade gradient thay vì cắt cứng */
+  .s-proj {
+    font-weight: 600;
+    -webkit-mask-image: linear-gradient(90deg, #000 82%, transparent);
+    mask-image: linear-gradient(90deg, #000 82%, transparent);
+  }
 
   /* compare: nút toggle + row đã chọn + split view (bubble nhỏ hơn cho 2 cột hẹp) */
   #comparebtn.cmp-on { border-color: rgba(59, 130, 246, .7); color: #3b82f6; background: rgba(59, 130, 246, .12); }
@@ -951,8 +1008,15 @@ const HTML = `<!doctype html>
     max-width: 76%; padding: 9px 13px; border-radius: 16px; line-height: 1.55;
     font-size: 14px; white-space: pre-wrap; word-break: break-word;
   }
-  .bub-user { align-self: flex-end; background: #3b82f6; color: #fff; border-bottom-right-radius: 6px; }
-  .bub-assistant { align-self: flex-start; background: #1a1d27; border: 1px solid #262a36; color: #e4e4e7; border-bottom-left-radius: 6px; }
+  .bub-user {
+    align-self: flex-end; background: linear-gradient(135deg, #3b82f6, #6366f1);
+    color: #fff; border-bottom-right-radius: 6px;
+  }
+  .bub-assistant {
+    align-self: flex-start; background: #1a1d27; border: 1px solid #262a36;
+    border-left: 2px solid rgba(59, 130, 246, .45);
+    color: #e4e4e7; border-bottom-left-radius: 6px;
+  }
   .bub-tool {
     align-self: flex-start; background: rgba(139, 92, 246, .08); border: 1px solid rgba(139, 92, 246, .25);
     color: #b7a5ef; font-size: 12px; max-width: 82%;
@@ -963,10 +1027,12 @@ const HTML = `<!doctype html>
   .codewrap { position: relative; margin: 8px 0; }
   .codelang { font-size: 11px; color: #666b7d; margin: 0 0 3px 4px; }
   .codeblock {
-    background: #0b0d13; border: 1px solid #262a36; border-radius: 10px;
+    background: #0b0d13; border: 1px solid rgba(59, 130, 246, .22); border-radius: 10px;
     padding: 10px 12px; overflow-x: auto; white-space: pre;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: #c9d1d9;
+    box-shadow: inset 0 0 18px rgba(59, 130, 246, .05); /* neon subtle */
   }
+  .codelang { color: #60a5fa; }
   .bub-user .codeblock { background: rgba(0, 0, 0, .28); border-color: rgba(255, 255, 255, .22); color: #fff; }
   .copybtn {
     position: absolute; top: 4px; right: 4px; display: flex; align-items: center; gap: 4px;
@@ -993,7 +1059,7 @@ const HTML = `<!doctype html>
     background: rgba(110, 118, 129, .25); border-radius: 5px; padding: 1px 5px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em;
   }
-  .md pre { background: #0b0d13; border: 1px solid #262a36; border-radius: 10px; padding: 10px 12px; overflow-x: auto; margin: 6px 0; }
+  .md pre { background: #0b0d13; border: 1px solid rgba(59, 130, 246, .22); border-radius: 10px; padding: 10px 12px; overflow-x: auto; margin: 6px 0; box-shadow: inset 0 0 18px rgba(59, 130, 246, .05); }
   .md pre code { background: none; padding: 0; font-size: 12.5px; }
   .md blockquote { border-left: 3px solid #3b82f6; padding-left: 10px; margin: 6px 0; color: #a5a9b8; }
   .md a { color: #60a5fa; text-decoration: underline; }
@@ -1006,12 +1072,15 @@ const HTML = `<!doctype html>
   .bub-user .md a { color: #dbeafe; }
   .bub-user .md blockquote { border-color: rgba(255, 255, 255, .5); color: #dbeafe; }
 
-  /* typing dots — animation duy nhất, chỉ hiện khi đang chờ */
-  .tdots { display: flex; gap: 4px; align-items: center; padding: 12px 14px; }
-  .tdots span { width: 6px; height: 6px; border-radius: 50%; background: #666b7d; animation: tblink 1.4s ease-in-out infinite; }
-  .tdots span:nth-child(2) { animation-delay: .2s; }
-  .tdots span:nth-child(3) { animation-delay: .4s; }
-  @keyframes tblink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+  /* typing dots — bounce nhẹ, CHỈ hiện khi đang chờ trả lời (rule cho phép) */
+  .tdots {
+    display: inline-flex; gap: 5px; align-items: center; padding: 10px 14px;
+    background: #1a1d27; border: 1px solid #262a36; border-radius: 16px; border-bottom-left-radius: 6px;
+    align-self: flex-start;
+  }
+  .tdots span { width: 7px; height: 7px; border-radius: 50%; background: #8b8fa3; animation: tbounce 1.2s ease-in-out infinite; }
+  .tdots span:nth-child(2) { animation-delay: .15s; }
+  .tdots span:nth-child(3) { animation-delay: .3s; }
 
   /* command palette */
   .palitem { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
@@ -1051,6 +1120,26 @@ const HTML = `<!doctype html>
     padding: 4px 10px; border-radius: 8px; cursor: pointer; transition: background .15s, color .15s;
   }
   .segbtn.active { background: #3b82f6; color: #fff; }
+
+  /* input wrapper: glow nhẹ khi focus (blue mặc định, tím cho Hermes) */
+  .inputwrap { transition: border-color .15s, box-shadow .15s; }
+  .inputwrap:focus-within {
+    border-color: rgba(59, 130, 246, .6) !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, .12), 0 0 16px rgba(59, 130, 246, .14);
+  }
+  .inputwrap-hm:focus-within {
+    border-color: rgba(139, 92, 246, .6) !important;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, .12), 0 0 16px rgba(139, 92, 246, .14);
+  }
+
+  /* send button: gradient blue -> purple, scale nhẹ khi hover/press */
+  .sendgrad {
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    transition: transform .15s ease, filter .15s ease, box-shadow .15s ease;
+  }
+  .sendgrad:hover { transform: scale(1.05); filter: brightness(1.08); box-shadow: 0 4px 14px rgba(99, 102, 241, .35); }
+  .sendgrad:active { transform: scale(.96); }
+  .sendgrad.hm { background: linear-gradient(135deg, #8b5cf6, #6366f1); }
 
   /* ---- command palette DRAWER: slide-up từ dưới, translateY 200ms MỘT LẦN ---- */
   #drawerwrap { position: fixed; inset: 0; z-index: 80; pointer-events: none; }
@@ -1183,14 +1272,15 @@ const HTML = `<!doctype html>
       style="height:100vh;height:100dvh">
 
 <!-- ================= header ================= -->
-<header class="flex items-center gap-3 px-4 py-2.5 border-b border-[#262a36] bg-[#12141c] shrink-0"
-        style="padding-top:calc(env(safe-area-inset-top) + 10px)">
-  <div class="w-8 h-8 rounded-[10px] bg-[#3b82f6]/15 flex items-center justify-center text-[#3b82f6] shrink-0">
+<header class="flex items-center gap-3 px-4 py-2.5 border-b border-[#262a36] shrink-0"
+        style="padding-top:calc(env(safe-area-inset-top) + 10px);background:linear-gradient(90deg,#0f1117,#1a1d27,#0f1117)">
+  <div class="logoglow w-8 h-8 rounded-[10px] bg-[#3b82f6]/15 flex items-center justify-center text-[#3b82f6] shrink-0">
     <i data-lucide="terminal" class="w-4 h-4"></i>
   </div>
-  <h1 class="font-semibold text-[15px] tracking-tight whitespace-nowrap">Claude Control Center</h1>
+  <h1 class="apptitle font-semibold text-[15px] tracking-tight whitespace-nowrap">Claude Control Center</h1>
   <span id="busyind" class="loading loading-dots loading-xs text-[#3b82f6] hidden"></span>
   <div class="ml-auto flex items-center gap-3">
+    <span id="runpill" class="runpill hidden"><span class="chip-dot"></span><span id="runpill-n">0</span>&nbsp;running</span>
     <span id="modeltag" class="hidden sm:inline text-xs text-[#8b8fa3] bg-[#1a1d27] border border-[#262a36] rounded-full px-3 py-1">default</span>
     <span id="clock" class="hidden sm:inline text-xs text-[#666b7d] tabular-nums"></span>
     <button class="w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
@@ -1238,11 +1328,11 @@ const HTML = `<!doctype html>
         <div class="flex items-center gap-2 px-4 py-2.5 border-b border-[#262a36]">
           <!-- min-w-0 cả wrapper lẫn input: input mặc định có min-width ~200px, không co được
                trong flex -> đẩy nút compare ra ngoài viewport mobile 390px -->
-          <div class="flex-1 min-w-0 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-[10px] px-3
+          <div class="inputwrap flex-1 min-w-0 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-[10px] px-3
                       focus-within:border-[#3b82f6]/60 transition-colors">
             <i data-lucide="search" class="w-3.5 h-3.5 text-[#666b7d] shrink-0"></i>
             <input id="searchbox" class="flex-1 min-w-0 w-full bg-transparent outline-none py-1.5 text-[13px] placeholder-[#666b7d]"
-                   placeholder="Tìm session...">
+                   placeholder="Tìm session hoặc project…">
           </div>
           <select id="projfilter" class="select select-sm bg-[#1a1d27] border-[#262a36] text-[13px] text-[#e4e4e7] rounded-[10px] max-w-[130px] sm:max-w-[180px] shrink-0 focus:outline-none">
             <option value="">Tất cả project</option>
@@ -1255,6 +1345,12 @@ const HTML = `<!doctype html>
         </div>
         <div id="jobsbar" class="hidden border-b border-[#262a36] py-1"></div>
         <div id="main" class="flex-1 overflow-y-auto py-2">
+          <!-- skeleton shimmer: chỉ hiện khi chờ SSE tick đầu tiên, renderList() remove -->
+          <div id="skelrows" class="flex flex-col gap-1 py-1">
+            <div class="flex items-center gap-3 px-4 py-2.5 mx-2"><span class="skel w-2 h-2 rounded-full shrink-0"></span><span class="skel w-9 h-9 rounded-[11px] shrink-0"></span><span class="flex-1 flex flex-col gap-2"><span class="skel h-3 w-2/5"></span><span class="skel h-2.5 w-3/5"></span></span></div>
+            <div class="flex items-center gap-3 px-4 py-2.5 mx-2"><span class="skel w-2 h-2 rounded-full shrink-0"></span><span class="skel w-9 h-9 rounded-[11px] shrink-0"></span><span class="flex-1 flex flex-col gap-2"><span class="skel h-3 w-1/3"></span><span class="skel h-2.5 w-1/2"></span></span></div>
+            <div class="flex items-center gap-3 px-4 py-2.5 mx-2"><span class="skel w-2 h-2 rounded-full shrink-0"></span><span class="skel w-9 h-9 rounded-[11px] shrink-0"></span><span class="flex-1 flex flex-col gap-2"><span class="skel h-3 w-1/2"></span><span class="skel h-2.5 w-2/3"></span></span></div>
+          </div>
           <div id="sessrows"></div>
           <div id="emptystate" class="hidden text-center text-[#666b7d] py-10 text-[13px]">Không có session nào khớp</div>
         </div>
@@ -1272,18 +1368,18 @@ const HTML = `<!doctype html>
             <button id="palbtn" class="w-11 h-11 rounded-xl bg-[#1a1d27] border border-[#262a36] hover:border-[#3b82f6]/60
                                         flex items-center justify-center text-[#8b8fa3] font-mono font-bold text-[15px]
                                         transition-colors shrink-0" title="Command palette (⌘K hoặc gõ /)">/</button>
-            <div class="flex-1 min-w-[200px] flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
+            <div class="inputwrap flex-1 min-w-[200px] flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
                         focus-within:border-[#3b82f6]/60 transition-colors">
               <input id="taskinput" class="flex-1 bg-transparent outline-none py-2.5 text-[16px] placeholder-[#666b7d]"
-                     placeholder="Giao task mới, hoặc gõ / xem lệnh...">
+                     placeholder="Giao task cho Claude — gõ / để xem lệnh…">
             </div>
             <button id="enhancebtn" class="w-11 h-11 rounded-xl bg-[#1a1d27] border border-[#262a36] hover:border-[#8b5cf6]/60
                                            flex items-center justify-center text-[#a78bfa] transition-colors shrink-0"
                     title="Enhance prompt bằng Claude">
               <i data-lucide="sparkles" class="w-4 h-4"></i>
             </button>
-            <button id="sendbtn" class="w-11 h-11 rounded-xl bg-[#3b82f6] hover:bg-[#2f6fe0] flex items-center justify-center
-                                        text-white transition-colors shrink-0" title="Gửi (Enter)">
+            <button id="sendbtn" class="sendgrad w-11 h-11 rounded-xl flex items-center justify-center
+                                        text-white shrink-0" title="Gửi (Enter)">
               <i data-lucide="send" class="w-4 h-4"></i>
             </button>
           </div>
@@ -1296,7 +1392,7 @@ const HTML = `<!doctype html>
           <button class="w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
                   onclick="backToList()"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
           <span id="chatsid" class="text-[13px] font-medium text-[#a5a9b8] truncate"></span>
-          <span id="chatstatus" class="chip st-IDLE">IDLE</span>
+          <span id="chatstatus" class="chip st-IDLE"><span class="chip-dot"></span><span class="chip-label">IDLE</span></span>
           <button id="exportbtn" class="ml-auto w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
                   onclick="exportCurrent()" title="Export session (.md / .json)"><i data-lucide="download" class="w-4 h-4"></i></button>
           <button class="w-8 h-8 rounded-lg hover:bg-[#2a1518] flex items-center justify-center text-[#ef4444] transition-colors"
@@ -1306,13 +1402,13 @@ const HTML = `<!doctype html>
         <div id="typingind" class="hidden px-4"><div class="tdots"><span></span><span></span><span></span></div></div>
         <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
           <div class="flex items-center gap-2">
-            <div class="flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
+            <div class="inputwrap flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
                         focus-within:border-[#3b82f6]/60 transition-colors">
               <input id="chatinput" class="flex-1 bg-transparent outline-none py-2.5 text-[16px] placeholder-[#666b7d]"
-                     placeholder="Nhắn tiếp (resume session)...">
+                     placeholder="Tiếp tục cuộc trò chuyện…">
             </div>
-            <button id="chatsendbtn" class="w-11 h-11 rounded-xl bg-[#3b82f6] hover:bg-[#2f6fe0] flex items-center justify-center
-                                            text-white transition-colors shrink-0"><i data-lucide="send" class="w-4 h-4"></i></button>
+            <button id="chatsendbtn" class="sendgrad w-11 h-11 rounded-xl flex items-center justify-center
+                                            text-white shrink-0"><i data-lucide="send" class="w-4 h-4"></i></button>
           </div>
         </div>
       </div>
@@ -1369,13 +1465,13 @@ const HTML = `<!doctype html>
         <div id="hermes-typing" class="hidden px-4"><div class="tdots"><span></span><span></span><span></span></div></div>
         <div class="border-t border-[#262a36] bg-[#12141c] px-3 py-3 safepad">
           <div class="flex items-center gap-2">
-            <div class="flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
+            <div class="inputwrap-hm flex-1 flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
                         focus-within:border-[#8b5cf6]/60 transition-colors">
               <input id="hermes-input" class="flex-1 bg-transparent outline-none py-2.5 text-[16px] placeholder-[#666b7d]"
-                     placeholder="Nhắn Hermes (CLI trả lời thật)...">
+                     placeholder="Trò chuyện với Hermes…">
             </div>
-            <button id="hermessendbtn" class="w-11 h-11 rounded-xl bg-[#8b5cf6] hover:bg-[#7a4de0] flex items-center justify-center
-                                              text-white transition-colors shrink-0"><i data-lucide="send" class="w-4 h-4"></i></button>
+            <button id="hermessendbtn" class="sendgrad hm w-11 h-11 rounded-xl flex items-center justify-center
+                                              text-white shrink-0"><i data-lucide="send" class="w-4 h-4"></i></button>
           </div>
         </div>
       </div>
@@ -1479,7 +1575,7 @@ const HTML = `<!doctype html>
     <div class="drawerhandle"></div>
     <!-- filter input -->
     <div class="px-4 pt-3 pb-2">
-      <div class="flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
+      <div class="inputwrap flex items-center gap-2 bg-[#1a1d27] border border-[#262a36] rounded-xl px-3.5
                   focus-within:border-[#3b82f6]/60 transition-colors">
         <i data-lucide="search" class="w-4 h-4 text-[#666b7d] shrink-0"></i>
         <input id="palfilter" class="flex-1 bg-transparent outline-none py-2.5 text-[16px] placeholder-[#666b7d]"
@@ -1657,6 +1753,10 @@ es.onmessage = e => {
     }
   }
   prevRunning = nowRunning;
+  // pill RUNNING trên header: chỉ toggle/setText — animation pulse 1 lần do CSS lo khi hiện lại
+  const runpill = document.getElementById('runpill');
+  runpill.classList.toggle('hidden', nowRunning.size === 0);
+  if (nowRunning.size > 0) setText(document.getElementById('runpill-n'), String(nowRunning.size));
   setText(document.getElementById('modeltag'), data.model || 'default');
   updateProjectOptions();
   renderList();
@@ -1689,12 +1789,27 @@ function createSessionRow(s) {
   row.className = 'srow fadein';
   row.dataset.sid = s.sid;
   row.onclick = () => rowClick(s.sid); // compare mode ON -> chọn để so sánh, OFF -> mở chat
+  // Layout: [dot] [avatar] [body: title + meta] [right: time + badge]
   row.innerHTML =
-    '<span class="chip s-status"></span>' +
-    '<span class="s-sid text-[13px] font-medium text-[#e4e4e7]"></span>' +
-    '<span class="s-proj text-[13px] text-[#8b8fa3] truncate"></span>' +
-    '<span class="s-meta text-xs text-[#666b7d] ml-auto whitespace-nowrap"></span>' +
-    '<span class="s-badge ubadge hidden"></span>';
+    // dot trạng thái
+    '<span class="sdot s-dot shrink-0"></span>' +
+    // avatar icon
+    '<span class="s-avatar w-9 h-9 rounded-[11px] flex items-center justify-center shrink-0 text-[#60a5fa]" style="background:rgba(59,130,246,.1)">' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>' +
+    '</span>' +
+    // body
+    '<span class="flex-1 min-w-0 flex flex-col gap-0.5">' +
+      '<span class="flex items-center gap-2">' +
+        '<span class="s-sid text-[13px] font-semibold text-[#e4e4e7] truncate leading-tight"></span>' +
+        '<span class="s-badge ubadge hidden ml-1 shrink-0"></span>' +
+      '</span>' +
+      '<span class="s-proj text-[11.5px] text-[#666b7d] truncate leading-tight"></span>' +
+    '</span>' +
+    // right col: time + kill
+    '<span class="flex flex-col items-end gap-1.5 shrink-0">' +
+      '<span class="s-time text-[10.5px] text-[#4b5163] whitespace-nowrap tabular-nums"></span>' +
+      '<span class="s-msgs text-[10px] text-[#4b5163] whitespace-nowrap"></span>' +
+    '</span>';
   const kill = document.createElement('button');
   kill.className = 's-kill hidden w-7 h-7 rounded-lg hover:bg-[#2a1518] flex items-center justify-center text-[#ef4444] transition-colors shrink-0';
   kill.title = 'Kill';
@@ -1706,13 +1821,30 @@ function createSessionRow(s) {
 
 // Chỉ update phần thay đổi của row — không rebuild
 function updateSessionRow(row, s) {
-  const st = row.querySelector('.s-status');
-  setText(st, s.status);
-  const stClass = 'chip s-status st-' + s.status;
-  if (st.className !== stClass) st.className = stClass;
+  // dot trạng thái
+  const dot = row.querySelector('.s-dot');
+  const dotClass = 'sdot s-dot shrink-0 sdot-' + s.status;
+  if (dot.className !== dotClass) dot.className = dotClass;
+
+  // avatar màu theo trạng thái
+  const av = row.querySelector('.s-avatar');
+  if (av) {
+    if (s.status === 'RUNNING') {
+      av.style.background = 'rgba(16,185,129,.12)';
+      av.style.color = '#34d399';
+    } else if (s.status === 'ACTIVE') {
+      av.style.background = 'rgba(59,130,246,.1)';
+      av.style.color = '#60a5fa';
+    } else {
+      av.style.background = 'rgba(59,130,246,.06)';
+      av.style.color = '#4b5163';
+    }
+  }
+
   setText(row.querySelector('.s-sid'), s.sid.slice(0, 8));
   setText(row.querySelector('.s-proj'), s.project);
-  setText(row.querySelector('.s-meta'), s.msgs + ' msgs · ' + ago(s.mtimeMs));
+  setText(row.querySelector('.s-time'), ago(s.mtimeMs));
+  setText(row.querySelector('.s-msgs'), s.msgs + ' msgs');
   const badge = row.querySelector('.s-badge');
   badge.classList.toggle('hidden', !(s.unread > 0));
   if (s.unread > 0) setText(badge, String(s.unread));
@@ -1734,6 +1866,8 @@ function renderList() {
   const cont = document.getElementById('sessrows');
   const sessions = filteredSessions();
   document.getElementById('emptystate').classList.toggle('hidden', sessions.length > 0);
+  const skel = document.getElementById('skelrows');
+  if (skel) skel.remove(); // data thật đã về -> bỏ skeleton (shimmer chỉ chạy lúc chờ)
   const seen = new Set();
   sessions.forEach((s, idx) => {
     let row = cont.querySelector('[data-sid="' + s.sid + '"]');
@@ -2586,9 +2720,10 @@ async function refreshChat() {
   chatBusy = false;
   if (!r || currentSid !== sidAtFetch) return;
   const st = document.getElementById('chatstatus');
-  setText(st, r.status);
   const stClass = 'chip st-' + r.status;
   if (st.className !== stClass) st.className = stClass;
+  const lbl = st.querySelector('.chip-label');
+  if (lbl) setText(lbl, r.status); else setText(st, r.status);
 
   const box = document.getElementById('bubbles');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
