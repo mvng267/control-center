@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Search, ChevronsUpDown, ChevronLeft, ChevronRight, Plus, SlidersHorizontal,
   MoreHorizontal, MessageSquare, Download, Square,
@@ -35,13 +35,23 @@ type SortKey = 'title' | 'project' | 'msgs' | 'mtimeMs';
 const PAGE = 10;
 
 export function SessionList({
-  sessions, jobs, perm, onOpen,
-}: { sessions: Session[]; jobs: Job[]; perm?: string; onOpen: (sid: string) => void }) {
+  sessions, jobs, perm, onOpen, quick,
+}: {
+  sessions: Session[]; jobs: Job[]; perm?: string;
+  onOpen: (sid: string) => void;
+  quick?: { q: string; n: number };   // lối tắt "Xem nhanh" ở sidebar
+}) {
   const [q, setQ] = useState('');
   const [proj, setProj] = useState('');
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: 'mtimeMs', dir: -1 });
   const [page, setPage] = useState(0);
   const [stat, setStat] = useState('');       // lọc theo trạng thái ('' = tất cả)
+
+  // Bấm "Phiên đang chạy" ở sidebar -> áp bộ lọc luôn. Phụ thuộc quick.n (không phải
+  // quick.q) để bấm lại lần nữa vẫn chạy dù giá trị không đổi.
+  useEffect(() => {
+    if (quick?.q) { setStat(quick.q); setPage(0); setQ(''); }
+  }, [quick?.n]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const projects = useMemo(() => [...new Set(sessions.map((s) => s.project))].sort(), [sessions]);
 

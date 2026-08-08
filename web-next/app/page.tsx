@@ -22,6 +22,8 @@ export default function Page() {
   const [tab, setTab] = useState<TabId>('cli');
   const [openSid, setOpenSid] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // n tăng mỗi lần bấm để bấm LẠI cùng một lối tắt vẫn áp lại được bộ lọc
+  const [quick, setQuick] = useState<{ q: string; n: number }>({ q: '', n: 0 });
 
   // ⌘K / Ctrl+K mở bảng lệnh; ⌘1-4 chuyển tab; Esc thoát chat
   useEffect(() => {
@@ -94,10 +96,12 @@ export default function Page() {
         </div>
       )}
 
-      <AppShell tab={tab} onTab={setTab} badges={{ cli: unread }}>
+      <AppShell tab={tab} onTab={setTab} badges={{ cli: unread }}
+        onQuick={(q) => { setOpenSid(null); setQuick({ q, n: quick.n + 1 }); }}>
         {tab === 'cli' && (openSid
           ? <ChatView sid={openSid} onBack={() => setOpenSid(null)} perm={data?.perm} />
-          : <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} perm={data?.perm} onOpen={setOpenSid} />)}
+          : <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} perm={data?.perm}
+              onOpen={setOpenSid} quick={quick} />)}
         {tab === 'hermes' && <HermesTab />}
         {tab === 'agy' && <AgyTab />}
         {tab === 'stats' && <StatsTab sessions={data?.sessions || []} />}

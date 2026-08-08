@@ -35,13 +35,14 @@ function ThemeToggle() {
 }
 
 export function AppShell({
-  tab, onTab, badges, crumb, children,
+  tab, onTab, badges, crumb, children, onQuick,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
   badges?: Partial<Record<TabId, number>>;
   crumb?: string;
   children: React.ReactNode;
+  onQuick?: (q: string) => void;   // ý định lọc kèm theo lối tắt "Xem nhanh"
 }) {
   const active = TABS.find((t) => t.id === tab);
 
@@ -86,12 +87,15 @@ export function AppShell({
           <div className="flex items-center px-2.5 pb-1.5 pt-5 text-[12px] font-medium text-muted-foreground">
             <span className="flex-1">Xem nhanh</span>
           </div>
+          {/* Chuyển tab THÔI thì nhãn nói dối: bấm "Phiên đang chạy" mà mở ra vẫn cả
+              100 phiên. Gửi kèm ý định qua onQuick để màn đích tự lọc. */}
           {[
-            { c: 'bg-status-ok', label: 'Phiên đang chạy', to: 'cli' as TabId },
-            { c: 'bg-status-run', label: 'Lỗi agy-proxy', to: 'agy' as TabId },
-            { c: 'bg-primary', label: 'Thống kê hôm nay', to: 'stats' as TabId },
+            { c: 'bg-status-ok', label: 'Phiên đang chạy', to: 'cli' as TabId, q: 'run' },
+            { c: 'bg-status-run', label: 'Lỗi agy-proxy', to: 'agy' as TabId, q: '' },
+            { c: 'bg-primary', label: 'Thống kê hôm nay', to: 'stats' as TabId, q: '' },
           ].map((f) => (
-            <button key={f.label} onClick={() => onTab(f.to)}
+            <button key={f.label} data-testid={'quick-' + f.to + (f.q ? '-' + f.q : '')}
+              onClick={() => { onTab(f.to); if (f.q) onQuick?.(f.q); }}
               className="flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[14px] text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground">
               <i className={cn('size-1.5 shrink-0 rounded-full', f.c)} />
               <span className="truncate">{f.label}</span>
