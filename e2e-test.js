@@ -123,7 +123,59 @@ function cleanFixture() {
     await page.keyboard.press('Meta+3');
     await page.waitForTimeout(3500);
     const agyStatus = await page.evaluate(() => document.getElementById('agy-status').textContent);
-    ok(label + ': agy status hiển thị', agyStatus === 'ON' || agyStatus === 'OFF', agyStatus);
+    ok(label + ': agy status hiển thị', agyStatus === 'Đang chạy' || agyStatus === 'Đã dừng', agyStatus);
+
+    // thẻ trạng thái + thanh phân bổ tài khoản + models gom nhóm (giao diện mới)
+    const agyUI = await page.evaluate(() => {
+      const hero = document.getElementById('agy-hero');
+      const segs = [...document.querySelectorAll('#agy-accbar span')];
+      const lg = [...document.querySelectorAll('#agy-acclegend .acclg')].map(x => x.textContent);
+      const grps = [...document.querySelectorAll('.mgrp')];
+      return {
+        heroCls: hero.className,
+        tagShown: !document.getElementById('agy-hero-tag').classList.contains('hidden'),
+        meta: document.getElementById('agy-hero-meta').textContent,
+        segs: segs.length,
+        segWidthSum: Math.round(segs.reduce((n, s) => n + parseFloat(s.style.width || 0), 0)),
+        legend: lg,
+        groups: grps.length,
+        grpMinH: grps.length ? Math.min(...grps.map(g => g.querySelector('.mgrp-head').getBoundingClientRect().height)) : 0,
+        recent: document.getElementById('agy-acc-recent').textContent,
+      };
+    });
+    ok(label + ': agy thẻ trạng thái (màu theo on/off, ghi rõ cổng)',
+      /agyhero (on|off)/.test(agyUI.heroCls) && agyUI.meta.indexOf('cổng') === 0,
+      JSON.stringify({ cls: agyUI.heroCls, meta: agyUI.meta, tag: agyUI.tagShown }));
+    ok(label + ': agy thanh phân bổ tài khoản (tổng ~100%, có chú thích)',
+      agyUI.segs > 0 && Math.abs(agyUI.segWidthSum - 100) <= 2 && agyUI.legend.length === agyUI.segs
+      && /\d+ chạy trong 24h/.test(agyUI.recent),
+      JSON.stringify({ segs: agyUI.segs, sum: agyUI.segWidthSum, legend: agyUI.legend }));
+    ok(label + ': agy models gom nhóm, head ≥44px (không còn khối chữ dính liền)',
+      agyUI.groups > 0 && agyUI.grpMinH >= 43.9, JSON.stringify({ groups: agyUI.groups, h: agyUI.grpMinH }));
+
+    // tìm model -> lọc + tô sáng; xoá ô tìm -> hiện lại đủ nhóm
+    const agySearch = await page.evaluate(async () => {
+      const inp = document.getElementById('agy-modelsearch');
+      const before = document.querySelectorAll('.mgrp').length;
+      inp.value = 'claude'; inp.dispatchEvent(new Event('input'));
+      await new Promise(r => setTimeout(r, 200));
+      const hit = {
+        groups: document.querySelectorAll('.mgrp').length,
+        items: document.querySelectorAll('.mitem').length,
+        marks: document.querySelectorAll('.mitem mark').length,
+        allOpen: [...document.querySelectorAll('.mgrp')].every(g => g.classList.contains('open')),
+      };
+      inp.value = 'zzz-khong-ton-tai'; inp.dispatchEvent(new Event('input'));
+      await new Promise(r => setTimeout(r, 200));
+      const empty = document.getElementById('agy-modellist').textContent.indexOf('Không có model') >= 0;
+      inp.value = ''; inp.dispatchEvent(new Event('input'));
+      await new Promise(r => setTimeout(r, 200));
+      return { before, hit, empty, after: document.querySelectorAll('.mgrp').length };
+    });
+    ok(label + ': agy tìm model -> lọc + tô sáng + báo khi không khớp',
+      agySearch.hit.items > 0 && agySearch.hit.marks === agySearch.hit.items
+      && agySearch.hit.allOpen && agySearch.empty && agySearch.after === agySearch.before,
+      JSON.stringify(agySearch));
     const cfgInputs = await page.locator('#agy-config input').count();
     ok(label + ': agy config editor có fields', cfgInputs >= 5, cfgInputs + ' inputs');
     // buffer server rỗng (dashboard mới restart) -> panel phải là placeholder; có log -> phải hiển thị
@@ -416,6 +468,60 @@ function cleanFixture() {
     await page.evaluate(() => backToList());
     await page.waitForTimeout(200);
     // KHÔNG xoá UXFILE ở đây: vòng viewport thứ 2 còn dùng lại. Dọn ở cleanFixture().
+
+    // ---- tiêu đề phiên: ai-title của Claude CLI + đổi tên riêng ở dashboard ----
+    const TTSID = 'e2e00000-0000-4000-8000-0000000000tt';
+    const TTFILE = require('path').join(FIX_DIR, TTSID + '.jsonl');
+    require('fs').writeFileSync(TTFILE,
+      JSON.stringify({ type: 'ai-title', aiTitle: 'Tiêu đề cũ', sessionId: TTSID }) + '\n' +
+      fixLine('user', [{ type: 'text', text: 'câu hỏi đầu tiên' }], '2026-08-08T09:00:00Z') + '\n' +
+      JSON.stringify({ type: 'ai-title', aiTitle: 'Tiêu đề Claude CLI đặt', sessionId: TTSID }) + '\n' +
+      fixLine('assistant', [{ type: 'text', text: 'trả lời' }], '2026-08-08T09:00:05Z') + '\n');
+    const tt = await page.evaluate(async sid => {
+      const h = await fetch('/api/history/' + sid).then(r => r.json());
+      // đặt tên riêng -> phải đè ai-title
+      const set = await fetch('/api/title/' + sid, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Tên tôi tự đặt' }),
+      }).then(r => r.json());
+      const after = await fetch('/api/history/' + sid).then(r => r.json());
+      // xoá tên riêng -> quay về ai-title
+      const cleared = await fetch('/api/title/' + sid, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: '' }),
+      }).then(r => r.json());
+      return { fromCli: h.title, set: set.title, after: after.title, cleared: cleared.title };
+    }, TTSID);
+    ok(label + ': tiêu đề lấy ai-title MỚI NHẤT của Claude CLI, đổi tên đè được, xoá thì quay lại',
+      tt.fromCli === 'Tiêu đề Claude CLI đặt' && tt.set === 'Tên tôi tự đặt'
+      && tt.after === 'Tên tôi tự đặt' && tt.cleared === 'Tiêu đề Claude CLI đặt',
+      JSON.stringify(tt));
+
+    // header chat hiện tiêu đề (không phải ID), bấm mở hộp đổi tên
+    await page.evaluate(s => openChat(s), TTSID);
+    await page.waitForFunction(() => document.getElementById('chatsid').textContent.length > 2, { timeout: 8000 });
+    const hdr = await page.evaluate(() => {
+      const el = document.getElementById('chatsid');
+      const txt = el.textContent;
+      el.click(); // mở hộp đổi tên
+      return { txt, idInTitle: el.title, ovVal: (document.querySelector('#overlaybody input') || {}).value };
+    });
+    ok(label + ': header chat hiện TIÊU ĐỀ (không phải ID), bấm mở hộp đổi tên',
+      hdr.txt === 'Tiêu đề Claude CLI đặt' && hdr.idInTitle === TTSID && hdr.ovVal === 'Tiêu đề Claude CLI đặt',
+      JSON.stringify(hdr));
+    await page.evaluate(() => closeOverlay());
+    // danh sách session cũng phải hiện tiêu đề, và tìm kiếm khớp theo tiêu đề
+    await page.evaluate(() => backToList());
+    // đợi SSE (2s/tick) đẩy session fixture vào danh sách
+    await page.waitForFunction(sid =>
+      !!document.querySelector('#sessrows .srow[data-sid="' + sid + '"] .s-sid'), TTSID, { timeout: 8000 }).catch(() => {});
+    const inList = await page.evaluate(sid => {
+      const row = document.querySelector('#sessrows .srow[data-sid="' + sid + '"] .s-sid');
+      return row ? row.textContent : null;
+    }, TTSID);
+    ok(label + ': danh sách session hiện tiêu đề thay cho ID',
+      inList === 'Tiêu đề Claude CLI đặt', String(inList));
+    require('fs').rmSync(TTFILE, { force: true });
 
     // ---- ẢNH THẬT + thời gian + gộp lượt + diff ----
     const IMGSID = 'e2e00000-0000-4000-8000-0000000000im';

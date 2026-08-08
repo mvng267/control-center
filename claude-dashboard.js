@@ -248,12 +248,15 @@ function parseSessionFile(file) {
   // tool_use_id -> part object; ghép result vào call. Ghép trên TOÀN file trước khi
   // slice window 30 -> call ở đầu window vẫn nhận được result nằm sau.
   const toolIndex = new Map();
+  let aiTitle = '';   // Claude CLI tự sinh tiêu đề (dòng type=ai-title), lấy bản MỚI NHẤT
+  let firstUser = ''; // dự phòng khi session chưa có ai-title: câu đầu của user
   let raw;
   try { raw = fs.readFileSync(file, 'utf8'); } catch { return null; }
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
     let obj;
     try { obj = JSON.parse(line); } catch { continue; }
+    if (obj.type === 'ai-title') { if (obj.aiTitle) aiTitle = obj.aiTitle; continue; }
     if (obj.type !== 'user' && obj.type !== 'assistant') continue;
     const m = obj.message || obj;
     const content = m.content;
@@ -299,10 +302,17 @@ function parseSessionFile(file) {
     if (!parts.length) continue;
     const text = flattenParts(parts);
     if (!text.trim()) continue;
+    if (!firstUser && obj.type === 'user') {
+      // bỏ lệnh slash / output hệ thống, lấy câu người thật gõ
+      const t = text.trim();
+      if (t[0] !== '/' && t.indexOf('<') !== 0) firstUser = t;
+    }
     msgs.push({ role: obj.type, text, ts: obj.timestamp || null, parts });
   }
   // tsMs: timestamp (ms) từng message — precompute 1 lần để đếm unread không tốn Date.parse mỗi tick
-  const data = { msgs, mtimeMs: st.mtimeMs, tsMs: msgs.map(m => Date.parse(m.ts) || 0) };
+  // title: ai-title của Claude CLI; chưa có thì lấy câu đầu của user (cắt gọn)
+  const title = aiTitle || (firstUser ? firstUser.replace(/\s+/g, ' ').slice(0, 70) : '');
+  const data = { msgs, mtimeMs: st.mtimeMs, title, tsMs: msgs.map(m => Date.parse(m.ts) || 0) };
   cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, data });
   return data;
 }
@@ -315,6 +325,27 @@ function getHistory(sid) {
   const parsed = parseSessionFile(file);
   if (!parsed) return null;
   return parsed.msgs.slice(-30).map(m => ({ role: m.role, content: m.text, ts: m.ts, parts: m.parts }));
+}
+
+/* ---- tên tự đặt: ghi riêng của dashboard, ĐÈ ai-title của Claude CLI ----
+   Không sửa file .jsonl của Claude CLI (nó là dữ liệu gốc, CLI có thể ghi đè bất cứ lúc nào). */
+const TITLES_FILE = path.join(os.homedir(), '.claude', 'dashboard-titles.json');
+let customTitles = null;
+function loadTitles() {
+  if (customTitles) return customTitles;
+  try { customTitles = JSON.parse(fs.readFileSync(TITLES_FILE, 'utf8')); }
+  catch { customTitles = {}; }
+  return customTitles;
+}
+function setTitle(sid, name) {
+  const t = loadTitles();
+  if (name) t[sid] = name; else delete t[sid]; // xoá tên tự đặt -> quay về ai-title
+  try { fs.writeFileSync(TITLES_FILE, JSON.stringify(t, null, 2)); } catch { return false; }
+  return true;
+}
+// Tiêu đề hiển thị: tên tự đặt > ai-title (Claude CLI) > câu đầu của user > rỗng
+function titleOf(sid, parsedTitle) {
+  return loadTitles()[sid] || parsedTitle || '';
 }
 
 function findSessionFile(sid) {
@@ -357,6 +388,7 @@ function listSessions() {
       out.push({
         sid,
         project,
+        title: titleOf(sid, parsed.title),
         msgs: parsed.msgs.length,
         unread,
         mtimeMs: parsed.mtimeMs,
@@ -729,6 +761,51 @@ function httpGetJson(urlStr, headers, timeoutMs) {
   });
 }
 
+/* ---- sức khoẻ tài khoản: đọc accounts.csv (1.9MB) -> cache theo mtime,
+   client poll 3s nên KHÔNG được parse lại mỗi lần ---- */
+let agyAccCache = { mtimeMs: 0, size: 0, data: null };
+function readAgyAccounts() {
+  const f = path.join(agyDataDir(), 'accounts.csv');
+  let st;
+  try { st = fs.statSync(f); } catch { return { total: 0, status: {}, kiro: {}, recent24h: 0 }; }
+  if (agyAccCache.data && agyAccCache.mtimeMs === st.mtimeMs && agyAccCache.size === st.size) return agyAccCache.data;
+  let raw;
+  try { raw = fs.readFileSync(f, 'utf8'); } catch { return { total: 0, status: {}, kiro: {}, recent24h: 0 }; }
+  const lines = raw.split('\n').filter(l => l.trim());
+  const hdr = (lines[0] || '').split(',');
+  const iAgy = hdr.indexOf('status_agy');
+  const iKiro = hdr.indexOf('status_kiro');
+  const iLast = hdr.indexOf('last_run');
+  const status = {}, kiro = {};
+  let recent24h = 0;
+  const now = Date.now();
+  for (let i = 1; i < lines.length; i++) {
+    const c = lines[i].split(',');
+    if (iAgy >= 0) { const v = c[iAgy] || 'unknown'; status[v] = (status[v] || 0) + 1; }
+    if (iKiro >= 0) { const v = c[iKiro] || 'unknown'; kiro[v] = (kiro[v] || 0) + 1; }
+    if (iLast >= 0) { const t = Date.parse(c[iLast]); if (t && now - t < 86400000) recent24h++; }
+  }
+  const data = { total: lines.length - 1, status, kiro, recent24h };
+  agyAccCache = { mtimeMs: st.mtimeMs, size: st.size, data };
+  return data;
+}
+
+// Gom model theo nhà cung cấp: "agy/gemini-3-pro-high" -> nhóm "gemini"
+function groupModels(models) {
+  const g = {};
+  for (const m of models) {
+    const body = String(m).indexOf('/') >= 0 ? String(m).split('/').slice(1).join('/') : String(m);
+    const key = (body.split('-')[0] || 'khác').toLowerCase();
+    (g[key] = g[key] || []).push(m);
+  }
+  // nhóm chỉ có 1 model -> dồn vào "khác", tránh 20 nhóm vụn mỗi nhóm 1 dòng
+  const keys = Object.keys(g).sort((a, b) => g[b].length - g[a].length);
+  const out = [], rest = [];
+  for (const k of keys) { if (g[k].length > 1) out.push({ name: k, items: g[k] }); else rest.push(g[k][0]); }
+  if (rest.length) out.push({ name: 'khác', items: rest });
+  return out;
+}
+
 async function getAgyStatus() {
   if (agyStatusCache.data && Date.now() - agyStatusCache.at < 3000) return agyStatusCache.data;
   const port = await agyPort();
@@ -742,8 +819,12 @@ async function getAgyStatus() {
     const csv = fs.readFileSync(path.join(agyDataDir(), 'accounts.csv'), 'utf8');
     accounts = Math.max(0, csv.split('\n').filter(l => l.trim()).length - 1); // trừ header
   } catch {}
+  const acc = readAgyAccounts();
   const data = {
     running, port, accounts, models,
+    modelGroups: groupModels(models),
+    acc,                       // sức khoẻ tài khoản: ok/new/failed/needs_human + chạy 24h
+    external: running && !agyDev, // proxy đang chạy NGOÀI dashboard -> Stop/Restart không tác dụng
     dev: agyDev ? { pid: agyDev.proc.pid, startedAt: agyDev.startedAt } : null,
     task: agyTask ? { name: agyTask.name, startedAt: agyTask.startedAt } : null,
     last: agyLast,
@@ -1015,7 +1096,24 @@ const server = http.createServer(async (req, res) => {
         last.parts = last.parts.map(p => (p.t === 'tool' && p.status === 'pending' ? Object.assign({}, p, { status: 'running' }) : p));
       }
     }
-    return json(res, 200, { sid, messages, total, start, typing, status: statusOf(sid, mt) });
+    return json(res, 200, {
+      sid, messages, total, start, typing,
+      title: titleOf(sid, parsed ? parsed.title : ''),
+      status: statusOf(sid, mt),
+    });
+  }
+
+  // ---- đổi tên phiên chat (ghi riêng dashboard, không đụng .jsonl của Claude CLI) ----
+  if ((m = p.match(/^\/api\/title\/([\w-]+)$/)) && req.method === 'POST') {
+    const sid = m[1];
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const name = String(body.title == null ? '' : body.title).trim().slice(0, 120);
+    if (!setTitle(sid, name)) return json(res, 500, { error: 'không ghi được file tên' });
+    // trả lại tiêu đề hiệu lực: xoá tên tự đặt thì rơi về ai-title
+    const file = findSessionFile(sid);
+    const parsed = file ? parseSessionFile(file) : null;
+    return json(res, 200, { ok: true, title: titleOf(sid, parsed ? parsed.title : '') });
   }
 
   // ---- ảnh trong tool_result (screenshot...): trả binary, cache lâu vì nội dung bất biến ----
@@ -1526,6 +1624,14 @@ const HTML = `<!doctype html>
   #compare .msgwrap { max-width: 94%; }
   #compare .tcard-head { font-size: 12px; min-height: 40px; }
   #compare .tcard-sum { font-size: 11px; }
+  /* tiêu đề phiên trong header chat: bấm để đổi tên */
+  .chattitle {
+    background: none; border: 0; cursor: pointer; padding: 2px 6px; margin-left: -6px;
+    border-radius: 8px; max-width: 60%; transition: background .2s ease, color .2s ease;
+  }
+  .chattitle:hover { background: #1a1d27; color: #e4e4e7; }
+  .chattitle:focus-visible { outline: 2px solid rgba(59, 130, 246, .6); }
+
   /* ---- thời gian + trạng thái dưới bubble (kiểu Telegram/iMessage) ---- */
   /* message user: cả wrapper dạt phải, bubble co theo nội dung (không kéo full 76%) */
   .msgwrap.mw-user { align-self: flex-end; align-items: flex-end; width: auto; }
@@ -1777,12 +1883,77 @@ const HTML = `<!doctype html>
   .agychip.ok { background: rgba(16, 185, 129, .14); color: #34d399; }
   .agychip.fail { background: rgba(239, 68, 68, .14); color: #f87171; }
   .agychip.run { background: rgba(245, 158, 11, .14); color: #f59e0b; }
+  /* ---- THẺ TRẠNG THÁI: thay 4 ô số rời rạc bằng 1 chỗ nói rõ proxy đang thế nào ---- */
+  .agyhero {
+    border: 1px solid #262a36; border-radius: 14px; padding: 14px;
+    background: linear-gradient(135deg, #161921, #12141c);
+    transition: border-color .2s ease;
+  }
+  .agyhero.on { border-color: rgba(16, 185, 129, .35); }
+  .agyhero.off { border-color: rgba(248, 113, 113, .35); }
+  .agyhero-dot { width: 10px; height: 10px; border-radius: 50%; background: #4b5163; flex-shrink: 0; }
+  .agyhero.on .agyhero-dot { background: #10b981; animation: dot-pulse 2s ease-in-out 2; }
+  .agyhero.off .agyhero-dot { background: #f87171; }
+  .agyhero-state { font-size: 17px; font-weight: 700; color: #e4e4e7; letter-spacing: -.2px; }
+  .agyhero-meta { font-size: 12.5px; color: #8b8fa3; }
+  .agyhero-tag {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .3px; padding: 3px 8px; border-radius: 999px;
+    background: rgba(245, 158, 11, .12); color: #d9a441; border: 1px solid rgba(245, 158, 11, .3);
+  }
+  .agyhero-note {
+    margin-top: 10px; font-size: 12px; color: #d9a441; line-height: 1.5;
+    background: rgba(245, 158, 11, .08); border: 1px solid rgba(245, 158, 11, .22);
+    border-radius: 10px; padding: 8px 10px;
+  }
+
+  /* ---- thanh phân bổ tài khoản: nhìn tỉ lệ ok/mới/lỗi thay vì đọc con số ---- */
+  .accbar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: #0b0d13; gap: 2px; }
+  .accbar span { display: block; min-width: 2px; transition: width .3s ease; }
+  .acc-ok { background: #10b981; }
+  .acc-new { background: #3b82f6; }
+  .acc-needs_human { background: #f59e0b; }
+  .acc-failed { background: #ef4444; }
+  .acc-unknown { background: #4b5163; }
+  .acclg { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #8b8fa3; }
+  .acclg i { width: 8px; height: 8px; border-radius: 50%; display: block; flex-shrink: 0; }
+
+  /* ---- models gom nhóm: bấm mở nhóm, thay khối 43 model dính liền ---- */
+  .modelsearch {
+    background: #1a1d27; border: 1px solid #262a36; border-radius: 9px; padding: 7px 11px;
+    font-size: 16px; color: #e4e4e7; outline: none; width: 150px; transition: border-color .2s ease;
+  }
+  .modelsearch:focus { border-color: rgba(59, 130, 246, .6); }
+  @media (min-width: 768px) { .modelsearch { font-size: 12.5px; padding: 6px 10px; } }
+  .mgrp { border: 1px solid #262a36; border-radius: 10px; background: #141722; overflow: hidden; }
+  .mgrp-head {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 12px;
+    background: none; border: 0; color: #e4e4e7; font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+  }
+  @media (min-width: 768px) { .mgrp-head:hover { background: #1a1e2b; } }
+  .mgrp-name { font-weight: 600; text-transform: capitalize; }
+  .mgrp-count { font-size: 11.5px; color: #666b7d; }
+  .mgrp-chev { margin-left: auto; color: #666b7d; display: flex; transition: transform .2s ease; }
+  .mgrp.open .mgrp-chev { transform: rotate(180deg); }
+  .mgrp-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s ease; }
+  .mgrp.open .mgrp-body { grid-template-rows: 1fr; }
+  .mgrp-body > div { overflow: hidden; min-height: 0; }
+  .mitem {
+    padding: 5px 12px 5px 32px; font-size: 12px; color: #8b8fa3;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all;
+  }
+  .mitem mark { background: rgba(59, 130, 246, .25); color: #dbeafe; border-radius: 3px; }
+
   .agylog {
     background: #0b0d13; border: 1px solid #262a36; border-radius: 10px; padding: 10px 12px;
     height: 280px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
     line-height: 1.5; color: #c9d1d9; -webkit-overflow-scrolling: touch;
   }
+  /* log tô màu: lỗi đỏ / cảnh báo vàng / thành công xanh — quét mắt ra ngay */
+  .lg-err { color: #f87171; }
+  .lg-warn { color: #d9a441; }
+  .lg-ok { color: #34d399; }
+  .lg-dim { color: #666b7d; }
   .agycfgrow input {
     flex: 1; min-width: 0; background: #1a1d27; border: 1px solid #262a36; border-radius: 10px;
     padding: 10px 12px; font-size: 16px; color: #e4e4e7; outline: none; transition: border-color .15s;
@@ -1964,7 +2135,8 @@ const HTML = `<!doctype html>
         <div class="flex items-center gap-3 px-4 py-2.5 border-b border-[#262a36]">
           <button class="w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
                   onclick="backToList()"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
-          <span id="chatsid" class="text-[13px] font-medium text-[#a5a9b8] truncate"></span>
+          <button id="chatsid" class="chattitle text-[13px] font-medium text-[#a5a9b8] truncate text-left"
+                  onclick="renameSession()" title="Bấm để đổi tên phiên"></button>
           <span id="chatstatus" class="chip st-IDLE"><span class="chip-dot"></span><span class="chip-label">IDLE</span></span>
           <button id="exportbtn" class="ml-auto w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
                   onclick="exportCurrent()" title="Export session (.md / .json)"><i data-lucide="download" class="w-4 h-4"></i></button>
@@ -2053,44 +2225,65 @@ const HTML = `<!doctype html>
     <!-- ============ TAB 3: AGY-PROXY CONFIG (gọi CLI, không tự implement proxy) ============ -->
     <div id="tab-agy" class="hidden flex-1 flex-col min-h-0 overflow-y-auto">
       <div class="p-4 flex flex-col gap-4 max-w-[1000px] w-full mx-auto safepad-lg">
-        <!-- status cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div class="statcard"><div id="agy-status" class="statnum text-[#8b8fa3]">–</div><div class="statlbl">STATUS</div></div>
-          <div class="statcard"><div id="agy-port" class="statnum text-[#e4e4e7]">–</div><div class="statlbl">PORT</div></div>
-          <div class="statcard"><div id="agy-accounts" class="statnum text-[#60a5fa]">–</div><div class="statlbl">ACCOUNTS</div></div>
-          <div class="statcard"><div id="agy-models" class="statnum text-[#a78bfa]">–</div><div class="statlbl">MODELS</div></div>
+        <!-- THẺ TRẠNG THÁI: thông tin quan trọng nhất, 1 chỗ duy nhất -->
+        <div id="agy-hero" class="agyhero">
+          <div class="flex items-center gap-3 flex-wrap">
+            <span class="agyhero-dot" id="agy-hero-dot"></span>
+            <span id="agy-status" class="agyhero-state">đang kiểm tra…</span>
+            <span id="agy-hero-meta" class="agyhero-meta"></span>
+            <span id="agy-hero-tag" class="agyhero-tag hidden"></span>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button id="agy-btn-start" class="agybtn" onclick="agyAction('start')">
+              <i data-lucide="play" class="w-4 h-4"></i><span>Start</span></button>
+            <button id="agy-btn-stop" class="agybtn agybtn-red" onclick="agyAction('stop')">
+              <i data-lucide="square" class="w-4 h-4"></i><span>Stop</span></button>
+            <button id="agy-btn-restart" class="agybtn" onclick="agyAction('restart')">
+              <i data-lucide="rotate-cw" class="w-4 h-4"></i><span>Restart</span></button>
+          </div>
+          <div id="agy-note" class="hidden agyhero-note">
+            Proxy đang chạy NGOÀI dashboard nên Stop/Restart không tác dụng — dừng nó ở nơi đã khởi chạy.
+          </div>
         </div>
 
-        <!-- action buttons: touch >= 44px, gap >= 8px -->
-        <div class="flex flex-wrap gap-2">
-          <button id="agy-btn-start" class="agybtn" onclick="agyAction('start')">
-            <i data-lucide="play" class="w-4 h-4"></i><span>Start</span></button>
-          <button id="agy-btn-stop" class="agybtn agybtn-red" onclick="agyAction('stop')">
-            <i data-lucide="square" class="w-4 h-4"></i><span>Stop</span></button>
-          <button id="agy-btn-restart" class="agybtn" onclick="agyAction('restart')">
-            <i data-lucide="rotate-cw" class="w-4 h-4"></i><span>Restart</span></button>
-          <button id="agy-btn-build" class="agybtn" onclick="agyAction('run', 'build')">
-            <i data-lucide="hammer" class="w-4 h-4"></i><span>Build</span></button>
-          <button id="agy-btn-test" class="agybtn" onclick="agyAction('run', 'test')">
-            <i data-lucide="flask-conical" class="w-4 h-4"></i><span>Test</span></button>
-          <button id="agy-btn-typecheck" class="agybtn" onclick="agyAction('run', 'typecheck')">
-            <i data-lucide="badge-check" class="w-4 h-4"></i><span>Typecheck</span></button>
-        </div>
-        <div id="agy-note" class="hidden text-[12px] text-[#d9a441] bg-[#f59e0b]/10 border border-[#f59e0b]/25 rounded-[10px] px-3 py-2">
-          agy-proxy đang chạy NGOÀI dashboard — Stop/Restart chỉ áp dụng cho process do dashboard start.
-        </div>
-
-        <!-- kết quả lần chạy cuối -->
-        <div class="flex flex-wrap gap-2">
-          <span id="agy-last-typecheck" class="agychip">TYPECHECK: —</span>
-          <span id="agy-last-test" class="agychip">TEST: —</span>
-          <span id="agy-last-build" class="agychip">BUILD: —</span>
-        </div>
-
-        <!-- models từ gateway -->
+        <!-- SỨC KHOẺ TÀI KHOẢN: thanh phân bổ thay cho con số trơ trọi -->
         <div class="chartbox">
-          <div class="text-[13px] font-semibold mb-2 text-[#a5a9b8]">Models (gateway /proxy/v1/models)</div>
-          <div id="agy-modellist" class="text-[12.5px] text-[#8b8fa3] leading-relaxed break-words">–</div>
+          <div class="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
+            <span class="text-[13px] font-semibold text-[#a5a9b8]">Tài khoản
+              <span id="agy-accounts" class="text-[#e4e4e7]">–</span></span>
+            <span id="agy-acc-recent" class="text-[11.5px] text-[#666b7d]"></span>
+          </div>
+          <div id="agy-accbar" class="accbar"></div>
+          <div id="agy-acclegend" class="flex flex-wrap gap-x-4 gap-y-1 mt-2.5"></div>
+          <div id="agy-kiro" class="text-[11.5px] text-[#666b7d] mt-2.5 pt-2.5 border-t border-[#262a36]"></div>
+        </div>
+
+        <!-- KIỂM TRA: gộp nút chạy + kết quả lần cuối vào cùng chỗ -->
+        <div class="chartbox">
+          <div class="text-[13px] font-semibold mb-2.5 text-[#a5a9b8]">Kiểm tra</div>
+          <div class="flex flex-wrap gap-2">
+            <button id="agy-btn-typecheck" class="agybtn" onclick="agyAction('run', 'typecheck')">
+              <i data-lucide="badge-check" class="w-4 h-4"></i><span>Typecheck</span></button>
+            <button id="agy-btn-test" class="agybtn" onclick="agyAction('run', 'test')">
+              <i data-lucide="flask-conical" class="w-4 h-4"></i><span>Test</span></button>
+            <button id="agy-btn-build" class="agybtn" onclick="agyAction('run', 'build')">
+              <i data-lucide="hammer" class="w-4 h-4"></i><span>Build</span></button>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-2.5">
+            <span id="agy-last-typecheck" class="agychip">TYPECHECK: —</span>
+            <span id="agy-last-test" class="agychip">TEST: —</span>
+            <span id="agy-last-build" class="agychip">BUILD: —</span>
+          </div>
+        </div>
+
+        <!-- MODELS: gom nhóm theo nhà cung cấp + tìm kiếm, thay khối chữ 43 model -->
+        <div class="chartbox">
+          <div class="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
+            <span class="text-[13px] font-semibold text-[#a5a9b8]">Models
+              <span id="agy-models" class="text-[#e4e4e7]">–</span></span>
+            <input id="agy-modelsearch" class="modelsearch" placeholder="tìm model…" oninput="renderAgyModels()">
+          </div>
+          <div id="agy-modellist" class="flex flex-col gap-1.5"></div>
         </div>
 
         <!-- config .env: chỉ field whitelist, save ghi lại file -->
@@ -2455,7 +2648,10 @@ function updateSessionRow(row, s) {
     }
   }
 
-  setText(row.querySelector('.s-sid'), s.sid.slice(0, 8));
+  // tiêu đề thật (ai-title / tên tự đặt); chưa có thì mới rơi về ID
+  setText(row.querySelector('.s-sid'), s.title || s.sid.slice(0, 8));
+  const sidEl = row.querySelector('.s-sid');
+  if (sidEl.title !== s.sid) sidEl.title = s.sid; // hover/long-press vẫn xem được ID gốc
   setText(row.querySelector('.s-proj'), s.project);
   setText(row.querySelector('.s-time'), ago(s.mtimeMs));
   setText(row.querySelector('.s-msgs'), s.msgs + ' msgs');
@@ -2471,7 +2667,7 @@ function filteredSessions() {
   const q = document.getElementById('searchbox').value.trim().toLowerCase();
   return allSessions.filter(s => {
     if (proj && s.project !== proj) return false;
-    if (q && !(s.sid + ' ' + s.project).toLowerCase().includes(q)) return false;
+    if (q && !(s.sid + ' ' + s.project + ' ' + (s.title || '')).toLowerCase().includes(q)) return false;
     return true;
   });
 }
@@ -3601,7 +3797,11 @@ function openChat(sid) {
   const chat = document.getElementById('chat');
   chat.classList.remove('hidden');
   chat.classList.add('flex');
-  setText(document.getElementById('chatsid'), sid);
+  // hiện tiêu đề ngay từ danh sách (khỏi chờ fetch), refreshChat sẽ xác nhận lại
+  const known = allSessions.find(x => x.sid === sid);
+  chatTitle = (known && known.title) || '';
+  setText(document.getElementById('chatsid'), chatTitle || sid.slice(0, 8));
+  document.getElementById('chatsid').title = sid;
   document.getElementById('bubbles').innerHTML = '';
   document.getElementById('typingind').classList.add('hidden');
   refreshChat();
@@ -3772,6 +3972,11 @@ async function refreshChat() {
   const r = await fetch('/api/history/' + sidAtFetch).then(r => r.json()).catch(() => null);
   chatBusy = false;
   if (!r || currentSid !== sidAtFetch) return;
+  // tiêu đề có thể đổi (Claude CLI sinh ai-title mới giữa chừng) -> cập nhật tại chỗ
+  if (r.title !== undefined && r.title !== chatTitle) {
+    chatTitle = r.title || '';
+    setText(document.getElementById('chatsid'), chatTitle || sidAtFetch.slice(0, 8));
+  }
   const st = document.getElementById('chatstatus');
   const stClass = 'chip st-' + r.status;
   if (st.className !== stClass) st.className = stClass;
@@ -3850,6 +4055,45 @@ async function refreshChat() {
 
 function killCurrent() {
   if (currentSid) fetch('/api/kill/' + currentSid, { method: 'POST' });
+}
+
+/* ---- đổi tên phiên: lưu riêng ở dashboard, KHÔNG sửa .jsonl của Claude CLI ---- */
+let chatTitle = '';
+function renameSession() {
+  if (!currentSid) return;
+  const box = document.createElement('div');
+  box.className = 'flex flex-col gap-2';
+  const inp = document.createElement('input');
+  inp.className = 'w-full bg-[#1a1d27] border border-[#262a36] rounded-xl px-3 py-2.5 text-[16px] outline-none';
+  inp.value = chatTitle || '';
+  inp.placeholder = 'Tên phiên…';
+  const hint = document.createElement('div');
+  hint.className = 'text-[11.5px] text-[#666b7d]';
+  hint.textContent = 'Để trống rồi Lưu = quay về tên Claude CLI tự đặt.';
+  box.appendChild(inp);
+  box.appendChild(hint);
+  const save = () => {
+    const sid = currentSid;
+    fetch('/api/title/' + sid, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: inp.value }),
+    }).then(r => r.json()).then(r => {
+      if (currentSid === sid) {
+        chatTitle = r.title || '';
+        setText(document.getElementById('chatsid'), chatTitle || sid.slice(0, 8));
+      }
+      const row = document.querySelector('#sessrows .srow[data-sid="' + sid + '"] .s-sid');
+      if (row) setText(row, r.title || sid.slice(0, 8));
+      const s = allSessions.find(x => x.sid === sid);
+      if (s) s.title = r.title || ''; // giữ đồng bộ để SSE tick sau không ghi đè ngược
+      closeOverlay();
+      toast(r.title ? 'Đã đổi tên phiên' : 'Đã bỏ tên tự đặt');
+    }).catch(() => toast('Đổi tên thất bại'));
+  };
+  inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); save(); } };
+  showOverlay('Đổi tên phiên', box, [overlayButton('Hủy', closeOverlay), overlayButton('Lưu', save, true)]);
+  setTimeout(() => { inp.focus(); inp.select(); }, 50);
 }
 
 function submitChat() {
@@ -4199,18 +4443,125 @@ function agyChip(el, name, rec, running) {
   if (el.className !== cls) el.className = cls;
 }
 
+// nhãn tiếng Việt cho trạng thái tài khoản
+const ACC_LABEL = { ok: 'hoạt động', new: 'chưa dùng', needs_human: 'cần xử lý', failed: 'lỗi', unknown: 'không rõ' };
+const ACC_ORDER = ['ok', 'new', 'needs_human', 'failed', 'unknown'];
+
+function renderAccBar(acc) {
+  const bar = document.getElementById('agy-accbar');
+  const lg = document.getElementById('agy-acclegend');
+  const total = acc.total || 0;
+  const keys = ACC_ORDER.filter(k => acc.status[k]).concat(
+    Object.keys(acc.status).filter(k => ACC_ORDER.indexOf(k) < 0));
+  const sig = JSON.stringify([total, acc.status]);
+  if (bar.dataset.sig === sig) return; // không đổi -> khỏi đụng DOM
+  bar.dataset.sig = sig;
+  bar.innerHTML = '';
+  lg.innerHTML = '';
+  for (const k of keys) {
+    const n = acc.status[k];
+    const seg = document.createElement('span');
+    seg.className = 'acc-' + k;
+    seg.style.width = (total ? (n / total * 100) : 0) + '%';
+    seg.title = (ACC_LABEL[k] || k) + ': ' + n;
+    bar.appendChild(seg);
+    const item = document.createElement('span');
+    item.className = 'acclg';
+    const dot = document.createElement('i');
+    dot.className = 'acc-' + k;
+    const tx = document.createElement('span');
+    tx.textContent = n + ' ' + (ACC_LABEL[k] || k);
+    item.appendChild(dot); item.appendChild(tx);
+    lg.appendChild(item);
+  }
+}
+
+let agyModelGroups = [];
+function renderAgyModels() {
+  const box = document.getElementById('agy-modellist');
+  const q = (document.getElementById('agy-modelsearch').value || '').trim().toLowerCase();
+  const open = new Set([...box.querySelectorAll('.mgrp.open')].map(g => g.dataset.g));
+  box.innerHTML = '';
+  if (!agyModelGroups.length) {
+    const e = document.createElement('div');
+    e.className = 'text-[12.5px] text-[#666b7d]';
+    e.textContent = '(gateway chưa trả models)';
+    box.appendChild(e);
+    return;
+  }
+  let shown = 0;
+  for (const g of agyModelGroups) {
+    const items = q ? g.items.filter(m => m.toLowerCase().indexOf(q) >= 0) : g.items;
+    if (!items.length) continue;
+    shown += items.length;
+    const wrap = document.createElement('div');
+    wrap.className = 'mgrp' + (q || open.has(g.name) ? ' open' : ''); // đang tìm -> mở sẵn
+    wrap.dataset.g = g.name;
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'mgrp-head';
+    const nm = document.createElement('span'); nm.className = 'mgrp-name'; nm.textContent = g.name;
+    const ct = document.createElement('span'); ct.className = 'mgrp-count'; ct.textContent = items.length;
+    const ch = document.createElement('span'); ch.className = 'mgrp-chev'; ch.innerHTML = ICON_CHEV;
+    head.appendChild(nm); head.appendChild(ct); head.appendChild(ch);
+    head.onclick = () => wrap.classList.toggle('open');
+    const body = document.createElement('div'); body.className = 'mgrp-body';
+    const inner = document.createElement('div');
+    for (const m of items) {
+      const it = document.createElement('div');
+      it.className = 'mitem';
+      if (q) { // tô sáng đoạn khớp, dùng textContent nên an toàn XSS
+        const i = m.toLowerCase().indexOf(q);
+        it.appendChild(document.createTextNode(m.slice(0, i)));
+        const mk = document.createElement('mark'); mk.textContent = m.slice(i, i + q.length);
+        it.appendChild(mk);
+        it.appendChild(document.createTextNode(m.slice(i + q.length)));
+      } else it.textContent = m;
+      inner.appendChild(it);
+    }
+    body.appendChild(inner);
+    wrap.appendChild(head); wrap.appendChild(body);
+    box.appendChild(wrap);
+  }
+  if (!shown) {
+    const e = document.createElement('div');
+    e.className = 'text-[12.5px] text-[#666b7d]';
+    e.textContent = 'Không có model nào khớp "' + q + '"';
+    box.appendChild(e);
+  }
+}
+
 async function refreshAgyStatus() {
   const r = await fetch('/api/agy/status').then(r => r.json()).catch(() => null);
   if (!r) return;
-  const st = document.getElementById('agy-status');
-  setText(st, r.running ? 'ON' : 'OFF');
-  const stCls = 'statnum ' + (r.running ? 'text-[#34d399]' : 'text-[#ef4444]');
-  if (st.className !== stCls) st.className = stCls;
-  setText(document.getElementById('agy-port'), String(r.port));
+  // thẻ trạng thái
+  const hero = document.getElementById('agy-hero');
+  const heroCls = 'agyhero ' + (r.running ? 'on' : 'off');
+  if (hero.className !== heroCls) hero.className = heroCls;
+  setText(document.getElementById('agy-status'), r.running ? 'Đang chạy' : 'Đã dừng');
+  const meta = r.running
+    ? 'cổng ' + r.port + (r.dev ? ' · dashboard quản lý (pid ' + r.dev.pid + ')' : '')
+    : 'cổng ' + r.port + ' không phản hồi';
+  setText(document.getElementById('agy-hero-meta'), meta);
+  const tag = document.getElementById('agy-hero-tag');
+  tag.classList.toggle('hidden', !r.external);
+  if (r.external) setText(tag, 'CHẠY NGOÀI');
+
   setText(document.getElementById('agy-accounts'), String(r.accounts));
+  if (r.acc) {
+    renderAccBar(r.acc);
+    setText(document.getElementById('agy-acc-recent'), r.acc.recent24h + ' chạy trong 24h');
+    const kiroOk = (r.acc.kiro && r.acc.kiro.ok) || 0;
+    setText(document.getElementById('agy-kiro'), 'Kiro: ' + kiroOk + ' tài khoản sẵn sàng / ' + r.acc.total);
+  }
+
   setText(document.getElementById('agy-models'), String(r.models.length));
-  setText(document.getElementById('agy-modellist'),
-    r.models.length ? r.models.join('  ·  ') : (r.running ? '(gateway chưa trả models)' : '(agy-proxy không chạy)'));
+  const gsig = JSON.stringify(r.modelGroups || []);
+  if (gsig !== window.__agyGsig) { // danh sách model đổi mới render lại (giữ nhóm đang mở)
+    window.__agyGsig = gsig;
+    agyModelGroups = r.modelGroups || [];
+    renderAgyModels();
+  }
   // chạy ngoài dashboard -> Stop/Restart không kill được, hiện note
   document.getElementById('agy-note').classList.toggle('hidden', !(r.running && !r.dev));
   // buttons: Start disable khi đang chạy; Stop/Restart chỉ enable khi dashboard là chủ process
@@ -4226,6 +4577,18 @@ async function refreshAgyStatus() {
 }
 
 let agyLogBusy = false; // chống 2 poll chồng nhau (timer + gọi tay sau agyAction) -> log double-append
+// Phân loại 1 dòng log để tô màu (textContent -> an toàn XSS)
+function logLineNode(line) {
+  const d = document.createElement('div');
+  d.textContent = line;
+  const l = line.toLowerCase();
+  if (/\b(error|failed|fail|exception|cannot|econn|eaddrinuse)\b/.test(l) || l.indexOf('[exit code=1') >= 0) d.className = 'lg-err';
+  else if (/\b(warn|warning|deprecat)\b/.test(l)) d.className = 'lg-warn';
+  else if (/\b(success|passed|done|ready|listening|compiled|ok)\b/.test(l) || l.indexOf('[exit code=0') >= 0) d.className = 'lg-ok';
+  else if (line.trim()[0] === '[') d.className = 'lg-dim'; // dòng nhãn [dev] [build]...
+  return d;
+}
+
 async function pollAgyLog() {
   if (agyLogBusy) return;
   agyLogBusy = true;
@@ -4239,11 +4602,11 @@ async function pollAgyLog() {
   const box = document.getElementById('agy-log');
   if (agyLogEmpty) { box.textContent = ''; agyLogEmpty = false; }
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  const NL = String.fromCharCode(10);
-  box.appendChild(document.createTextNode(r.lines.join(NL) + NL)); // append-only, không rebuild
+  // mỗi dòng 1 node có màu: lỗi đỏ / cảnh báo vàng / xong xanh — quét mắt ra ngay
+  for (const line of r.lines) box.appendChild(logLineNode(line));
   agyLogNext = r.next;
-  // cap DOM: quá dài thì cắt bớt đầu (log cũ đã trôi khỏi buffer server rồi)
-  if (box.textContent.length > 200000) box.textContent = box.textContent.slice(-150000);
+  // cap DOM: quá nhiều dòng thì cắt bớt đầu (log cũ đã trôi khỏi buffer server rồi)
+  while (box.childElementCount > 1200) box.removeChild(box.firstChild);
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
