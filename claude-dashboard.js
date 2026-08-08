@@ -661,6 +661,31 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { sid, status: statusOf(sid, mt), running: procs.has(sid), typing: procs.has(sid) });
   }
 
+  // ---- export: tải FULL session (không giới hạn window 30) ra .md / .json ----
+  if ((m = p.match(/^\/api\/export\/([\w-]+)$/))) {
+    const sid = m[1];
+    const file = findSessionFile(sid);
+    const parsed = file ? parseSessionFile(file) : null;
+    if (!parsed) return json(res, 404, { error: 'session not found' });
+    const fmt = url.searchParams.get('fmt') === 'json' ? 'json' : 'md';
+    const msgs = parsed.msgs.map(x => ({ role: x.role, content: x.text, ts: x.ts }));
+    let body, type;
+    if (fmt === 'json') {
+      body = JSON.stringify({ sid, exportedAt: new Date().toISOString(), count: msgs.length, messages: msgs }, null, 2);
+      type = 'application/json';
+    } else {
+      body = '# Claude session ' + sid + '\n\n'
+        + msgs.map(x => '**' + (x.role === 'user' ? 'User' : 'Assistant') + '**'
+          + (x.ts ? ' · ' + x.ts : '') + ':\n\n' + x.content + '\n\n---\n').join('\n');
+      type = 'text/markdown; charset=utf-8';
+    }
+    res.writeHead(200, {
+      'Content-Type': type,
+      'Content-Disposition': 'attachment; filename="claude-' + sid.slice(0, 8) + '.' + fmt + '"',
+    });
+    return res.end(body);
+  }
+
   // ---- /model: set model cho task mới ----
   if (p === '/api/model' && req.method === 'POST') {
     let body;
@@ -907,6 +932,12 @@ const HTML = `<!doctype html>
 
   /* unread badge nhỏ trên card */
   .ubadge { background: #ef4444; color: #fff; border-radius: 999px; font-size: 10px; line-height: 16px; padding: 0 6px; font-weight: 600; }
+
+  /* compare: nút toggle + row đã chọn + split view (bubble nhỏ hơn cho 2 cột hẹp) */
+  #comparebtn.cmp-on { border-color: rgba(59, 130, 246, .7); color: #3b82f6; background: rgba(59, 130, 246, .12); }
+  .srow.cmp-sel { border-color: rgba(59, 130, 246, .55); background: #1a1d27; }
+  #compare .bub { max-width: 94%; font-size: 12.5px; }
+  #compare .codeblock { font-size: 11px; }
 
   /* chat bubbles — Telegram/iMessage clean */
   .bub {
@@ -1172,6 +1203,11 @@ const HTML = `<!doctype html>
           <select id="projfilter" class="select select-sm bg-[#1a1d27] border-[#262a36] text-[13px] text-[#e4e4e7] rounded-[10px] max-w-[180px] focus:outline-none">
             <option value="">Tất cả project</option>
           </select>
+          <button id="comparebtn" class="w-11 h-11 rounded-[10px] bg-[#1a1d27] border border-[#262a36] hover:border-[#3b82f6]/60
+                                          flex items-center justify-center text-[#8b8fa3] transition-colors shrink-0"
+                  onclick="toggleCompareMode()" title="So sánh 2 sessions (bấm rồi chọn 2 session)">
+            <i data-lucide="git-compare" class="w-4 h-4"></i>
+          </button>
         </div>
         <div id="jobsbar" class="hidden border-b border-[#262a36] py-1"></div>
         <div id="main" class="flex-1 overflow-y-auto py-2">
@@ -1218,7 +1254,9 @@ const HTML = `<!doctype html>
                   onclick="backToList()"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
           <span id="chatsid" class="text-[13px] font-medium text-[#a5a9b8] truncate"></span>
           <span id="chatstatus" class="chip st-IDLE">IDLE</span>
-          <button class="ml-auto w-8 h-8 rounded-lg hover:bg-[#2a1518] flex items-center justify-center text-[#ef4444] transition-colors"
+          <button id="exportbtn" class="ml-auto w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
+                  onclick="exportCurrent()" title="Export session (.md / .json)"><i data-lucide="download" class="w-4 h-4"></i></button>
+          <button class="w-8 h-8 rounded-lg hover:bg-[#2a1518] flex items-center justify-center text-[#ef4444] transition-colors"
                   onclick="killCurrent()" title="Kill session"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
         </div>
         <div id="bubbles" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2.5" style="scroll-behavior:smooth"></div>
@@ -1233,6 +1271,31 @@ const HTML = `<!doctype html>
             </div>
             <button id="chatsendbtn" class="w-11 h-11 rounded-xl bg-[#3b82f6] hover:bg-[#2f6fe0] flex items-center justify-center
                                             text-white transition-colors shrink-0"><i data-lucide="send" class="w-4 h-4"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- compare view: 2 sessions side-by-side (read-only, poll 3s append-only) -->
+      <div id="compare" class="hidden flex-1 flex-col min-h-0">
+        <div class="flex items-center gap-3 px-4 py-2.5 border-b border-[#262a36]">
+          <button class="w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
+                  onclick="closeCompare()"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
+          <span class="text-[13px] font-medium text-[#a5a9b8]">So sánh sessions</span>
+        </div>
+        <div class="flex-1 grid grid-cols-2 min-h-0">
+          <div class="flex flex-col min-h-0 border-r border-[#262a36]">
+            <div class="flex items-center gap-2 px-3 py-2 border-b border-[#262a36]">
+              <span id="cmp-sid-0" class="text-[12px] font-medium text-[#a5a9b8] truncate"></span>
+              <span id="cmp-st-0" class="chip ml-auto st-IDLE">IDLE</span>
+            </div>
+            <div id="cmp-bub-0" class="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-2"></div>
+          </div>
+          <div class="flex flex-col min-h-0">
+            <div class="flex items-center gap-2 px-3 py-2 border-b border-[#262a36]">
+              <span id="cmp-sid-1" class="text-[12px] font-medium text-[#a5a9b8] truncate"></span>
+              <span id="cmp-st-1" class="chip ml-auto st-IDLE">IDLE</span>
+            </div>
+            <div id="cmp-bub-1" class="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-2"></div>
           </div>
         </div>
       </div>
@@ -1257,6 +1320,8 @@ const HTML = `<!doctype html>
           <button class="w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
                   onclick="hermesBack()"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
           <span id="hermes-title" class="text-[13px] font-medium text-[#a5a9b8] truncate"></span>
+          <button id="hermes-exportbtn" class="ml-auto w-8 h-8 rounded-lg hover:bg-[#1a1d27] flex items-center justify-center text-[#8b8fa3] transition-colors"
+                  onclick="hermesExport()" title="Export chat (.md / .json)"><i data-lucide="download" class="w-4 h-4"></i></button>
         </div>
         <div id="hermes-bubbles" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2.5" style="scroll-behavior:smooth"></div>
         <div id="hermes-typing" class="hidden px-4"><div class="tdots"><span></span><span></span><span></span></div></div>
@@ -1455,10 +1520,16 @@ function toast(msg) {
 // Beep nhẹ qua WebAudio — iOS không hỗ trợ navigator.vibrate nên cần fallback âm thanh.
 // AudioContext phải unlock bằng user gesture (autoplay policy) -> tạo lazy ở pointerdown/keydown đầu tiên.
 let audioCtx = null;
+let notifAsked = false;
 function unlockAudio() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!audioCtx && AC) { try { audioCtx = new AC(); } catch {} }
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(function () {});
+  // xin quyền system notification 1 lần ở gesture đầu tiên (browser yêu cầu user gesture)
+  if (!notifAsked && 'Notification' in window && Notification.permission === 'default') {
+    notifAsked = true;
+    try { Notification.requestPermission().catch(function () {}); } catch {}
+  }
 }
 document.addEventListener('pointerdown', unlockAudio, { passive: true });
 document.addEventListener('keydown', unlockAudio);
@@ -1478,11 +1549,15 @@ function beep() {
   } catch {}
 }
 
-// Toast + vibration (Android) / beep (iOS/desktop) — dùng khi reply xong mà user không nhìn thấy
+// Toast + vibration nhẹ (Android) + beep nhẹ (iOS/desktop) — khi reply xong mà user không nhìn thấy.
+// Tab đang ẩn (chuyển app / khóa màn hình) -> đẩy thêm system notification nếu đã cấp quyền.
 function notifyDone(msg) {
   toast(msg);
-  if (navigator.vibrate) navigator.vibrate(30);
-  else beep();
+  if (navigator.vibrate) { try { navigator.vibrate(30); } catch {} }
+  beep();
+  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    try { new Notification('Claude Control Center', { body: msg, icon: '/icon.svg', tag: 'ccc-done' }); } catch {}
+  }
 }
 
 /* ================= tabs + badges ================= */
@@ -1517,6 +1592,10 @@ function updateBadges() {
     hermesConvos.forEach(c => c.messages.forEach(m => { if (m.ts > hermesSeenTs) h++; }));
   }
   setBadge('badge-hermes', h);
+  // badge đẩy lên title tab browser: "(n) Claude Control Center"
+  const tot = cli + h;
+  const title = (tot > 0 ? '(' + (tot > 99 ? '99+' : tot) + ') ' : '') + 'Claude Control Center';
+  if (document.title !== title) document.title = title;
 }
 
 /* ================= SSE ================= */
@@ -1568,7 +1647,7 @@ function createSessionRow(s) {
   const row = document.createElement('div');
   row.className = 'srow fadein';
   row.dataset.sid = s.sid;
-  row.onclick = () => openChat(s.sid);
+  row.onclick = () => rowClick(s.sid); // compare mode ON -> chọn để so sánh, OFF -> mở chat
   row.innerHTML =
     '<span class="chip s-status"></span>' +
     '<span class="s-sid text-[13px] font-medium text-[#e4e4e7]"></span>' +
@@ -1597,6 +1676,7 @@ function updateSessionRow(row, s) {
   badge.classList.toggle('hidden', !(s.unread > 0));
   if (s.unread > 0) setText(badge, String(s.unread));
   row.querySelector('.s-kill').classList.toggle('hidden', s.status !== 'RUNNING');
+  row.classList.toggle('cmp-sel', compareMode && compareSel.includes(s.sid));
 }
 
 function filteredSessions() {
@@ -1708,6 +1788,7 @@ document.addEventListener('keydown', e => {
     if (paletteOpen()) return closePalette();
     if (document.getElementById('overlay').style.display === 'flex') return closeOverlay();
     if (inField) return e.target.blur();
+    if (activeTab === 'cli' && compareSids) return closeCompare();
     if (activeTab === 'cli' && currentSid) return backToList();
     if (activeTab === 'hermes' && hermesOpenId) return hermesBack();
     return;
@@ -1844,7 +1925,7 @@ const COMMANDS = [
   { cmd: '/schedule', icon: 'calendar-clock', desc: '/schedule */15 * * * * <prompt> — cron job', tag: 'claude' },
   { cmd: '/jobs', icon: 'list-checks', desc: 'Xem loop/cron jobs đang chạy', tag: 'claude', noargs: true },
   { cmd: '/summary', icon: 'file-text', desc: 'Tóm tắt session đang mở', tag: 'claude', noargs: true },
-  { cmd: '/export', icon: 'clipboard-copy', desc: 'Copy history ra clipboard (markdown)', tag: 'claude', noargs: true },
+  { cmd: '/export', icon: 'download', desc: 'Export session: tải .md/.json hoặc copy clipboard', tag: 'claude', noargs: true },
   { cmd: '/theme', icon: 'sun-moon', desc: 'Toggle giao diện sáng/tối', tag: 'claude', noargs: true },
   { cmd: '/memory', icon: 'brain', desc: 'Hermes: quản lý memory', tag: 'hermes' },
   { cmd: '/todo', icon: 'list-todo', desc: 'Hermes: xem/thêm todo', tag: 'hermes' },
@@ -2036,7 +2117,7 @@ function routeSlash(raw) {
   if (cmd === 'theme') return toggleTheme();
   if (cmd === 'clear') return clearChatLocal();
   if (cmd === 'model') return setModel(rest);
-  if (cmd === 'export') return exportChat();
+  if (cmd === 'export') return exportCurrent();
   if (cmd === 'summary') return summarize();
   if (cmd === 'loop') return startLoop(rest);
   if (cmd === 'schedule') return startSchedule(rest);
@@ -2284,6 +2365,7 @@ function bubbleFor(msg) {
 
 function openChat(sid) {
   switchTab('cli');
+  if (compareSids) closeCompare(); // đang ở compare view -> đóng trước khi mở chat
   currentSid = sid;
   chatRendered = 0;
   chatTotal = 0;
@@ -2306,6 +2388,152 @@ function backToList() {
   document.getElementById('chat').classList.add('hidden');
   document.getElementById('chat').classList.remove('flex');
   document.getElementById('list').classList.remove('hidden');
+}
+
+/* ================= session compare: chọn 2 sessions -> split view ================= */
+let compareMode = false;   // đang ở chế độ chọn session để so sánh
+let compareSel = [];       // sids đã chọn (tối đa 2)
+let compareSids = null;    // [sidA, sidB] đang mở trong compare view
+let compareTimer = null;
+const cmpRendered = [0, 0]; // số bubble đã render mỗi cột (append-only, không rebuild)
+
+function toggleCompareMode() {
+  compareMode = !compareMode;
+  compareSel = [];
+  document.getElementById('comparebtn').classList.toggle('cmp-on', compareMode);
+  markCompareRows();
+  toast(compareMode ? 'Chọn 2 session để so sánh side-by-side' : 'Đã tắt chế độ so sánh');
+}
+function markCompareRows() {
+  document.querySelectorAll('#sessrows .srow').forEach(r =>
+    r.classList.toggle('cmp-sel', compareMode && compareSel.includes(r.dataset.sid)));
+}
+// Click row: compare mode ON -> toggle chọn, đủ 2 -> mở compare view; OFF -> mở chat thường
+function rowClick(sid) {
+  if (!compareMode) return openChat(sid);
+  compareSel = compareSel.includes(sid) ? compareSel.filter(x => x !== sid) : compareSel.concat(sid);
+  if (compareSel.length === 2) {
+    const pair = compareSel;
+    compareMode = false;
+    compareSel = [];
+    document.getElementById('comparebtn').classList.remove('cmp-on');
+    openCompare(pair[0], pair[1]);
+  }
+  markCompareRows();
+}
+
+function openCompare(a, b) {
+  compareSids = [a, b];
+  cmpRendered[0] = cmpRendered[1] = 0;
+  document.getElementById('list').classList.add('hidden');
+  const cv = document.getElementById('compare');
+  cv.classList.remove('hidden');
+  cv.classList.add('flex');
+  for (const i of [0, 1]) {
+    setText(document.getElementById('cmp-sid-' + i), compareSids[i].slice(0, 8));
+    document.getElementById('cmp-bub-' + i).innerHTML = '';
+  }
+  refreshCompare();
+  clearInterval(compareTimer);
+  compareTimer = setInterval(refreshCompare, 3000);
+}
+let compareBusy = false; // chống 2 refresh chồng nhau -> duplicate bubbles
+async function refreshCompare() {
+  if (!compareSids || compareBusy) return;
+  compareBusy = true;
+  for (const i of [0, 1]) {
+    if (!compareSids) break; // user đóng view giữa chừng
+    const sid = compareSids[i];
+    const r = await fetch('/api/history/' + sid).then(x => x.json()).catch(() => null);
+    if (!r || !compareSids || compareSids[i] !== sid) continue;
+    const st = document.getElementById('cmp-st-' + i);
+    setText(st, r.status);
+    const cls = 'chip ml-auto st-' + r.status;
+    if (st.className !== cls) st.className = cls;
+    const box = document.getElementById('cmp-bub-' + i);
+    if (r.messages.length < cmpRendered[i]) { box.innerHTML = ''; cmpRendered[i] = 0; }
+    for (let k = cmpRendered[i]; k < r.messages.length; k++) box.appendChild(bubbleFor(r.messages[k]));
+    if (cmpRendered[i] !== r.messages.length) {
+      cmpRendered[i] = r.messages.length;
+      box.scrollTop = box.scrollHeight;
+    }
+  }
+  compareBusy = false;
+}
+function closeCompare() {
+  compareSids = null;
+  clearInterval(compareTimer);
+  const cv = document.getElementById('compare');
+  cv.classList.add('hidden');
+  cv.classList.remove('flex');
+  document.getElementById('list').classList.remove('hidden');
+}
+
+/* ================= export: tải session ra file .md / .json ================= */
+// Claude: server trả full history kèm Content-Disposition -> chỉ cần điều hướng qua <a>
+function downloadURL(u) {
+  const a = document.createElement('a');
+  a.href = u;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+// Hermes: data nằm ở client (server msgs + local extras) -> build Blob rồi tải
+function downloadBlob(name, type, text) {
+  const a = document.createElement('a');
+  const blobUrl = URL.createObjectURL(new Blob([text], { type }));
+  a.href = blobUrl;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+}
+
+function exportCurrent() {
+  if (!currentSid) return toast('Mở 1 session trước rồi mới export');
+  const sid = currentSid;
+  const box = document.createElement('div');
+  box.textContent = 'Tải TOÀN BỘ history của session ' + sid.slice(0, 8)
+    + ' (không giới hạn 30 message cuối), hoặc copy 30 message cuối ra clipboard.';
+  showOverlay('Export session', box, [
+    overlayButton('Copy clipboard', () => { closeOverlay(); exportChat(); }),
+    overlayButton('Tải .json', () => { downloadURL('/api/export/' + sid + '?fmt=json'); closeOverlay(); toast('Đang tải .json'); }),
+    overlayButton('Tải .md', () => { downloadURL('/api/export/' + sid + '?fmt=md'); closeOverlay(); toast('Đang tải .md'); }, true),
+  ]);
+}
+
+function hermesExport() {
+  if (!hermesOpenId) return toast('Mở 1 conversation trước rồi mới export');
+  const c = hermesOpenId === '__direct__'
+    ? { title: 'Chat trực tiếp với Hermes', messages: [] }
+    : hermesConvos.find(x => x.id === hermesOpenId);
+  const msgs = (c ? c.messages : []).concat(hermesExtra[hermesOpenId] || [])
+    .map(x => ({ role: x.role, content: x.content, ts: x.ts || 0 }));
+  if (!msgs.length) return toast('Chưa có message nào để export');
+  const id = (hermesOpenId === '__direct__' ? 'direct' : String(hermesOpenId).slice(0, 12)).replace(/[^\\w.-]/g, '_');
+  const title = c ? String(c.title) : String(hermesOpenId);
+  const box = document.createElement('div');
+  box.textContent = 'Export ' + msgs.length + ' messages của "' + title.slice(0, 60) + '".';
+  showOverlay('Export Hermes chat', box, [
+    overlayButton('Tải .json', () => {
+      downloadBlob('hermes-' + id + '.json', 'application/json',
+        JSON.stringify({ id: hermesOpenId, title, count: msgs.length, messages: msgs }, null, 2));
+      closeOverlay();
+      toast('Đang tải .json');
+    }),
+    overlayButton('Tải .md', () => {
+      const NL = String.fromCharCode(10);
+      let md = '# Hermes chat: ' + title + NL + NL;
+      for (const x of msgs) {
+        md += '**' + (x.role === 'user' ? 'User' : x.role === 'tool' ? 'Tool' : 'Assistant') + '**:'
+          + NL + NL + x.content + NL + NL + '---' + NL + NL;
+      }
+      downloadBlob('hermes-' + id + '.md', 'text/markdown', md);
+      closeOverlay();
+      toast('Đang tải .md');
+    }, true),
+  ]);
 }
 
 let chatBusy = false; // chống 2 refresh chồng nhau (timer + gọi tay sau send) -> duplicate bubbles

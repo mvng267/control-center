@@ -165,6 +165,96 @@ const ok = (name, pass, extra) => { results.push({ name, pass, extra }); console
     });
     ok(label + ': notifyDone -> toast hiện', toastShown);
 
+    // ===== VÒNG 3 =====
+    // export endpoint: .json + .md, full history, Content-Disposition attachment
+    const expSid = await page.evaluate(() => (allSessions[0] || {}).sid || null);
+    if (expSid) {
+      const exp = await page.evaluate(async sid => {
+        const rj = await fetch('/api/export/' + sid + '?fmt=json');
+        const jdisp = rj.headers.get('content-disposition') || '';
+        const j = await rj.json();
+        const rm = await fetch('/api/export/' + sid + '?fmt=md');
+        const mdisp = rm.headers.get('content-disposition') || '';
+        const md = await rm.text();
+        return { jok: rj.ok, jdisp, jmsgs: (j.messages || []).length, mok: rm.ok, mdisp, mlen: md.length };
+      }, expSid);
+      ok(label + ': export .json+.md OK (attachment, có messages)',
+        exp.jok && exp.mok && exp.jdisp.includes('attachment') && exp.mdisp.includes('.md') && exp.jmsgs > 0 && exp.mlen > 30,
+        JSON.stringify(exp));
+    } else ok(label + ': export endpoint (skip — không có session)', true);
+    const exp404 = await page.evaluate(() => fetch('/api/export/sid-khong-ton-tai').then(r => r.status));
+    ok(label + ': export sid lạ -> 404', exp404 === 404, String(exp404));
+    // fetch 404 CHỦ Ý ở trên in console error "Failed to load resource ... 404" -> loại khỏi đếm cuối phiên
+    const i404 = errors.findIndex(x => x.includes('404'));
+    if (i404 >= 0) errors.splice(i404, 1);
+
+    // nút export trong chat view Claude
+    if (expSid) {
+      await page.evaluate(sid => openChat(sid), expSid);
+      await page.waitForTimeout(400);
+      const expBtn = await page.evaluate(() => !!document.getElementById('exportbtn'));
+      ok(label + ': chat view có nút export', expBtn);
+      await page.evaluate(() => backToList());
+    } else ok(label + ': nút export chat view (skip)', true);
+
+    // compare: bật mode -> chọn 2 session -> split view 2 cột có bubbles -> Esc đóng
+    const nSess = await page.evaluate(() => allSessions.length);
+    if (nSess >= 2) {
+      await page.evaluate(() => {
+        toggleCompareMode();
+        rowClick(allSessions[0].sid);
+        rowClick(allSessions[1].sid);
+      });
+      await page.waitForTimeout(1000);
+      const cmp = await page.evaluate(() => ({
+        open: !document.getElementById('compare').classList.contains('hidden'),
+        listHidden: document.getElementById('list').classList.contains('hidden'),
+        b0: document.getElementById('cmp-bub-0').children.length,
+        b1: document.getElementById('cmp-bub-1').children.length,
+      }));
+      ok(label + ': compare view mở, 2 cột có bubbles', cmp.open && cmp.listHidden && cmp.b0 > 0 && cmp.b1 > 0, JSON.stringify(cmp));
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+      const cmpClosed = await page.evaluate(() =>
+        document.getElementById('compare').classList.contains('hidden')
+        && !document.getElementById('list').classList.contains('hidden'));
+      ok(label + ': Esc đóng compare -> về list', cmpClosed);
+    } else { ok(label + ': compare view (skip — <2 sessions)', true); ok(label + ': Esc đóng compare (skip)', true); }
+
+    // hermes export: nút + overlay mở khi có messages
+    await page.evaluate(() => {
+      switchTab('hermes');
+      openHermesDirect();
+      hermesExtra['__direct__'] = [{ role: 'user', content: 'xin chào để test export' }];
+      hermesExport();
+    });
+    await page.waitForTimeout(150);
+    const hExp = await page.evaluate(() => ({
+      btn: !!document.getElementById('hermes-exportbtn'),
+      overlay: document.getElementById('overlay').style.display === 'flex',
+      buttons: document.getElementById('overlayfoot').children.length,
+    }));
+    ok(label + ': hermes export -> overlay .md/.json', hExp.btn && hExp.overlay && hExp.buttons >= 2, JSON.stringify(hExp));
+    await page.evaluate(() => {
+      closeOverlay();
+      hermesBack();
+      delete hermesExtra['__direct__'];
+      localStorage.removeItem('hermesExtra');
+      switchTab('cli');
+    });
+
+    // title badge: unread > 0 -> "(n) Claude Control Center"
+    const titleBadge = await page.evaluate(() => {
+      const saved = allSessions;
+      allSessions = [{ sid: 'x', project: 'p', msgs: 1, unread: 5, mtimeMs: Date.now(), status: 'IDLE' }];
+      updateBadges();
+      const t = document.title;
+      allSessions = saved;
+      updateBadges();
+      return { withUnread: t, after: document.title };
+    });
+    ok(label + ': title badge "(5) ..." khi unread', titleBadge.withUnread.startsWith('(5) '), JSON.stringify(titleBadge));
+
     // screenshot
     await page.screenshot({ path: '/tmp/pwtest/shot-' + vp.width + '.png' });
     ok(label + ': console errors cuối phiên = 0', errors.length === 0, errors.slice(0, 3).join(' ;; '));
