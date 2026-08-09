@@ -147,6 +147,9 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 97 | Docker KHÔNG có nút xoá container/volume | không tồn tại testid nào cho xoá | tay |
 | 98 | 5 tab vừa màn 320px | mỗi tab 64px, chữ không tràn | pw |
 | 99 | Việc nền gập lại khi rảnh, tự mở khi có job | `jobs-toggle` | pw |
+| 100 | Nút bật/tắt thông báo ở header | bấm `notify-toggle` → `data-state` đổi bat/tat | pw |
+| 101 | Bật đúng MỘT đăng ký (không trùng) | bật 1 lần → `.push-state.json` có đúng 1 sub | pw |
+| 102 | Tắt rồi KHÔNG tự bật lại khi focus | tắt → phát sự kiện focus → vẫn 0 sub | pw |
 
 ---
 

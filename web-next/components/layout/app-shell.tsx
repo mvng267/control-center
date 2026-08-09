@@ -7,6 +7,7 @@ import {
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { NotifyToggle } from '@/components/notify-toggle';
 import { cn } from '@/lib/utils';
 
 export type TabId = 'cli' | 'hermes' | 'agy' | 'docker' | 'stats';
@@ -139,6 +140,7 @@ export function AppShell({
             <span className="truncate font-medium">{crumb || active?.label}</span>
           </nav>
           <div className="ml-auto flex items-center gap-1">
+            <NotifyToggle />
             <ThemeToggle />
             <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary md:hidden">
               V
