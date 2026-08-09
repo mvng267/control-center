@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Repeat, CalendarClock, Trash2, Plus, Timer } from 'lucide-react';
+import { Repeat, CalendarClock, Trash2, Plus, Timer, ChevronDown } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,8 @@ export function JobsPanel({ jobs, onOpen }: { jobs: Job[]; onOpen?: (sid: string
   const [prompt, setPrompt] = useState('');
   const [spec, setSpec] = useState('15m');
   const [busy, setBusy] = useState(false);
+  // có việc đang chạy thì mở sẵn, không thì gập cho gọn
+  const [mo, setMo] = useState(jobs.length > 0);
 
   const create = async () => {
     const p = prompt.trim();
@@ -72,12 +74,23 @@ export function JobsPanel({ jobs, onOpen }: { jobs: Job[]; onOpen?: (sid: string
 
   return (
     <div className="flex flex-col gap-2" data-testid="jobs-panel">
-      <div className="flex items-center gap-2">
+      {/* Gập lại khi KHÔNG có việc nào đang chạy. Đây là thứ thỉnh thoảng mới dùng,
+          mà đang nằm chen giữa ô tìm kiếm và bảng phiên — đẩy bảng (thứ mở app ra là
+          muốn xem ngay) xuống dưới. Có việc đang chạy thì tự mở, vì lúc đó nó đáng
+          được nhìn thấy. */}
+      <button onClick={() => setMo((v) => !v)} data-testid="jobs-toggle"
+        className="tap44 flex items-center gap-2 text-left">
         <Timer className="size-4 text-muted-foreground" />
         <span className="text-[13px] font-semibold">Việc nền</span>
-        {!!jobs.length && (
-          <Badge variant="outline" className="text-[10.5px]">{jobs.length}</Badge>
-        )}
+        {jobs.length
+          ? <Badge variant="outline" className="text-[10.5px]">{jobs.length}</Badge>
+          : <span className="text-[11.5px] text-muted-foreground">chưa có</span>}
+        <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', mo && 'rotate-180')} />
+      </button>
+
+      {mo && (
+      <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
         <div className="ml-auto flex gap-1.5">
           <Button variant="outline" size="sm" className="tap44 h-8 text-[12px]"
             data-testid="job-new-loop" onClick={() => openNew('loop')}>
@@ -118,6 +131,9 @@ export function JobsPanel({ jobs, onOpen }: { jobs: Job[]; onOpen?: (sid: string
             </div>
           ))}
         </div>
+      )}
+
+      </div>
       )}
 
       {dlg && (

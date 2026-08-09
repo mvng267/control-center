@@ -128,6 +128,25 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 78 | Hermes: ô tìm hội thoại | Gõ vào ô tìm | pw |
 | 79 | Badge % đổi màu theo NGHĨA (thẻ Lỗi tăng = đỏ) | Xem thẻ Lỗi ở tab AGY | pw |
 | 80 | Không còn nút chết | `node scripts/dead-buttons.js` | pw |
+| 81 | Thẻ tool mở ra KHÔNG tự đóng khi poll | mở thẻ, đợi 10s, `data-open` vẫn true | pw |
+| 82 | Chat kiểu CLI: avatar + nhãn vai + tool thụt lề | đếm `msg-avatar`, `msg-role`; tool L > bong bóng L | pw |
+| 83 | Thẻ "Suy nghĩ" gập được, không đổ hết ra màn | `think-card` mặc định `data-open=false` | pw |
+| 84 | So sánh 2 phiên (lệnh ⌘K mở thật, không toast lạc đề) | ⌘K → ui:compare → `compare-view` | pw |
+| 85 | Tóm tắt phiên qua /api/summary | menu ⋯ → Tóm tắt → `summary-dialog` | pw |
+| 86 | Hook lỗi / lỗi API / mốc /compact hiện trong chat | `note-line` xuất hiện ở phiên có hook lỗi | pw |
+| 87 | Lịch sử lệnh ↑/↓ trong ô chat | gõ ↑ ra tin cũ, ↓ quay lại | pw |
+| 88 | Chart đúng số đo Atlas | lưới `4 8`, 0 trục Y, badge 12px/bo 6px | pw |
+| 89 | Vỏ khớp Atlas | sidebar 256/không viền, mục 32px/bo 8px, header 64px | pw |
+| 90 | Mọi nút ≥ 44px vùng chạm trên cảm ứng | quét `button` ở 390px, không cái nào < 44 | pw |
+| 91 | Mã khoá chặn CẢ loopback | `curl localhost/api/jobs` → 423 khi đã đặt mã | curl |
+| 92 | Mã sai rồi mã đúng vẫn vào được (ô được xoá) | gõ sai → `passcode-dots` về 0 → gõ đúng → vào | pw |
+| 93 | Chống dò mã: sai ≥5 lần phải chờ | 7 lần sai liên tiếp → 429 | curl |
+| 94 | Quên mã: xoá file passcode là mở lại | `rm ~/.claude/dashboard-passcode.json` + restart | tay |
+| 95 | Docker: xem/bật/tắt/khởi động lại/log | tab Docker → `dk-row`, bấm `dk-start` | pw |
+| 96 | Docker chặn lệnh nguy hiểm | action rm/kill/exec/run → từ chối; id có `;` → từ chối | curl |
+| 97 | Docker KHÔNG có nút xoá container/volume | không tồn tại testid nào cho xoá | tay |
+| 98 | 5 tab vừa màn 320px | mỗi tab 64px, chữ không tràn | pw |
+| 99 | Việc nền gập lại khi rảnh, tự mở khi có job | `jobs-toggle` | pw |
 
 ---
 
