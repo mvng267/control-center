@@ -38,7 +38,9 @@ export function DonutCard({
   const sap = [...data].sort((a, b) => b.value - a.value);
   const dau = sap.slice(0, max).map((d, i) => ({ ...d, fill: d.fill || DONUT_COLORS[i % DONUT_COLORS.length] }));
   const con = sap.slice(max).reduce((a, d) => a + d.value, 0);
-  const lat = con > 0 ? [...dau, { name: 'Khác', value: con, fill: DONUT_OTHER }] : dau;
+  /* Gộp khi CÓ mục bị cắt, không phải khi tổng phần đuôi > 0: API key mới tạo chưa
+     có lưu lượng sẽ biến mất khỏi chú giải mà không dấu vết nào. */
+  const lat = sap.length > max ? [...dau, { name: `Khác (${sap.length - max})`, value: con, fill: DONUT_OTHER }] : dau;
 
   const tong = data.reduce((a, d) => a + d.value, 0);
   const soGiua = tongValue ?? (tong >= 1e6 ? (tong / 1e6).toFixed(1) + 'M'

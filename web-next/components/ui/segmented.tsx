@@ -27,13 +27,18 @@ export function Segmented<T extends string>({
 }) {
   return (
     <div data-testid={testid}
-      className={cn('inline-flex shrink-0 items-center gap-0.5 rounded-[10px] bg-muted p-0.5',
+      /* max-w-full + overflow-x-auto NGAY TRÊN vỏ: nếu để vùng cuộn ở div cha thì
+         vỏ này (inline-flex shrink-0) kẹp theo bề rộng cha, các nút shrink-0 tràn RA
+         NGOÀI vỏ chứ không làm cha cuộn được. Đo trên iPhone 390px: nút cuối chạm
+         290px trong khi khung chỉ tới 170px — bị cắt 120px, ngón tay không với tới. */
+      style={{ scrollbarWidth: 'none' }}
+      className={cn('inline-flex max-w-full shrink-0 items-center gap-0.5 overflow-x-auto rounded-[10px] bg-muted p-0.5',
         className)}>
       {items.map((it) => {
         const on = it.id === value;
         return (
-          <button key={it.id} onClick={() => onChange(it.id)} title={it.title || it.label}
-            data-testid={testid ? `${testid}-${it.id}` : undefined} data-active={on}
+          <button key={it.id} type="button" onClick={() => onChange(it.id)} title={it.title || it.label}
+            data-testid={testid ? `${testid}-${it.id || 'mac-dinh'}` : undefined} data-active={on}
             className={cn(
               'tap44 shrink-0 rounded-[8px] px-2.5 transition-colors',
               size === 'sm' ? 'h-[25px] text-[12.5px]' : 'h-[25px] text-[14px]',

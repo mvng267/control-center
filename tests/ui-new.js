@@ -420,6 +420,36 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
 
+    // Nút chọn phân đoạn phải CUỘN được trên màn hẹp. Lỗi thật đã gặp: vùng cuộn
+    // đặt nhầm ở div cha nên nút cuối ("Creative") tràn ra 290px trong khi khung chỉ
+    // tới 170px — bị cắt, ngón tay không với tới, chế độ đó thành không chọn được.
+    {
+      const mp = await browser.newContext({
+        viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+      });
+      const pg = await mp.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(2200);
+      const seg = await pg.evaluate(() => {
+        const s = document.querySelector('[data-testid=mode-seg]');
+        if (!s) return null;
+        return { cuonDuoc: s.scrollWidth > s.clientWidth, rong: Math.round(s.clientWidth) };
+      });
+      ok('nút chọn chế độ CUỘN được trên iPhone (không cắt mất nút cuối)',
+        !!seg && seg.cuonDuoc, seg ? `khung ${seg.rong}px, cuộn được ${seg.cuonDuoc}` : 'không thấy');
+      // bấm được nút cuối sau khi cuộn tới
+      await pg.evaluate(() => {
+        const s = document.querySelector('[data-testid=mode-seg]');
+        if (s) s.scrollLeft = s.scrollWidth;
+      });
+      await pg.waitForTimeout(400);
+      await pg.click('[data-testid=mode-seg-creative]').catch(() => {});
+      await pg.waitForTimeout(500);
+      const chon = await pg.locator('[data-testid=mode-seg-creative]').getAttribute('data-active');
+      ok('chọn được chế độ cuối cùng sau khi cuộn', chon === 'true', 'data-active=' + chon);
+      await mp.close();
+    }
+
     // 48: link ?t= tự điền token rồi TỰ DỌN khỏi URL (để không lộ token khi chia sẻ link)
     const tok = layToken();
     if (tok) {

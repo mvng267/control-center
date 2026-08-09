@@ -42,7 +42,10 @@ export function RankList({
   if (!hien.length) {
     return <p className="py-6 text-center text-[12.5px] text-muted-foreground">{empty}</p>;
   }
-  const tong = total ?? rows.reduce((a, r) => a + r.value, 0);
+  /* % tính trên tổng của phần ĐANG HIỆN, không phải tổng tất cả — nếu không thì các
+     dòng cộng lại không ra 100% mà người xem chẳng biết phần thiếu đi đâu. */
+    const tong = total ?? hien.reduce((a, r) => a + r.value, 0);
+  const an = rows.length - hien.length;
   const lonNhat = Math.max(1, ...hien.map((r) => r.value));
 
   return (
@@ -73,6 +76,11 @@ export function RankList({
           </div>
         );
       })}
+      {an > 0 && (
+        <p className="pt-2 text-[11.5px] text-muted-foreground">
+          và {an} mục khác không hiện — phần trăm tính trên {hien.length} mục ở trên
+        </p>
+      )}
     </div>
   );
 }
