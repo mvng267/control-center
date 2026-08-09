@@ -20,6 +20,9 @@ export interface ToolPart {
   // Server gửi {text, status} (extractTodos ở src/server/tools.js) — trước đây khai
   // là `content` nên checklist hiện ra TRỐNG TRƠN, chỉ thấy dấu ○ không có chữ.
   todos?: { text: string; status: string }[];
+  // AskUserQuestion / ExitPlanMode — client vẽ thẻ riêng thay vì đổ JSON thô
+  hoi?: { hoi: string; nhan: string; nhieu: boolean; chon: { nhan: string; mo: string }[] }[];
+  ke?: string;
 }
 
 function iconFor(name: string) {

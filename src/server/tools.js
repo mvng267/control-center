@@ -126,6 +126,29 @@ function extractTodos(input) {
   })).filter(t => t.text);
 }
 
+/* AskUserQuestion -> dữ liệu cho bảng chọn. Trên terminal Claude in ra danh sách
+   đánh số để bấm; ở dashboard nếu không tách thì cả object JSON đổ ra khối code,
+   dấu ngoặc thoát chồng lên nhau, đọc không ra. */
+function extractHoi(input) {
+  const raw = input && Array.isArray(input.questions) ? input.questions : [];
+  return raw.slice(0, 4).map(q => ({
+    hoi: String((q && q.question) || '').slice(0, 400),
+    nhan: String((q && q.header) || '').slice(0, 40),
+    nhieu: !!(q && q.multiSelect),
+    chon: (Array.isArray(q && q.options) ? q.options : []).slice(0, 6).map(o => ({
+      nhan: String((o && o.label) || '').slice(0, 120),
+      mo: String((o && o.description) || '').slice(0, 400),
+    })).filter(o => o.nhan),
+  })).filter(q => q.hoi);
+}
+
+/* ExitPlanMode -> nội dung kế hoạch (markdown). Cắt 20k: kế hoạch dài nhất đo được
+   ~8k, để dư nhưng vẫn chặn trường hợp bất thường làm phình response. */
+function extractKeHoach(input) {
+  const t = String((input && input.plan) || '').trim();
+  return t ? clampText(t, 20000) : '';
+}
+
 function buildInputDetail(name, input) {
   if (input == null || typeof input !== 'object') return '';
   let s;
@@ -228,6 +251,7 @@ function mdForMessage(msg) {
 
 module.exports = {
   extractText, clampText, base, toolDisplayName, summarizeToolInput, extractTodos,
+  extractHoi, extractKeHoach,
   buildInputDetail, toolResultPreview, findToolImage, flattenParts, mdForMessage,
   TOOL_SUMMARY_CAP, TOOL_INPUT_CAP, TOOL_RESULT_CAP, THINK_CAP, TOOL_ST_LABEL,
 };

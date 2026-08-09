@@ -73,6 +73,7 @@ const cache = new Map();
 // Helper biến tool_use/tool_result thành dữ liệu có cấu trúc -> src/server/tools.js
 const {
   extractText, clampText, base, toolDisplayName, summarizeToolInput, extractTodos,
+  extractHoi, extractKeHoach,
   buildInputDetail, toolResultPreview, findToolImage, flattenParts, mdForMessage,
   TOOL_SUMMARY_CAP, TOOL_INPUT_CAP, TOOL_RESULT_CAP, THINK_CAP, TOOL_ST_LABEL,
 } = require('./tools');
@@ -173,6 +174,13 @@ function parseSessionFile(file) {
           // TodoWrite: gửi kèm danh sách có cấu trúc để client vẽ checklist thật,
           // thay vì đổ JSON thô ra khối code như mọi tool khác
           if (b.name === 'TodoWrite') part.todos = extractTodos(b.input);
+
+          /* AskUserQuestion / ExitPlanMode: trên terminal đây là bảng chọn có phím số
+             và khung kế hoạch, còn trên dashboard chúng rơi vào thẻ tool chung nên
+             hiện ra JSON THÔ với dấu ngoặc thoát chồng chất — không đọc nổi.
+             Tách dữ liệu có cấu trúc để client vẽ đúng như CLI. */
+          if (b.name === 'AskUserQuestion') part.hoi = extractHoi(b.input);
+          if (b.name === 'ExitPlanMode') part.ke = extractKeHoach(b.input);
           parts.push(part);
           if (b.id) toolIndex.set(b.id, part);
         } else if (b.type === 'tool_result') {

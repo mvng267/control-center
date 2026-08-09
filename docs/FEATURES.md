@@ -157,6 +157,10 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 107 | Chặn lệnh agy nguy hiểm | bulk/check/restart/regenerateKey → từ chối | curl |
 | 108 | Hermes: bảng 12 lệnh bấm chạy được | mở Công cụ → bấm Phiên bản → ra kết quả thật | pw |
 | 109 | Component chuẩn Atlas dùng chung | Segmented vỏ bo 10px, chọn bo 8px cao 25px | pw |
+| 110 | Câu hỏi của Claude hiện thành bảng chọn | `ask-card` với lựa chọn đánh số, bấm được | pw |
+| 111 | Bấm lựa chọn -> gửi thành tin nhắn mới | bấm option rồi "Gửi lựa chọn" | tay |
+| 112 | Kế hoạch render markdown, gập được | `plan-card`, dài > 900 ký tự thì gập | pw |
+| 113 | Nút chọn chế độ cuộn được trên iPhone | `mode-seg` scrollWidth > clientWidth | pw |
 
 ---
 

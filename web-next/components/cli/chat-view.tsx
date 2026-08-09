@@ -12,6 +12,8 @@ import { TodoBar } from './todo-bar';
 import { SlashHint, useSlash } from './slash-hint';
 import { ThinkCard } from './think-card';
 import { NoteLine, type NotePart } from './note-line';
+import { AskCard } from './ask-card';
+import { PlanCard } from './plan-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -183,8 +185,10 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
   }, [groups.length, h?.typing]);
 
-  const send = async () => {
-    const v = text.trim();
+  /* Nhận tham số để bảng chọn (AskCard) gửi thẳng lựa chọn mà không phải chờ state
+     `text` cập nhật xong — setText rồi gọi send() ngay thì send vẫn đọc giá trị cũ. */
+  const send = async (noiDung?: string) => {
+    const v = (noiDung ?? text).trim();
     if (!v && !att.length) return;
     // Claude CLI đọc ảnh qua ĐƯỜNG DẪN file, không nhận base64 trong tin nhắn.
     // /api/upload đã lưu ảnh xuống đĩa nên ở đây chỉ cần chèn đường dẫn vào câu.
@@ -324,7 +328,17 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                   m.role === 'assistant' && 'border-l border-border')}>
                   <div className="flex flex-col gap-1.5 pl-3">
                 {parts.map((p, i) =>
-                  p.t === 'tool' ? (
+                  p.t === 'tool' && p.hoi?.length ? (
+                    // Bảng chọn: bấm rồi gửi lựa chọn thành tin nhắn mới
+                    <AskCard key={p.id || i} hoi={p.hoi}
+                      daTraLoi={gi < groups.length - 1}
+                      onGui={(t) => send(t)} />
+                  ) : p.t === 'tool' && p.ke ? (
+                    <PlanCard key={p.id || i} ke={p.ke}
+                      daDuyet={!h?.awaiting}
+                      onDuyet={approve}
+                      onSua={() => document.querySelector<HTMLTextAreaElement>('[data-testid=chat-input]')?.focus()} />
+                  ) : p.t === 'tool' ? (
                     <div key={p.id || i} className="w-full">
                       <ToolCard part={p} sid={sid} open={openTools.has(p.id)} onToggle={toggleTool} /></div>
                   ) : p.t === 'note' ? (
@@ -424,7 +438,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             }}
             placeholder="Tiếp tục cuộc trò chuyện…"
             className="max-h-[35dvh] min-h-11 resize-none py-2.5 text-[16px]" />
-          <Button size="icon" className="size-11 shrink-0" onClick={send} title="Gửi tin nhắn"
+          <Button size="icon" className="size-11 shrink-0" onClick={() => send()} title="Gửi tin nhắn"
             aria-label="Gửi tin nhắn"
             disabled={!text.trim() && !att.length} data-testid="chat-send">
             <Send className="size-4" />
