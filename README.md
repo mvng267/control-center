@@ -90,7 +90,7 @@ npm run test:all   # chạy TẤT CẢ — tự bật server ở cổng riêng c
 
 npm run verify     # cú pháp server lẫn client JS
 npm run buttons    # tìm nút bấm không ra gì
-npm run test:ui    # GIAO DIỆN MỚI: 40 mục (cần server đang chạy ở 7799)
+npm run test:ui    # GIAO DIỆN MỚI: 47 mục (cần server đang chạy ở 7799)
 npm test           # bản cũ: 147 assertion — PHẢI chạy với NEW_UI=0
 npm run test:push  # Web Push (VAPID + RFC 8291)
 ```

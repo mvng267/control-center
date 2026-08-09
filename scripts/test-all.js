@@ -90,8 +90,14 @@ function chay(nhan, file, env) {
     ket.push(await chay('rà nút chết', 'scripts/dead-buttons.js', { DASH_URL: `http://localhost:${CONG_MOI}/` }));
     ket.push(await chay('giao diện cũ (e2e)', 'tests/e2e.js', { DASH_URL: `http://localhost:${CONG_CU}/` }));
     ket.push(await chay('Web Push', 'tests/push.js', { DASH_URL: `http://localhost:${CONG_CU}/` }));
+    /* Bỏ qua phần NHẮN THẬT ở đây. Phần đó gọi Claude thật vào một phiên có sẵn,
+       nhưng server tạm này vừa dựng nên chưa chắc có phiên nào để mở — nó sẽ chờ
+       hết giờ rồi báo hỏng, nhìn như code lỗi trong khi chỉ là sai môi trường.
+       Muốn kiểm cả phần nhắn thì chạy thẳng: `node tests/ui-new.js` với server 7799.
+       (Dòng cũ ở đây viết `...(SKIP_CHAT ? {} : {})` — hai nhánh như nhau nên không
+       bao giờ bỏ qua được gì.) */
     ket.push(await chay('giao diện mới', 'tests/ui-new.js',
-      { DASH_URL: `http://localhost:${CONG_MOI}/`, ...(process.env.SKIP_CHAT ? {} : {}) }));
+      { DASH_URL: `http://localhost:${CONG_MOI}/`, SKIP_CHAT: '1' }));
   } finally {
     donDep();
   }

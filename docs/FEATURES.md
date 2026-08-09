@@ -158,7 +158,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 108 | Hermes: bảng 12 lệnh bấm chạy được | mở Công cụ → bấm Phiên bản → ra kết quả thật | pw |
 | 109 | Component chuẩn Atlas dùng chung | Segmented vỏ bo 10px, chọn bo 8px cao 25px | pw |
 | 110 | Câu hỏi của Claude hiện thành bảng chọn | `ask-card` với lựa chọn đánh số, bấm được | pw |
-| 111 | Bấm lựa chọn -> gửi thành tin nhắn mới | bấm option rồi "Gửi lựa chọn" | tay |
+| 111 | Bấm lựa chọn -> gửi thành tin nhắn mới | `node tests/ui-new.js` (kiểm nội dung gửi đi) | ui-new |
 | 112 | Kế hoạch render markdown, gập được | `plan-card`, dài > 900 ký tự thì gập | pw |
 | 113 | Nút chọn chế độ cuộn được trên iPhone | `mode-seg` scrollWidth > clientWidth | pw |
 
@@ -169,7 +169,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 40 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 47 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục

@@ -420,6 +420,60 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
 
+    /* Bảng chọn khi Claude hỏi: bấm lựa chọn rồi "Gửi lựa chọn" phải GỬI THẬT vào
+       phiên. Chèn part hỏi vào lượt assistant cuối — thẻ chỉ vẽ trong lượt assistant
+       vì Claude mới là bên hỏi. */
+    {
+      const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const pg = await cx.newPage();
+      let daGui = null;
+      await pg.route('**/api/history/**', async (r) => {
+        const res = await r.fetch();
+        const j = await res.json();
+        const ms = j.messages || [];
+        for (let i = ms.length - 1; i >= 0; i--) {
+          if (ms[i].role === 'assistant') {
+            (ms[i].parts = ms[i].parts || []).push({
+              t: 'tool', name: 'AskUserQuestion', id: 't-ask', disp: 'AskUserQuestion',
+              summary: '', input: '', status: 'ok', result: '', images: [],
+              hoi: [{ hoi: 'Thu bang chon?', nhan: 'Pham vi', nhieu: false,
+                chon: [{ nhan: 'Lua chon A', mo: 'mo ta a' }, { nhan: 'Lua chon B', mo: 'mo ta b' }] }],
+            });
+            break;
+          }
+        }
+        await r.fulfill({ response: res, json: j });
+      });
+      // Chặn gửi thật: test không được làm bẩn phiên đang dùng, nhưng vẫn xem được
+      // nội dung gửi đi để khẳng định nút hoạt động.
+      await pg.route('**/api/chat/**', async (r) => {
+        try { daGui = JSON.parse(r.request().postData() || '{}').message; } catch {}
+        await r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+      });
+
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+      await pg.waitForTimeout(2500);
+
+      const soOption = await pg.locator('[data-testid=ask-option]').count();
+      ok('cau hoi cua Claude hien thanh bang chon bam duoc', soOption === 2, soOption + ' lua chon');
+
+      if (soOption) {
+        await pg.locator('[data-testid=ask-option]').first().click();
+        await pg.waitForTimeout(400);
+        const active = await pg.locator('[data-testid=ask-option]').first().getAttribute('data-active');
+        ok('bam lua chon -> danh dau da chon', active === 'true', 'data-active=' + active);
+        await pg.locator('[data-testid=ask-send]').click();
+        await pg.waitForTimeout(1500);
+        ok('bam "Gui lua chon" -> gui THAT vao phien',
+          !!daGui && daGui.indexOf('Lua chon A') >= 0, JSON.stringify(daGui || '(khong gui)'));
+      }
+      await cx.close();
+    }
+
     // Nút chọn phân đoạn phải CUỘN được trên màn hẹp. Lỗi thật đã gặp: vùng cuộn
     // đặt nhầm ở div cha nên nút cuối ("Creative") tràn ra 290px trong khi khung chỉ
     // tới 170px — bị cắt, ngón tay không với tới, chế độ đó thành không chọn được.
