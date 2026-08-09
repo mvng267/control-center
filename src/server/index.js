@@ -644,6 +644,59 @@ function writeAgyEnv(key, value) {
 }
 
 // Port thực tế: settings DB của agy-proxy (đổi từ UI riêng, đè env) -> .env PORT -> 7788
+/* ---------------- cầu nối API agy-proxy ----------------
+   Dashboard vốn đọc THẲNG file SQLite của agy-proxy. Cách đó lấy được dữ liệu lịch
+   sử nhưng thiếu hẳn nhóm chỉ API mới có: rps, tỉ lệ lỗi, độ trễ p50/p95/p99, phân
+   rã theo API key, và mọi lệnh điều khiển.
+
+   Xác thực: CLI token qua HTTP Basic với username RỖNG — `Basic base64(':' + token)`.
+   Dấu ':' phía trước là chỗ dễ sai nhất; đã thử: thiếu nó là 401 không kèm giải
+   thích gì. Token nằm ở SQLite settings.cliToken (32 ký tự). */
+let agyTokenCache = { at: 0, val: '' };
+async function agyToken() {
+  if (process.env.AGY_TOKEN) return process.env.AGY_TOKEN;
+  if (Date.now() - agyTokenCache.at < 60000) return agyTokenCache.val;
+  agyTokenCache.at = Date.now();
+  const db = path.join(agyDataDir(), 'state.db');
+  if (!fs.existsSync(db)) { agyTokenCache.val = ''; return ''; }
+  const rows = await new Promise(resolve => {
+    execFile('sqlite3', ['-readonly', '-json', db, "SELECT value FROM settings WHERE key='cliToken';"],
+      { timeout: 4000 }, (err, out) => {
+        if (err) return resolve(null);
+        try { resolve(JSON.parse(out || '[]')); } catch { resolve(null); }
+      });
+  });
+  agyTokenCache.val = (rows && rows[0] && rows[0].value) ? String(rows[0].value) : '';
+  return agyTokenCache.val;
+}
+
+/* Gọi API agy. Trả { ok, status, data } — KHÔNG ném lỗi, vì agy tắt là chuyện
+   thường và tab phải rơi về dữ liệu SQLite chứ không được vỡ. */
+async function agyApi(apiPath, opts = {}) {
+  const token = await agyToken();
+  if (!token) return { ok: false, status: 0, error: 'chưa có CLI token của agy-proxy' };
+  const port = await agyPort();
+  const auth = 'Basic ' + Buffer.from(':' + token).toString('base64');
+  const url = 'http://127.0.0.1:' + port + apiPath;
+  try {
+    const r = await fetch(url, {
+      method: opts.method || 'GET',
+      headers: Object.assign({ authorization: auth },
+        opts.body ? { 'content-type': 'application/json' } : {}),
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      signal: AbortSignal.timeout(opts.timeout || 15000),
+    });
+    // 404 = server agy đang chạy bản CŨ hơn mã nguồn (đã gặp với /api/metrics/history).
+    // Không phải lỗi -> báo riêng để client ẩn mục đó thay vì hiện báo lỗi đỏ.
+    if (r.status === 404) return { ok: false, status: 404, error: 'agy-proxy chưa hỗ trợ mục này' };
+    if (r.status === 401) return { ok: false, status: 401, error: 'CLI token không đúng' };
+    if (!r.ok) return { ok: false, status: r.status, error: 'agy trả lỗi ' + r.status };
+    return { ok: true, status: 200, data: await r.json() };
+  } catch (e) {
+    return { ok: false, status: 0, error: /timeout|abort/i.test(e.message) ? 'agy không phản hồi' : 'không kết nối được agy' };
+  }
+}
+
 async function agyPort() {
   const db = path.join(agyDataDir(), 'state.db');
   if (fs.existsSync(db)) {
@@ -1812,6 +1865,78 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, out: r.out.trim().slice(-2000) });
     }
     return json(res, 404, { error: 'not found' });
+  }
+
+  /* ---- AGY: báo cáo + điều khiển qua API chính thức ---- */
+
+  // Báo cáo: gộp 3 endpoint để client chỉ gọi một lần
+  if (p === '/api/agy/report' && req.method === 'GET') {
+    const range = ['7d', '30d', '90d'].includes(url.searchParams.get('range') || '')
+      ? url.searchParams.get('range') : '7d';
+    const days = range === '90d' ? 90 : range === '30d' ? 30 : 7;
+    const [usage, stats, quota] = await Promise.all([
+      agyApi('/api/gateway/usage?range=' + range + '&groupBy=day'),
+      agyApi('/api/gateway/stats?days=' + days),
+      agyApi('/api/gateway/quota-summary'),
+    ]);
+    if (!usage.ok) return json(res, 200, { ok: false, error: usage.error, status: usage.status });
+    return json(res, 200, {
+      ok: true, range,
+      usage: usage.data,
+      stats: stats.ok ? stats.data : null,     // đắt (quét bảng) — hỏng thì bỏ qua, không chặn cả báo cáo
+      quota: quota.ok ? quota.data : null,
+    });
+  }
+
+  if (p === '/api/agy/quota-history' && req.method === 'GET') {
+    const range = ['1d', '7d', '30d', '90d'].includes(url.searchParams.get('range') || '')
+      ? url.searchParams.get('range') : '7d';
+    const r = await agyApi('/api/gateway/quota/history?range=' + range);
+    return json(res, 200, r.ok ? { ok: true, ...r.data } : { ok: false, error: r.error, status: r.status });
+  }
+
+  /* Điều khiển — BẢNG CỨNG 4 lệnh mà tài liệu bàn giao xác nhận đảo ngược được.
+     Client gửi TÊN lệnh, server tra ra path+body. Không nhận path tự do, vì cùng
+     một endpoint /api/gateway/config còn nhận `enabled:false` (tắt gateway) và
+     `regenerateKey:true` (giết mọi client đang dùng) — cho client tự dựng body là
+     mở toang cửa đó. Nhóm nguy hiểm (accounts/bulk, accounts/check quét cả pool
+     ~14 phút, system/restart, backup/export) KHÔNG có mặt ở đây nên không gọi tới được. */
+  if (p === '/api/agy/control' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const act = String(body.action || '');
+    const ROTATIONS = ['round-robin', 'full-first', 'failover', 'highest-first', 'smart'];
+
+    if (act === 'wake') {
+      const r = await agyApi('/api/gateway/accounts/wake', { method: 'POST', body: {}, timeout: 30000 });
+      return json(res, 200, r.ok ? { ok: true, ...r.data } : { ok: false, error: r.error });
+    }
+    if (act === 'quota-refresh') {
+      const r = await agyApi('/api/gateway/quota/refresh', { method: 'POST', body: {}, timeout: 30000 });
+      return json(res, 200, r.ok ? { ok: true, ...r.data } : { ok: false, error: r.error });
+    }
+    if (act === 'checklive') {
+      // CHỈ một account. Bản quét cả pool mất ~14 phút và bị upstream chặn tốc độ.
+      const email = String(body.email || '').trim();
+      if (!email || !/^[^\s@]+@[^\s@]+$/.test(email)) return json(res, 400, { ok: false, error: 'cần email hợp lệ' });
+      const r = await agyApi('/api/gateway/accounts/' + encodeURIComponent(email) + '/checklive',
+        { method: 'POST', body: {}, timeout: 60000 });
+      return json(res, 200, r.ok ? { ok: true, ...r.data } : { ok: false, error: r.error });
+    }
+    if (act === 'set-rotation') {
+      const v = String(body.rotation || '');
+      if (!ROTATIONS.includes(v)) return json(res, 400, { ok: false, error: 'chiến lược không hợp lệ' });
+      // CHỈ gửi đúng khoá `rotation` — tuyệt đối không lấy cả object config rồi PATCH ngược
+      const r = await agyApi('/api/gateway/config', { method: 'PATCH', body: { rotation: v } });
+      if (!r.ok) return json(res, 200, { ok: false, error: r.error });
+      // agy trả ok:false kèm rejected[] khi giá trị bị từ chối — phải kiểm, không tin mỗi HTTP 200
+      const d = r.data || {};
+      if (d.rejected && d.rejected.length) {
+        return json(res, 200, { ok: false, error: 'agy từ chối: ' + JSON.stringify(d.rejected).slice(0, 200) });
+      }
+      return json(res, 200, { ok: true, rotation: v });
+    }
+    return json(res, 400, { ok: false, error: 'lệnh không được phép: ' + act });
   }
 
   // ---- AGY-PROXY: status / log / config / control (gọi CLI, không tự implement proxy) ----
