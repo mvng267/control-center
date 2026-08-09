@@ -652,13 +652,22 @@ function writeAgyEnv(key, value) {
    Xác thực: CLI token qua HTTP Basic với username RỖNG — `Basic base64(':' + token)`.
    Dấu ':' phía trước là chỗ dễ sai nhất; đã thử: thiếu nó là 401 không kèm giải
    thích gì. Token nằm ở SQLite settings.cliToken (32 ký tự). */
+/* Cache token. Dùng CHUNG một promise cho các lệnh gọi song song: bản đầu đánh dấu
+   `at = Date.now()` NGAY TRƯỚC khi await đọc sqlite, nên hai lệnh chạy cùng lúc thấy
+   cache "còn mới" rồi nhận `val` vẫn rỗng. Đo được: 3 lệnh song song -> 2 lệnh lấy
+   token rỗng. Đây chính là lý do stats/quota trống ở lần mở tab đầu tiên. */
 let agyTokenCache = { at: 0, val: '' };
+let agyTokenDang = null;
 async function agyToken() {
   if (process.env.AGY_TOKEN) return process.env.AGY_TOKEN;
-  if (Date.now() - agyTokenCache.at < 60000) return agyTokenCache.val;
-  agyTokenCache.at = Date.now();
+  if (agyTokenCache.at && Date.now() - agyTokenCache.at < 60000) return agyTokenCache.val;
+  if (agyTokenDang) return agyTokenDang;          // đang đọc dở -> chờ chung
+  agyTokenDang = _docToken().finally(() => { agyTokenDang = null; });
+  return agyTokenDang;
+}
+async function _docToken() {
   const db = path.join(agyDataDir(), 'state.db');
-  if (!fs.existsSync(db)) { agyTokenCache.val = ''; return ''; }
+  if (!fs.existsSync(db)) { agyTokenCache = { at: Date.now(), val: '' }; return ''; }
   const rows = await new Promise(resolve => {
     execFile('sqlite3', ['-readonly', '-json', db, "SELECT value FROM settings WHERE key='cliToken';"],
       { timeout: 4000 }, (err, out) => {
@@ -666,8 +675,9 @@ async function agyToken() {
         try { resolve(JSON.parse(out || '[]')); } catch { resolve(null); }
       });
   });
-  agyTokenCache.val = (rows && rows[0] && rows[0].value) ? String(rows[0].value) : '';
-  return agyTokenCache.val;
+  const val = (rows && rows[0] && rows[0].value) ? String(rows[0].value) : '';
+  agyTokenCache = { at: Date.now(), val };   // đánh dấu SAU khi đã có giá trị thật
+  return val;
 }
 
 /* Gọi API agy. Trả { ok, status, data } — KHÔNG ném lỗi, vì agy tắt là chuyện
@@ -693,7 +703,9 @@ async function agyApi(apiPath, opts = {}) {
     if (!r.ok) return { ok: false, status: r.status, error: 'agy trả lỗi ' + r.status };
     return { ok: true, status: 200, data: await r.json() };
   } catch (e) {
-    return { ok: false, status: 0, error: /timeout|abort/i.test(e.message) ? 'agy không phản hồi' : 'không kết nối được agy' };
+    // e có thể không phải Error (AbortSignal ném DOMException, hoặc reject giá trị trần)
+    const msg = String((e && e.message) || e || '');
+    return { ok: false, status: 0, error: /timeout|abort/i.test(msg) ? 'agy không phản hồi' : 'không kết nối được agy' };
   }
 }
 
@@ -1901,28 +1913,30 @@ const server = http.createServer(async (req, res) => {
     const range = ['7d', '30d', '90d'].includes(url.searchParams.get('range') || '')
       ? url.searchParams.get('range') : '7d';
     const token = await agyToken();
-    if (!token) return json(res, 200, { ok: false, error: 'chưa có CLI token' });
+    // Đây là điều hướng của trình duyệt (location.href), không phải fetch — trả 200
+    // kèm JSON thì người dùng bị đẩy sang trang JSON trần, mất luôn màn hình đang xem.
+    if (!token) return json(res, 502, { error: 'chưa có CLI token của agy-proxy' });
     const port = await agyPort();
     try {
       const r = await fetch('http://127.0.0.1:' + port + '/api/gateway/usage/export.csv?range=' + range, {
         headers: { authorization: 'Basic ' + Buffer.from(':' + token).toString('base64') },
         signal: AbortSignal.timeout(60000),
       });
-      if (!r.ok) return json(res, 200, { ok: false, error: 'agy trả lỗi ' + r.status });
+      if (!r.ok) return json(res, 502, { error: 'agy trả lỗi ' + r.status });
       const csv = await r.text();
       res.writeHead(200, {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': 'attachment; filename="agy-' + range + '.csv"',
       });
       return res.end(csv);
-    } catch { return json(res, 200, { ok: false, error: 'không tải được CSV' }); }
+    } catch { return json(res, 502, { error: 'không tải được CSV' }); }
   }
 
   if (p === '/api/agy/quota-history' && req.method === 'GET') {
     const range = ['1d', '7d', '30d', '90d'].includes(url.searchParams.get('range') || '')
       ? url.searchParams.get('range') : '7d';
     const r = await agyApi('/api/gateway/quota/history?range=' + range);
-    return json(res, 200, r.ok ? { ok: true, ...r.data } : { ok: false, error: r.error, status: r.status });
+    return json(res, 200, r.ok ? { ...r.data, ok: true } : { ok: false, error: r.error, status: r.status });
   }
 
   /* Điều khiển — BẢNG CỨNG 4 lệnh mà tài liệu bàn giao xác nhận đảo ngược được.
@@ -1939,11 +1953,11 @@ const server = http.createServer(async (req, res) => {
 
     if (act === 'wake') {
       const r = await agyApi('/api/gateway/accounts/wake', { method: 'POST', body: {}, timeout: 30000 });
-      return json(res, 200, r.ok ? { ok: true, ...r.data } : { ok: false, error: r.error });
+      return json(res, 200, r.ok ? { ...r.data, ok: true } : { ok: false, error: r.error });
     }
     if (act === 'quota-refresh') {
       const r = await agyApi('/api/gateway/quota/refresh', { method: 'POST', body: {}, timeout: 30000 });
-      return json(res, 200, r.ok ? { ok: true, ...r.data } : { ok: false, error: r.error });
+      return json(res, 200, r.ok ? { ...r.data, ok: true } : { ok: false, error: r.error });
     }
     if (act === 'checklive') {
       // CHỈ một account. Bản quét cả pool mất ~14 phút và bị upstream chặn tốc độ.
@@ -1951,7 +1965,7 @@ const server = http.createServer(async (req, res) => {
       if (!email || !/^[^\s@]+@[^\s@]+$/.test(email)) return json(res, 400, { ok: false, error: 'cần email hợp lệ' });
       const r = await agyApi('/api/gateway/accounts/' + encodeURIComponent(email) + '/checklive',
         { method: 'POST', body: {}, timeout: 60000 });
-      return json(res, 200, r.ok ? { ok: true, ...r.data } : { ok: false, error: r.error });
+      return json(res, 200, r.ok ? { ...r.data, ok: true } : { ok: false, error: r.error });
     }
     if (act === 'set-rotation') {
       const v = String(body.rotation || '');
@@ -1963,6 +1977,11 @@ const server = http.createServer(async (req, res) => {
       const d = r.data || {};
       if (d.rejected && d.rejected.length) {
         return json(res, 200, { ok: false, error: 'agy từ chối: ' + JSON.stringify(d.rejected).slice(0, 200) });
+      }
+      // agy có thể trả HTTP 200 kèm ok:false mà KHÔNG có rejected — chỉ nhìn rejected
+      // thì giao diện báo đổi thành công trong khi thực tế chưa đổi gì.
+      if (d.ok === false) {
+        return json(res, 200, { ok: false, error: 'agy không áp dụng được chiến lược này' });
       }
       return json(res, 200, { ok: true, rotation: v });
     }

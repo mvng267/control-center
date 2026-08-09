@@ -46,7 +46,8 @@ const gon = (n: number) => n >= 1e9 ? (n / 1e9).toFixed(1) + 'B'
 /* Series từ agy THƯA — chỉ có bucket của ngày CÓ dữ liệu, không có dòng 0.
    Vẽ thẳng thì biểu đồ méo: hai ngày cách nhau một tuần trông như liền kề. */
 function dienNgayTrong(series: Diem[], range: Range): Diem[] {
-  if (!series.length) return [];
+  // KHÔNG thoát sớm khi rỗng: đó đúng là lúc cần điền nhất, nếu không biểu đồ trắng
+  // trơn không trục không lưới, nhìn như hỏng.
   const ngay = range === '90d' ? 90 : range === '30d' ? 30 : 7;
   const co = new Map(series.map((d) => [d.bucket, d]));
   const out: Diem[] = [];
@@ -98,15 +99,25 @@ export function AgyReport() {
         {header}
         <p className="mt-3 rounded-[10px] border border-amber-500/25 bg-amber-500/[0.08] px-3 py-2.5 text-[12.5px] leading-relaxed text-amber-500">
           Không lấy được báo cáo từ agy-proxy: {r?.error || 'lỗi không rõ'}.
-          Số liệu bên dưới đọc từ dữ liệu dự phòng nên thiếu phần thời gian thực.
+          Phần trạng thái và lưu lượng 24 giờ ở trên vẫn đọc được từ dữ liệu dự phòng.
         </p>
       </Card>
     );
   }
 
-  const u = r.usage!;
+  /* Không tin agy trả đúng shape: thiếu một trường là ném lỗi giữa lúc render, mà
+     web-next chưa có error boundary nên trắng CẢ dashboard chứ không riêng thẻ này. */
+  const raw = r.usage;
+  const u = {
+    totals: raw?.totals ?? { requests: 0, tokIn: 0, tokOut: 0, accounts: 0 },
+    series: Array.isArray(raw?.series) ? raw!.series : [],
+    byModel: Array.isArray(raw?.byModel) ? raw!.byModel : [],
+    byAccount: Array.isArray(raw?.byAccount) ? raw!.byAccount : [],
+    byApiKey: Array.isArray(raw?.byApiKey) ? raw!.byApiKey : [],
+  };
   const diem = dienNgayTrong(u.series, range);
-  const nhaCC = r.stats?.providers || [];
+  const nhaCC = (Array.isArray(r.stats?.providers) ? r.stats!.providers : [])
+    .filter((x) => x && typeof x.okRate === 'number' && typeof x.n === 'number');
   const tongN = nhaCC.reduce((a, p) => a + p.n, 0);
   // Tỉ lệ thành công gộp — cân theo số request của từng nhà cung cấp
   const okRate = tongN > 0

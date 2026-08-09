@@ -6,7 +6,7 @@ import {
   Wrench, Plug, BarChart3, Tag, SlidersHorizontal, Loader2, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { api } from '@/lib/api';
+import { getToken } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -45,14 +45,18 @@ export function HermesTools({ onClose }: { onClose: () => void }) {
     setDangChay(l.id);
     setKq({ nhan: l.nhan, noi: '' });
     try {
-      const r = await api<{ ok: boolean; output?: string; error?: string }>('/api/hermes/run', {
-        method: 'POST', body: JSON.stringify({ cmd: l.id }),
+      // fetch trực tiếp: api() NÉM khi gặp HTTP 4xx/5xx, nên nhánh hiện lỗi có cấu
+      // trúc bên dưới sẽ không bao giờ chạy tới và người dùng chỉ thấy toast chung chung.
+      const res = await fetch('/api/hermes/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(getToken() ? { 'X-Dash-Token': getToken() } : {}) },
+        body: JSON.stringify({ cmd: l.id }),
       });
-      setKq({ nhan: l.nhan, noi: r.ok ? (r.output || '(không có kết quả)') : 'Lỗi: ' + (r.error || '?') });
-      if (r.ok) navigator.vibrate?.(10);
+      const r = await res.json().catch(() => ({}));
+      setKq({ nhan: l.nhan, noi: (res.ok && r.ok) ? (r.output || '(không có kết quả)') : 'Lỗi: ' + (r.error || 'HTTP ' + res.status) });
+      if (res.ok && r.ok) navigator.vibrate?.(10);
     } catch {
-      setKq(null);
-      toast.error('Không chạy được lệnh');
+      setKq({ nhan: l.nhan, noi: 'Lỗi: không gọi được server' });
     } finally { setDangChay(null); }
   };
 

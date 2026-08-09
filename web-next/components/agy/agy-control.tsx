@@ -123,8 +123,16 @@ export function AgyControl({ rotation, onDone }: { rotation?: string; onDone?: (
 
       <div className="mt-4 flex flex-col gap-1.5">
         <span className="text-[12px] font-medium">Chiến lược xoay account</span>
-        <Segmented items={ROTATIONS} value={xoay as (typeof ROTATIONS)[number]['id']}
+        {/* agy có thể trả chiến lược không nằm trong danh sách (bản mới thêm kiểu
+            mới) — ép kiểu bừa thì không ô nào sáng, nhìn như hỏng. Nói thẳng ra. */}
+        <Segmented items={ROTATIONS}
+          value={(ROTATIONS.some((x) => x.id === xoay) ? xoay : 'round-robin') as (typeof ROTATIONS)[number]['id']}
           onChange={doiXoay} testid="ctl-rotation" size="sm" className="self-start" />
+        {!ROTATIONS.some((x) => x.id === xoay) && (
+          <span className="text-[11px] text-amber-500">
+            agy đang dùng “{xoay}” — chiến lược này chưa có trong danh sách
+          </span>
+        )}
       </div>
 
       <div className="mt-4 flex flex-col gap-1.5">
