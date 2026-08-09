@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Terminal, FileText, FilePen, FilePlus, Search, Bot, ListChecks, Globe,
   Sparkles, Plug, Wrench, ChevronDown, Check, X, Circle, Minus, Copy,
@@ -99,6 +99,62 @@ function DiffBlock({ text }: { text: string }) {
   );
 }
 
+
+/* Nhãn ngôn ngữ theo đuôi file — port EXT_LANG/langOf (web/legacy/js/chat.js:117-128).
+   Prop `lang` của CodeBlock vốn đã có nhưng KHÔNG AI TRUYỀN, tức là code chết:
+   khối input của Read/Edit mất nhãn ngôn ngữ mà bản cũ vẫn hiện. */
+const EXT_LANG: Record<string, string> = {
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
+  py: 'python', rb: 'ruby', go: 'go', rs: 'rust', java: 'java', kt: 'kotlin', swift: 'swift',
+  c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', cs: 'csharp', php: 'php', sh: 'bash', bash: 'bash', zsh: 'bash',
+  json: 'json', yml: 'yaml', yaml: 'yaml', toml: 'toml', xml: 'xml', html: 'html', css: 'css',
+  scss: 'scss', sql: 'sql', md: 'markdown', txt: '', log: '',
+};
+function langOf(summary: string) {
+  const f = String(summary || '').split(' ')[0].split(':')[0];
+  const ext = f.indexOf('.') > 0 ? (f.split('.').pop() || '').toLowerCase() : '';
+  return EXT_LANG[ext] || '';
+}
+
+/* Ảnh trong kết quả tool. Trước đây bấm vào là `window.open` -> trên PWA đã "Thêm vào
+   màn hình chính" thì nó BUNG RA trình duyệt ngoài, mất ngữ cảnh app. Và ảnh hỏng thì
+   hiện icon vỡ câm lặng. Giờ mở overlay trong app + báo lỗi rõ ràng. */
+function ToolImage({ src, n, onZoom }: { src: string; n: number; onZoom: (s: string) => void }) {
+  const [bad, setBad] = useState(false);
+  if (bad) {
+    return (
+      <div className="flex items-center gap-2 rounded-[10px] border border-dashed border-status-error/40 px-3 py-2 text-[12px] text-status-error">
+        <X className="size-3.5" /> Không tải được ảnh {n}
+      </div>
+    );
+  }
+  return (
+    <img data-testid="tool-image" src={src} alt={`ảnh kết quả ${n}`} loading="lazy"
+      onError={() => setBad(true)}
+      onClick={(e) => { e.stopPropagation(); onZoom(src); }}
+      className="max-h-[260px] max-w-full cursor-zoom-in rounded-[10px] border border-border object-contain" />
+  );
+}
+
+// Overlay xem ảnh toàn màn — Esc hoặc chạm nền để đóng (bản cũ có, bản mới mất)
+export function ImageZoom({ src, onClose }: { src: string; onClose: () => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', k);
+    return () => document.removeEventListener('keydown', k);
+  }, [onClose]);
+  return (
+    <div data-testid="image-zoom" onClick={onClose}
+      className="fixed inset-0 z-[140] flex items-center justify-center bg-background/90 p-4 backdrop-blur-sm">
+      <img src={src} alt="" className="max-h-full max-w-full rounded-xl object-contain" />
+      <button onClick={onClose} title="Đóng"
+        className="absolute right-4 top-4 rounded-full border border-border bg-card p-2">
+        <X className="size-4" />
+      </button>
+    </div>
+  );
+}
+
 /* Trạng thái mở/đóng do CHA giữ, khoá theo tool_use_id.
    Trước đây để useState ở đây: cứ 700ms poll một lần là React dựng lại cây, state cục
    bộ mất theo -> đang đọc kết quả lệnh thì thẻ TỰ ĐÓNG sau ~3 giây. Đo được:
@@ -110,6 +166,7 @@ export function ToolCard({ part, sid, open, onToggle }: {
   onToggle: (id: string) => void;
 }) {
   const setOpen = () => onToggle(part.id);
+  const [zoom, setZoom] = useState<string | null>(null);
   const Icon = iconFor(part.name);
   const st = STATUS[part.status] || STATUS.pending;
   const isDiff = part.name === 'Edit' && part.input.startsWith('--- old');
@@ -154,15 +211,31 @@ export function ToolCard({ part, sid, open, onToggle }: {
             <>
               {part.todos?.length ? (
                 <div className="px-3 pb-2.5">
-                  <div className="mb-1 text-[10px] font-semibold tracking-wide text-muted-foreground">CÔNG VIỆC</div>
+                  {/* Đếm + thanh tiến độ như bản cũ (chat.js:332-368). Và `in_progress`
+                      phải có icon RIÊNG — trước đây nó hiện y hệt việc chưa làm, nhìn
+                      không biết Claude đang ở bước nào. */}
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span className="text-[10px] font-semibold tracking-wide text-muted-foreground">CÔNG VIỆC</span>
+                    <span className="text-[10.5px] tabular-nums text-muted-foreground">
+                      {part.todos.filter((t) => t.status === 'completed').length}/{part.todos.length}
+                    </span>
+                    <span className="ml-auto h-1 w-20 overflow-hidden rounded-full bg-muted">
+                      <span className="block h-full rounded-full bg-status-ok transition-[width] duration-500"
+                        style={{ width: Math.round(part.todos.filter((t) => t.status === 'completed').length
+                          / part.todos.length * 100) + '%' }} />
+                    </span>
+                  </div>
                   <div className="flex flex-col gap-1">
                     {part.todos.map((t, i) => (
                       <div key={i} className="flex items-start gap-2 text-[12.5px]">
                         <span className={cn('mt-0.5 shrink-0',
-                          t.status === 'completed' ? 'text-status-ok' : 'text-muted-foreground')}>
-                          {t.status === 'completed' ? '✓' : '○'}
+                          t.status === 'completed' ? 'text-status-ok'
+                            : t.status === 'in_progress' ? 'text-primary' : 'text-muted-foreground')}>
+                          {t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '◈' : '○'}
                         </span>
-                        <span className={t.status === 'completed' ? 'text-muted-foreground line-through' : ''}>
+                        <span className={cn(
+                          t.status === 'completed' && 'text-muted-foreground line-through',
+                          t.status === 'in_progress' && 'font-medium text-foreground')}>
                           {t.text}
                         </span>
                       </div>
@@ -170,7 +243,7 @@ export function ToolCard({ part, sid, open, onToggle }: {
                   </div>
                 </div>
               ) : part.input ? (
-                isDiff ? <DiffBlock text={part.input} /> : <CodeBlock label="INPUT" text={part.input} />
+                isDiff ? <DiffBlock text={part.input} /> : <CodeBlock label="INPUT" text={part.input} lang={langOf(part.summary)} />
               ) : null}
 
               {(part.result || part.status === 'ok' || isErr) && (
@@ -184,15 +257,8 @@ export function ToolCard({ part, sid, open, onToggle }: {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {part.images.map((_, idx) => (
-                      <img
-                        key={idx}
-                        data-testid="tool-image"
-                        src={`/api/toolimg/${sid}/${part.id}/${idx}`}
-                        alt={`ảnh kết quả ${idx + 1}`}
-                        loading="lazy"
-                        className="max-h-[260px] max-w-full cursor-zoom-in rounded-[10px] border border-border object-contain"
-                        onClick={(e) => { e.stopPropagation(); window.open((e.target as HTMLImageElement).src, '_blank'); }}
-                      />
+                      <ToolImage key={idx} src={`/api/toolimg/${sid}/${part.id}/${idx}`} n={idx + 1}
+                        onZoom={setZoom} />
                     ))}
                   </div>
                 </div>
@@ -201,6 +267,8 @@ export function ToolCard({ part, sid, open, onToggle }: {
           )}
         </div>
       </div>
+
+      {zoom && <ImageZoom src={zoom} onClose={() => setZoom(null)} />}
     </div>
   );
 }

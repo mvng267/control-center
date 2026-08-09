@@ -16,12 +16,14 @@ import { useStream } from '@/lib/use-stream';
 import { usePwa } from '@/lib/use-pwa';
 import { useSoftKeyboard } from '@/lib/use-soft-keyboard';
 import { CommandPalette } from '@/components/command-palette';
+import { CompareView } from '@/components/cli/compare-view';
 import { toast } from 'sonner';
 
 export default function Page() {
   const [tab, setTab] = useState<TabId>('cli');
   const [openSid, setOpenSid] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [comparing, setComparing] = useState(false);
   // n tăng mỗi lần bấm để bấm LẠI cùng một lối tắt vẫn áp lại được bộ lọc
   const [quick, setQuick] = useState<{ q: string; n: number }>({ q: '', n: 0 });
 
@@ -47,6 +49,9 @@ export default function Page() {
     if (id === "ui:theme") { document.querySelector<HTMLButtonElement>("[data-testid=theme-toggle]")?.click(); return; }
     if (id === "ui:perm") { document.querySelector<HTMLButtonElement>("[data-testid=perm-btn]")?.click(); return; }
     if (id === "ui:export" && openSid) { location.href = "/api/export/" + openSid + "?fmt=md"; return; }
+    // Lệnh này VỐN ĐÃ có trong bảng lệnh nhưng không có nhánh xử lý -> bấm ra toast
+    // lạc đề "Mở phiên rồi dùng nút tương ứng…". Giờ mở thật.
+    if (id === "ui:compare") { setComparing(true); return; }
     if (id === "ui:stop" && openSid) {
       api("/api/kill/" + openSid, { method: "POST" }).then(() => toast("Đã dừng Claude")).catch(() => {});
       return;
@@ -114,6 +119,10 @@ export default function Page() {
         >
           Mất kết nối — dữ liệu đang hiển thị là bản cũ
         </div>
+      )}
+      {comparing && (
+        <CompareView sessions={data?.sessions || []} initial={openSid}
+          onClose={() => setComparing(false)} />
       )}
       {unauthorized && <TokenGate />}
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} sid={openSid} onUi={onUi} />

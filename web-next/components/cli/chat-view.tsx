@@ -110,6 +110,29 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
   });
   const [text, setText] = useState('');
   const slash = useSlash(text, (v) => setText(v));
+  // Lịch sử tin đã gửi, ↑/↓ gọi lại như terminal (port attachHistory —
+  // web/legacy/js/palette.js:175-194). Giữ trong localStorage để F5 không mất.
+  const HIST_KEY = 'hist:chat';
+  const hist = useRef<string[]>([]);
+  const histAt = useRef(-1);
+  useEffect(() => {
+    try { hist.current = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch {}
+  }, []);
+  const histPush = (v: string) => {
+    if (!v.trim()) return;
+    hist.current = [v, ...hist.current.filter((x) => x !== v)].slice(0, 50);
+    histAt.current = -1;
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(hist.current)); } catch {}
+  };
+  const histNav = (dir: 1 | -1) => {
+    const n = hist.current.length;
+    if (!n) return false;
+    const next = histAt.current + dir;
+    if (next < -1 || next >= n) return false;
+    histAt.current = next;
+    setText(next === -1 ? '' : hist.current[next]);
+    return true;
+  };
   // Tin vừa gửi, hiện NGAY trước khi server kịp ghi vào .jsonl. Đo thật: Claude CLI
   // mất ~1.9s mới ghi file, cộng vòng poll 2s -> tin của mình có thể 4s sau mới hiện,
   // cảm giác như treo. Giữ ở đây tới khi bản từ server có nội dung trùng thì bỏ đi.
@@ -164,6 +187,7 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
       ? (v ? v + '\n\n' : 'Xem ảnh này:\n\n') + att.map((a) => a.path).join('\n')
       : v;
     const keep = att;
+    histPush(v);
     setText(''); setAtt([]);
     const mine: Msg = { role: 'user', content: msg, ts: new Date().toISOString() };
     setPending((ps) => [...ps, mine]);
@@ -182,9 +206,13 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
     }
   };
 
+  // /api/approve nhận body.note (index.js:1258) — gõ sẵn gì trong ô nhập thì gửi kèm
+  // làm lưu ý cho lượt duyệt, khỏi phải duyệt xong rồi nhắn bổ sung.
   const approve = async () => {
+    const note = text.trim();
     try {
-      await api('/api/approve/' + sid, { method: 'POST', body: '{}' });
+      await api('/api/approve/' + sid, { method: 'POST', body: JSON.stringify(note ? { note } : {}) });
+      if (note) setText('');
       toast.success('Đã duyệt — Claude đang thực hiện');
       navigator.vibrate?.(30);
     } catch { toast.error('Không duyệt được'); }
@@ -304,7 +332,11 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
         })}
       </div>
 
-      {h?.typing && (
+      {/* Nút dừng dựa vào STATUS, không phải `typing`. `typing = procs.has(sid)` chỉ
+          đúng khi chính dashboard spawn Claude — phiên chạy từ terminal ngoài thì
+          typing=false nên KHÔNG có nút dừng nào, mà bấm Gửi lại nhận 409 "session is
+          busy". Bản legacy dùng status nên vẫn xử lý được (export.js:453). */}
+      {(h?.typing || h?.status === 'RUNNING') && (
         <div className="flex shrink-0 items-center gap-3 px-4 pb-1" data-testid="typing">
           <span className="flex gap-1">
             {[0, 1, 2].map((i) => (
@@ -350,6 +382,12 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
             rows={1}
             onKeyDown={(e) => {
               if (slash.onKeyDown(e)) return;   // ↑↓ chọn, Tab/Enter điền, Esc đóng
+              // ↑/↓ gọi lại tin cũ — CHỈ khi ô rỗng hoặc đang duyệt lịch sử, nếu không
+              // sẽ cướp mất thao tác di chuyển con trỏ trong đoạn nhiều dòng.
+              if ((e.key === 'ArrowUp' || e.key === 'ArrowDown')
+                  && (!text.trim() || histAt.current >= 0)) {
+                if (histNav(e.key === 'ArrowUp' ? 1 : -1)) { e.preventDefault(); return; }
+              }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault(); send();
               }

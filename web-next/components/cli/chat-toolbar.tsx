@@ -1,11 +1,11 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Download, Coins, Pencil, Cpu, X, MoreHorizontal, ImagePlus, Loader2 } from 'lucide-react';
+import { Download, Coins, Pencil, Cpu, X, MoreHorizontal, ImagePlus, Loader2, Braces, ClipboardCopy, FileText } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { api } from '@/lib/api';
+import { api, getToken } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -87,7 +87,8 @@ export function ChatToolbar({
   onTitle: (t: string) => void;
   onModel: (m: string | null) => void;
 }) {
-  const [dlg, setDlg] = useState<null | 'rename' | 'model' | 'cost'>(null);
+  const [dlg, setDlg] = useState<null | 'rename' | 'model' | 'cost' | 'export' | 'summary'>(null);
+  const [summary, setSummary] = useState('');
   const [name, setName] = useState('');
 
   const short = (n: number) => {
@@ -123,7 +124,25 @@ export function ChatToolbar({
     { id: 'model', icon: Cpu, label: 'Model cho phiên này', run: () => setDlg('model'), on: !!model },
     { id: 'cost', icon: Coins, label: 'Token đã dùng', run: () => setDlg('cost') },
     { id: 'rename', icon: Pencil, label: 'Đổi tên phiên', run: () => { setName(title); setDlg('rename'); } },
-    { id: 'export', icon: Download, label: 'Tải phiên (.md)', run: () => { location.href = '/api/export/' + sid + '?fmt=md'; } },
+    // Bấm mở hộp chọn .md / .json / chép — gộp lại vì bày 3 nút riêng trên header
+    // thì tên phiên lại bị bóp như lần trước (còn 54px trên iPhone).
+    { id: 'export', icon: Download, label: 'Tải / chép phiên', run: () => setDlg('export') },
+    // /api/summary/:sid có sẵn ở server (index.js:1476) nhưng giao diện mới CHƯA HỀ gọi
+    { id: 'summary', icon: FileText, label: 'Tóm tắt phiên', run: async () => {
+      setDlg('summary'); setSummary('');
+      try {
+        const r = await api<{ ok?: boolean; id?: string; error?: string }>('/api/summary/' + sid, { method: 'POST' });
+        if (!r.ok || !r.id) { setSummary('LỖI: ' + (r.error || 'không gọi được')); return; }
+        for (let i = 0; i < 40; i++) {
+          await new Promise((s) => setTimeout(s, 1500));
+          const o = await api<{ status: string; output: string }>('/api/oneshot/' + r.id).catch(() => null);
+          if (!o || o.status === 'running') continue;
+          setSummary(o.status === 'done' ? o.output.trim() : 'Tóm tắt thất bại');
+          return;
+        }
+        setSummary('Chờ quá lâu, thử lại sau');
+      } catch { setSummary('LỖI: mất kết nối'); }
+    } },
   ];
 
   return (
@@ -158,6 +177,54 @@ export function ChatToolbar({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {dlg === 'summary' && (
+        <Dialog open onOpenChange={() => setDlg(null)}>
+          <DialogContent className="max-h-[80dvh] max-w-[620px] overflow-hidden" data-testid="summary-dialog">
+            <DialogHeader><DialogTitle>Tóm tắt phiên</DialogTitle></DialogHeader>
+            {summary ? (
+              <div className="max-h-[60dvh] overflow-auto whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+                {summary}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 py-6 text-[13px] text-muted-foreground">
+                <Loader2 className="size-4 animate-spin text-primary" /> Claude đang đọc lại phiên…
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {dlg === 'export' && (
+        <Dialog open onOpenChange={() => setDlg(null)}>
+          <DialogContent className="max-w-[360px]" data-testid="export-dialog">
+            <DialogHeader><DialogTitle>Tải hoặc chép phiên</DialogTitle></DialogHeader>
+            <div className="flex flex-col gap-2">
+              <Button variant="outline" size="sm" data-testid="exp-md"
+                onClick={() => { location.href = '/api/export/' + sid + '?fmt=md'; setDlg(null); }}>
+                <Download className="size-3.5" /> Tải .md — để đọc
+              </Button>
+              <Button variant="outline" size="sm" data-testid="exp-json"
+                onClick={() => { location.href = '/api/export/' + sid + '?fmt=json'; setDlg(null); }}>
+                <Braces className="size-3.5" /> Tải .json — để xử lý tiếp
+              </Button>
+              <Button variant="outline" size="sm" data-testid="exp-copy"
+                onClick={async () => {
+                  try {
+                    const t = getToken();
+                    const r = await fetch('/api/export/' + sid + '?fmt=md',
+                      { headers: t ? { 'X-Dash-Token': t } : {} });
+                    await navigator.clipboard.writeText(await r.text());
+                    toast.success('Đã chép cả phiên');
+                  } catch { toast.error('Không chép được'); }
+                  setDlg(null);
+                }}>
+                <ClipboardCopy className="size-3.5" /> Chép vào bộ nhớ tạm
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {dlg === 'rename' && (
         <Dialog open onOpenChange={() => setDlg(null)}>

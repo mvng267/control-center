@@ -1364,30 +1364,8 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { sid, status: statusOf(sid, mt), running: procs.has(sid), typing: procs.has(sid) });
   }
 
-  // ---- export: tải FULL session (không giới hạn window 30) ra .md / .json ----
-  if ((m = p.match(/^\/api\/export\/([\w-]+)$/))) {
-    const sid = m[1];
-    const file = findSessionFile(sid);
-    const parsed = file ? parseSessionFile(file) : null;
-    if (!parsed) return json(res, 404, { error: 'session not found' });
-    const fmt = url.searchParams.get('fmt') === 'json' ? 'json' : 'md';
-    const msgs = parsed.msgs.map(x => ({ role: x.role, content: x.text, ts: x.ts, parts: x.parts }));
-    let body, type;
-    if (fmt === 'json') {
-      body = JSON.stringify({ sid, exportedAt: new Date().toISOString(), count: msgs.length, messages: msgs }, null, 2);
-      type = 'application/json';
-    } else {
-      body = '# Claude session ' + sid + '\n\n'
-        + msgs.map(x => '**' + (x.role === 'user' ? 'User' : 'Assistant') + '**'
-          + (x.ts ? ' · ' + x.ts : '') + ':\n\n' + mdForMessage(x) + '\n\n---\n').join('\n');
-      type = 'text/markdown; charset=utf-8';
-    }
-    res.writeHead(200, {
-      'Content-Type': type,
-      'Content-Disposition': 'attachment; filename="claude-' + sid.slice(0, 8) + '.' + fmt + '"',
-    });
-    return res.end(body);
-  }
+  // (Handler /api/export thứ hai từng nằm ở đây đã được XOÁ: nó không bao giờ
+  //  chạy được vì handler ở phần trên đã return trước — code chết.)
 
   // ---- /model: set model cho task mới ----
   if (p === '/api/model' && req.method === 'POST') {
