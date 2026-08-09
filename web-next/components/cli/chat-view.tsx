@@ -95,7 +95,7 @@ function CopyTurn({ parts }: { parts: Part[] }) {
           setDone(true); setTimeout(() => setDone(false), 1200);
         }).catch(() => {});
       }}
-      className="ml-auto shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground">
+      className="tap44 ml-auto shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground">
       {done ? <CheckCheck className="size-3.5 text-status-ok" /> : <Copy className="size-3.5" />}
     </button>
   );
@@ -231,7 +231,10 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="chat-view">
       <div className="mx-auto flex w-full max-w-[920px] shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-        <Button variant="ghost" size="icon" className="size-8" onClick={onBack}><ArrowLeft className="size-4" /></Button>
+        <Button variant="ghost" size="icon" className="tap44 size-8" onClick={onBack}
+          title="Quay lại danh sách" aria-label="Quay lại danh sách" data-testid="chat-back">
+          <ArrowLeft className="size-4" />
+        </Button>
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium" data-testid="chat-title" title={sid}>
           {h?.title || sid.slice(0, 8)}
         </span>
@@ -419,7 +422,8 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
             }}
             placeholder="Tiếp tục cuộc trò chuyện…"
             className="max-h-[35dvh] min-h-11 resize-none py-2.5 text-[16px]" />
-          <Button size="icon" className="size-11 shrink-0" onClick={send}
+          <Button size="icon" className="size-11 shrink-0" onClick={send} title="Gửi tin nhắn"
+            aria-label="Gửi tin nhắn"
             disabled={!text.trim() && !att.length} data-testid="chat-send">
             <Send className="size-4" />
           </Button>

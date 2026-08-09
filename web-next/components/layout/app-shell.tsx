@@ -26,7 +26,7 @@ function ThemeToggle() {
   if (!ready) return <div className="size-8" />;
   const dark = theme === 'dark';
   return (
-    <Button variant="ghost" size="icon" className="size-8" data-testid="theme-toggle"
+    <Button variant="ghost" size="icon" className="tap44 size-8" data-testid="theme-toggle"
       onClick={() => setTheme(dark ? 'light' : 'dark')}
       title={dark ? 'Chuyển sang sáng' : 'Chuyển sang tối'}>
       {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
@@ -53,7 +53,7 @@ export function AppShell({
     <div className="flex overflow-hidden bg-background text-foreground"
       style={{ height: 'calc(100dvh - var(--kb, 0px))' }}>
       {/* ---- SIDEBAR 256px — chỉ desktop, dựng theo Atlas ---- */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-sidebar md:flex"
+      <aside className="hidden w-64 shrink-0 flex-col bg-sidebar md:flex"
         data-testid="sidebar">
         {/* logo */}
         <div className="flex items-center gap-2.5 px-4 py-3.5">
@@ -68,7 +68,7 @@ export function AppShell({
           {TABS.map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => onTab(id)} data-testid={`nav-${id}`} data-active={tab === id}
               className={cn(
-                'flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[14px] transition-colors',
+                'flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[14px] transition-colors',
                 tab === id
                   ? 'bg-sidebar-accent font-medium text-sidebar-foreground'
                   : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
@@ -96,7 +96,7 @@ export function AppShell({
           ].map((f) => (
             <button key={f.label} data-testid={'quick-' + f.to + (f.q ? '-' + f.q : '')}
               onClick={() => { onTab(f.to); if (f.q) onQuick?.(f.q); }}
-              className="flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[14px] text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground">
+              className="flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[14px] text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground">
               <i className={cn('size-1.5 shrink-0 rounded-full', f.c)} />
               <span className="truncate">{f.label}</span>
             </button>
@@ -125,8 +125,8 @@ export function AppShell({
       {/* ---- CỘT PHẢI ---- */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* header: breadcrumb (desktop) / logo (mobile) */}
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4 md:border-b-0"
-          style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(56px + env(safe-area-inset-top))' }}>
+        <header className="flex shrink-0 items-center gap-2 border-b border-border px-4 md:border-b-0"
+          style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(64px + env(safe-area-inset-top))' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icon-192.png" alt="" width={28} height={28} className="size-7 shrink-0 rounded-lg md:hidden" />
           <nav className="flex min-w-0 items-center gap-1.5 text-[14px]" data-testid="breadcrumb">

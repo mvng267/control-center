@@ -150,7 +150,7 @@ export function ChatToolbar({
       {/* Màn rộng: bày hết ra cho bấm một chạm */}
       <div className="hidden shrink-0 items-center gap-1 sm:flex">
         {acts.map((a) => (
-          <Button key={a.id} variant="ghost" size="icon" className="size-8" title={a.label}
+          <Button key={a.id} variant="ghost" size="icon" className="tap44 size-8" title={a.label}
             data-testid={a.id === 'model' ? 'model-chip' : a.id + '-btn'} onClick={a.run}>
             <a.icon className={a.on ? 'size-4 text-tool-accent' : 'size-4'} />
           </Button>
@@ -163,7 +163,7 @@ export function ChatToolbar({
         {/* Base UI dùng prop `render` chứ không có `asChild` như Radix */}
         <DropdownMenuTrigger
           render={
-            <Button variant="ghost" size="icon" className="size-8 shrink-0 sm:hidden"
+            <Button variant="ghost" size="icon" className="tap44 size-8 shrink-0 sm:hidden"
               title="Thêm" data-testid="chat-more">
               <MoreHorizontal className="size-4" />
             </Button>

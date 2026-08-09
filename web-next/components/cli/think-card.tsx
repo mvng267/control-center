@@ -21,7 +21,7 @@ export function ThinkCard({ text }: { text: string }) {
     <div data-testid="think-card" data-open={open}
       className="w-full overflow-hidden rounded-xl border border-dashed border-border bg-card/50">
       <button onClick={() => setOpen((v) => !v)} data-testid="think-toggle"
-        className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/30">
+        className="tap44 flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/30">
         <Brain className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="shrink-0 text-[12px] font-medium text-muted-foreground">Suy nghĩ</span>
         {!open && (

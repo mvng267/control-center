@@ -79,11 +79,11 @@ export function JobsPanel({ jobs, onOpen }: { jobs: Job[]; onOpen?: (sid: string
           <Badge variant="outline" className="text-[10.5px]">{jobs.length}</Badge>
         )}
         <div className="ml-auto flex gap-1.5">
-          <Button variant="outline" size="sm" className="h-8 text-[12px]"
+          <Button variant="outline" size="sm" className="tap44 h-8 text-[12px]"
             data-testid="job-new-loop" onClick={() => openNew('loop')}>
             <Repeat className="size-3.5" /> Chạy lặp
           </Button>
-          <Button variant="outline" size="sm" className="h-8 text-[12px]"
+          <Button variant="outline" size="sm" className="tap44 h-8 text-[12px]"
             data-testid="job-new-cron" onClick={() => openNew('cron')}>
             <CalendarClock className="size-3.5" /> Hẹn giờ
           </Button>

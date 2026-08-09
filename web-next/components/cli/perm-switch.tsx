@@ -70,7 +70,7 @@ export function PermSwitch({
         render={
           <Button variant="outline" size="sm" data-testid={testid} data-perm={mode}
             title={'Chế độ quyền: ' + cur.label + ' — ' + cur.desc}
-            className={cn('h-8 shrink-0 gap-1.5 text-[12px]', cur.tone, compact && 'w-8 px-0')}>
+            className={cn('tap44 h-8 shrink-0 gap-1.5 text-[12px]', cur.tone, compact && 'w-8 px-0')}>
             <cur.Icon className="size-3.5" />
             {!compact && <span className="max-w-[92px] truncate">{cur.label}</span>}
           </Button>

@@ -107,13 +107,13 @@ export function SessionList({
           <>
             {/* Nút này trước đây KHÔNG có onClick — bấm không xảy ra gì. Giờ mở/đóng
                 hàng lọc theo trạng thái. */}
-            <Button variant={stat ? 'default' : 'outline'} size="sm" className="h-9 gap-1.5"
-              data-testid="filter-btn" onClick={() => setStat((v) => (v ? '' : 'run'))}>
+            <Button variant={stat ? 'default' : 'outline'} size="sm" className="tap44 h-9 gap-1.5"
+              data-testid="filter-btn"  onClick={() => setStat((v) => (v ? '' : 'run'))}>
               <SlidersHorizontal className="size-3.5" />
               {stat === 'run' ? 'Đang chạy' : stat === 'idle' ? 'Đã nghỉ' : 'Lọc'}
             </Button>
             {/* Trước đây focus vào Ô TÌM — sai chỗ. Giao việc mới nằm ở ô task dưới đáy. */}
-            <Button size="sm" className="h-9 gap-1.5" data-testid="new-session"
+            <Button size="sm" className="tap44 h-9 gap-1.5" data-testid="new-session"
               onClick={() => document.querySelector<HTMLInputElement>('[data-testid=task-input]')?.focus()}>
               <Plus className="size-3.5" /> Phiên mới
             </Button>
@@ -133,12 +133,14 @@ export function SessionList({
           <div className="min-w-0 flex-1 md:border-l md:border-border md:pl-6">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px]">
               <button onClick={() => { setStat(stat === 'run' ? '' : 'run'); setPage(0); }}
-                data-testid="sum-run" className="flex items-center gap-1.5 transition-opacity hover:opacity-75">
+                data-testid="sum-run" title="Chỉ hiện phiên đang chạy"
+                className="tap44 flex items-center gap-1.5 transition-opacity hover:opacity-75">
                 <span className="size-2 rounded-full bg-status-ok" />
                 Đang chạy: <b className="tabular-nums">{tally.run}</b>
               </button>
               <button onClick={() => { setStat(stat === 'idle' ? '' : 'idle'); setPage(0); }}
-                data-testid="sum-idle" className="flex items-center gap-1.5 transition-opacity hover:opacity-75">
+                data-testid="sum-idle" title="Chỉ hiện phiên đã nghỉ"
+                className="tap44 flex items-center gap-1.5 transition-opacity hover:opacity-75">
                 <span className="size-2 rounded-full bg-muted-foreground/60" />
                 Đã nghỉ: <b className="tabular-nums">{tally.idle}</b>
               </button>
@@ -324,13 +326,15 @@ export function SessionList({
               {rows.length ? `${cur * PAGE + 1} – ${Math.min((cur + 1) * PAGE, rows.length)} / ${rows.length}` : '0'}
             </span>
             <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" className="size-8" disabled={cur === 0}
-                onClick={() => setPage(cur - 1)} data-testid="page-prev">
+              <Button variant="outline" size="icon" className="tap44 size-8" disabled={cur === 0}
+                onClick={() => setPage(cur - 1)} data-testid="page-prev"
+                title="Trang trước" aria-label="Trang trước">
                 <ChevronLeft className="size-4" />
               </Button>
               <span className="px-2 text-[13px] tabular-nums">{cur + 1} / {pages}</span>
-              <Button variant="outline" size="icon" className="size-8" disabled={cur >= pages - 1}
-                onClick={() => setPage(cur + 1)} data-testid="page-next">
+              <Button variant="outline" size="icon" className="tap44 size-8" disabled={cur >= pages - 1}
+                onClick={() => setPage(cur + 1)} data-testid="page-next"
+                title="Trang sau" aria-label="Trang sau">
                 <ChevronRight className="size-4" />
               </Button>
             </div>

@@ -44,7 +44,7 @@ export function NoteLine({ part }: { part: NotePart }) {
     <div data-testid="note-line" data-kind={part.kind}
       className={cn('overflow-hidden rounded-[10px] border', st.ring)}>
       <button onClick={() => setOpen((v) => !v)} data-testid="note-toggle"
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left">
+        className="tap44 flex w-full items-center gap-2 px-2.5 py-1.5 text-left">
         <st.Icon className={cn('size-3.5 shrink-0', st.tone)} />
         <span className={cn('min-w-0 flex-1 truncate text-[12px] font-medium', st.tone)}>{part.title}</span>
         {part.body && (

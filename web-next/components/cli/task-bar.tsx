@@ -126,7 +126,7 @@ export function TaskBar({ perm, onOpen }: { perm?: string; onOpen: (sid: string)
             {MODES.map((m) => (
               <button key={m.id} onClick={() => setMode(m.id)} data-active={mode === m.id}
                 className={cn(
-                  'shrink-0 rounded-md px-2.5 py-1 text-[12.5px] transition-colors',
+                  'tap44 shrink-0 rounded-md px-2.5 py-1 text-[12.5px] transition-colors',
                   mode === m.id ? 'bg-primary text-primary-foreground font-medium' : 'text-muted-foreground',
                 )}>
                 {m.label}
