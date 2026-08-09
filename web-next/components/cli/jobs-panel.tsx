@@ -119,12 +119,12 @@ export function JobsPanel({ jobs, onOpen }: { jobs: Job[]; onOpen?: (sid: string
                 </span>
               </span>
               {j.lastSid && onOpen && (
-                <Button variant="ghost" size="sm" className="h-7 shrink-0 text-[11.5px]"
+                <Button variant="ghost" size="sm" className="tap44 h-7 shrink-0 text-[11.5px]"
                   data-testid="job-open" onClick={() => onOpen(j.lastSid!)}>
                   Xem lượt cuối
                 </Button>
               )}
-              <Button variant="ghost" size="icon" className="size-7 shrink-0 text-muted-foreground hover:text-status-error"
+              <Button variant="ghost" size="icon" className="tap44 size-7 shrink-0 text-muted-foreground hover:text-status-error"
                 data-testid="job-del" title="Huỷ việc này" onClick={() => del(j.id)}>
                 <Trash2 className="size-3.5" />
               </Button>
@@ -150,7 +150,7 @@ export function JobsPanel({ jobs, onOpen }: { jobs: Job[]; onOpen?: (sid: string
             <div className="flex flex-wrap gap-1.5">
               {(dlg === 'loop' ? LOOP_PRESETS.map((v) => ({ label: v, v })) : CRON_PRESETS).map((p) => (
                 <Button key={p.v} size="sm" variant={spec === p.v ? 'default' : 'outline'}
-                  className="h-7 text-[11.5px]" onClick={() => setSpec(p.v)}>
+                  className="tap44 h-7 text-[11.5px]" onClick={() => setSpec(p.v)}>
                   {p.label}
                 </Button>
               ))}
@@ -165,8 +165,8 @@ export function JobsPanel({ jobs, onOpen }: { jobs: Job[]; onOpen?: (sid: string
             </p>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setDlg(null)}>Hủy</Button>
-              <Button size="sm" disabled={busy} onClick={create} data-testid="job-create">
+              <Button variant="outline" size="sm" className="tap44" onClick={() => setDlg(null)}>Hủy</Button>
+              <Button size="sm" className="tap44" disabled={busy} onClick={create} data-testid="job-create">
                 <Plus className="size-3.5" /> Tạo
               </Button>
             </div>

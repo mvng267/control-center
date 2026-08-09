@@ -184,11 +184,11 @@ export function SessionList({
             <div className="flex items-center gap-2 border-b border-border bg-accent/30 px-3 py-2"
               data-testid="bulk-bar">
               <span className="text-[13px] font-medium">Đã chọn {sel.size}</span>
-              <Button variant="outline" size="sm" className="ml-auto h-8 text-[12px]"
+              <Button variant="outline" size="sm" className="tap44 ml-auto h-8 text-[12px]"
                 data-testid="bulk-clear" onClick={() => setSel(new Set())}>
                 Bỏ chọn
               </Button>
-              <Button variant="outline" size="sm" className="h-8 text-[12px] text-status-error"
+              <Button variant="outline" size="sm" className="tap44 h-8 text-[12px] text-status-error"
                 data-testid="bulk-stop"
                 onClick={async () => {
                   const ids = [...sel];
@@ -360,7 +360,7 @@ function RowMenu({ s, onOpen }: { s: Session; onOpen: (sid: string) => void }) {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="ghost" size="icon" className="size-7" title="Thêm"
+          <Button variant="ghost" size="icon" className="tap44 size-7" title="Thêm"
             data-testid="row-menu" onClick={(e) => e.stopPropagation()}>
             <MoreHorizontal className="size-4" />
           </Button>

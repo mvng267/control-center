@@ -93,7 +93,7 @@ export function StatsTab({ sessions }: { sessions: Session[] }) {
     <>
       <PageHeader title="Thống kê" count={d.total} desc="Tổng quan phiên và tin nhắn theo dự án."
         actions={
-          <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={exportJson}
+          <Button variant="outline" size="sm" className="tap44 h-9 gap-1.5" onClick={exportJson}
             data-testid="stats-export">
             <Download className="size-3.5" /> Export
           </Button>

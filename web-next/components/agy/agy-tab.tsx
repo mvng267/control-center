@@ -85,14 +85,14 @@ export function AgyTab() {
           )}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" disabled={!!st.dev || st.running} onClick={() => act('start')}>
+          <Button size="sm" className="tap44" variant="outline" disabled={!!st.dev || st.running} onClick={() => act('start')}>
             <Play className="size-4" /> Start
           </Button>
-          <Button size="sm" variant="outline" disabled={!st.dev} onClick={() => act('stop')}
-            className="text-status-error">
+          <Button size="sm" className="tap44 text-status-error" variant="outline"
+            disabled={!st.dev} onClick={() => act('stop')}>
             <Square className="size-4" /> Stop
           </Button>
-          <Button size="sm" variant="outline" disabled={st.running && !st.dev} onClick={() => act('restart')}>
+          <Button size="sm" className="tap44" variant="outline" disabled={st.running && !st.dev} onClick={() => act('restart')}>
             <RotateCw className="size-4" /> Restart
           </Button>
         </div>
@@ -194,7 +194,7 @@ export function AgyTab() {
         <div className="flex flex-wrap gap-2">
           {(['typecheck', 'test', 'build'] as const).map((n) => (
             <Button key={n} size="sm" variant="outline" disabled={!!st.task}
-              onClick={() => act('run', n)} className="capitalize">
+              onClick={() => act('run', n)} className="tap44 capitalize">
               {n}
             </Button>
           ))}

@@ -153,6 +153,21 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 
 ---
 
+## Chạy test
+
+```bash
+node scripts/verify.js          # cú pháp + thứ tự nạp
+node scripts/dead-buttons.js    # nút bấm không ra gì
+node tests/ui-new.js            # GIAO DIỆN MỚI — 36 mục (server ở 7799)
+NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
+DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục
+node tests/push.js              # Web Push, 19 mục
+```
+
+`tests/ui-new.js` tự đặt/gỡ mã khoá trong lúc chạy và dọn sạch sau đó — nhưng nếu
+nó bị ngắt giữa chừng thì có thể để sót `~/.claude/dashboard-passcode.json`. Xoá
+file đó là gỡ khoá.
+
 ## Cách dùng khi di trú
 
 1. Trước khi bắt đầu: chạy `node e2e-test.js`, lưu output làm mốc.

@@ -56,7 +56,7 @@ export function AgyConfig() {
       <div className="mb-1 flex items-center gap-2">
         <SlidersHorizontal className="size-4 text-muted-foreground" />
         <span className="text-[13px] font-semibold">Cấu hình</span>
-        <Button variant="outline" size="sm" className="ml-auto h-7 text-[12px]"
+        <Button variant="outline" size="sm" className="tap44 ml-auto h-7 text-[12px]"
           data-testid="agy-restart" onClick={restart}>
           <RotateCw className="size-3.5" /> Restart
         </Button>
@@ -77,7 +77,7 @@ export function AgyConfig() {
                   onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
                   onKeyDown={(e) => e.key === 'Enter' && save(f)}
                   className="h-8 flex-1 font-mono text-[16px] md:text-[12.5px]" />
-                <Button size="icon" variant={changed ? 'default' : 'ghost'} className="size-8 shrink-0"
+                <Button size="icon" variant={changed ? 'default' : 'ghost'} className="tap44 size-8 shrink-0"
                   disabled={!changed || saving === f.key} onClick={() => save(f)}
                   data-testid={'save-' + f.key} title="Lưu">
                   <Check className="size-3.5" />

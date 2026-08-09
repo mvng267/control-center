@@ -85,7 +85,7 @@ export function CompareView({
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}>
         <Columns2 className="size-4 text-primary" />
         <span className="flex-1 text-[13px] font-semibold">So sánh 2 phiên</span>
-        <Button variant="ghost" size="icon" className="size-8" onClick={onClose} data-testid="cmp-close">
+        <Button variant="ghost" size="icon" className="tap44 size-8" onClick={onClose} data-testid="cmp-close">
           <X className="size-4" />
         </Button>
       </div>
@@ -104,7 +104,7 @@ export function CompareView({
             <span className="flex-1 text-[13px] font-semibold">
               Chọn phiên cho cột {picking === 'left' ? 'trái' : 'phải'}
             </span>
-            <Button variant="ghost" size="icon" className="size-8" onClick={() => setPicking(null)}>
+            <Button variant="ghost" size="icon" className="tap44 size-8" onClick={() => setPicking(null)}>
               <X className="size-4" />
             </Button>
           </div>

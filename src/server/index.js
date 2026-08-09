@@ -1097,10 +1097,26 @@ function tokenOk(req, url) {
    ĐƯỜNG THOÁT nếu quên mã: xoá ~/.claude/dashboard-passcode.json rồi khởi động lại. */
 const PASS_FILE = path.join(os.homedir(), '.claude', 'dashboard-passcode.json');
 let passState = null;   // { salt, hash, at } | null = chưa đặt mã
-try { passState = JSON.parse(fs.readFileSync(PASS_FILE, 'utf8')); } catch {}
+let passAt = 0;         // lần cuối đọc file, để không đọc đĩa mỗi request
+
+/* Đọc lại file mỗi 2 giây thay vì cache vĩnh viễn trong RAM.
+   Vì sao: đường thoát khi quên mã là "xoá ~/.claude/dashboard-passcode.json", nhưng
+   nếu chỉ đọc một lần lúc khởi động thì xoá xong server VẪN báo còn mã — phải restart
+   mới ăn. Mà lúc đang bị khoá ngoài ý muốn thì restart là việc không phải ai cũng
+   làm được (ví dụ đang ở xa, chỉ có điện thoại). */
+function docPass() {
+  const now = Date.now();
+  if (now - passAt < 2000) return passState;
+  passAt = now;
+  try { passState = JSON.parse(fs.readFileSync(PASS_FILE, 'utf8')); }
+  catch { passState = null; }
+  return passState;
+}
+docPass();
 
 function savePass(st) {
   passState = st;
+  passAt = Date.now();   // vừa ghi -> đừng đọc đè trong 2s tới
   try {
     if (st) fs.writeFileSync(PASS_FILE, JSON.stringify(st, null, 2), { mode: 0o600 });
     else fs.rmSync(PASS_FILE, { force: true });
@@ -1111,7 +1127,7 @@ function hashPass(code, saltHex) {
   return crypto.scryptSync(String(code), Buffer.from(saltHex, 'hex'), 32).toString('hex');
 }
 function passMatch(code) {
-  if (!passState) return false;
+  if (!docPass()) return false;
   const got = Buffer.from(hashPass(code, passState.salt), 'hex');
   const want = Buffer.from(passState.hash, 'hex');
   return got.length === want.length && crypto.timingSafeEqual(got, want);
@@ -1121,7 +1137,7 @@ function passMatch(code) {
 const UNLOCK_TTL = 12 * 3600e3;
 const unlocked = new Map();
 function unlockOk(req) {
-  if (!passState) return true;                 // chưa đặt mã thì không khoá gì
+  if (!docPass()) return true;                 // chưa đặt mã thì không khoá gì
   const raw = String(req.headers.cookie || '');
   const m = raw.match(/(?:^|;\s*)dashUnlock=([\w-]+)/);
   if (!m) return false;
@@ -1205,14 +1221,14 @@ const server = http.createServer(async (req, res) => {
     const ip = (req.socket && req.socket.remoteAddress) || '?';
 
     if (p === '/api/passcode/status') {
-      return json(res, 200, { daDat: !!passState, daMo: unlockOk(req), choGiay: failWait(ip) });
+      return json(res, 200, { daDat: !!docPass(), daMo: unlockOk(req), choGiay: failWait(ip) });
     }
 
     // Đặt / đổi / gỡ mã. Đã có mã thì phải nhập mã cũ mới đổi được.
     if (p === '/api/passcode/set' && req.method === 'POST') {
       let body; try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
       const code = String(body.code == null ? '' : body.code);
-      if (passState && !passMatch(String(body.old || '')) && !unlockOk(req)) {
+      if (docPass() && !passMatch(String(body.old || '')) && !unlockOk(req)) {
         return json(res, 403, { error: 'cần mã hiện tại để đổi' });
       }
       if (!code) {                      // gỡ mã

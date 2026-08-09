@@ -216,8 +216,8 @@ export function DockerTab() {
               chỉ là lần build sau sẽ lâu hơn vì phải tải lại.
             </p>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setHoiDon(false)}>Hủy</Button>
-              <Button size="sm" onClick={don} data-testid="dk-prune-ok">
+              <Button variant="outline" size="sm" className="tap44" onClick={() => setHoiDon(false)}>Hủy</Button>
+              <Button size="sm" className="tap44" onClick={don} data-testid="dk-prune-ok">
                 <Trash2 className="size-3.5" /> Dọn
               </Button>
             </div>

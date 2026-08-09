@@ -68,11 +68,11 @@ export function AgyLog() {
         <span className="text-[13px] font-semibold">Log thời gian thực</span>
         <span className="text-[11.5px] text-muted-foreground">{lines.length} dòng</span>
         <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="size-7" data-testid="log-toggle"
+          <Button variant="ghost" size="icon" className="tap44 size-7" data-testid="log-toggle"
             title={live ? 'Tạm dừng' : 'Chạy tiếp'} onClick={() => setLive((v) => !v)}>
             {live ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
           </Button>
-          <Button variant="ghost" size="icon" className="size-7" title="Xoá màn hình"
+          <Button variant="ghost" size="icon" className="tap44 size-7" title="Xoá màn hình"
             data-testid="log-clear" onClick={() => setLines([])}>
             <Trash2 className="size-3.5" />
           </Button>

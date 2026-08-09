@@ -148,7 +148,7 @@ export function HermesTab() {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="hermes-chat">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-        <Button variant="ghost" size="icon" className="size-8" onClick={() => setOpenId(null)}>
+        <Button variant="ghost" size="icon" className="tap44 size-8" onClick={() => setOpenId(null)}>
           <ArrowLeft className="size-4" />
         </Button>
         <span className="truncate text-[13px] font-medium">{conv ? niceTitle(conv) : ''}</span>
@@ -179,7 +179,7 @@ export function HermesTab() {
           <Input value={text} onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && send()}
             placeholder="Nhắn cho Hermes…" className="h-11 text-[16px]" data-testid="hermes-input" />
-          <Button size="icon" className="size-11 shrink-0" onClick={send} disabled={sending}>
+          <Button size="icon" className="tap44 size-11 shrink-0" onClick={send} disabled={sending}>
             <Send className="size-4" />
           </Button>
         </div>
