@@ -150,6 +150,13 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 100 | Nút bật/tắt thông báo ở header | bấm `notify-toggle` → `data-state` đổi bat/tat | pw |
 | 101 | Bật đúng MỘT đăng ký (không trùng) | bật 1 lần → `.push-state.json` có đúng 1 sub | pw |
 | 102 | Tắt rồi KHÔNG tự bật lại khi focus | tắt → phát sự kiện focus → vẫn 0 sub | pw |
+| 103 | Mức suy nghĩ (--effort) truyền xuống CLI | giao task → `ps -o args=` thấy `--effort` | tay |
+| 104 | Báo cáo agy qua API (không phải SQLite) | tab AGY → thẻ hiện 8.7k request, 33%, p95 | pw |
+| 105 | Cảnh báo khi tỉ lệ thành công thấp | `rp-canhbao` hiện khi okRate < 70% | pw |
+| 106 | Điều khiển agy: 4 lệnh an toàn | đổi rotation → agy xác nhận → gateway VẪN bật | curl |
+| 107 | Chặn lệnh agy nguy hiểm | bulk/check/restart/regenerateKey → từ chối | curl |
+| 108 | Hermes: bảng 12 lệnh bấm chạy được | mở Công cụ → bấm Phiên bản → ra kết quả thật | pw |
+| 109 | Component chuẩn Atlas dùng chung | Segmented vỏ bo 10px, chọn bo 8px cao 25px | pw |
 
 ---
 

@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Send, MessageSquare, Search } from 'lucide-react';
+import { ArrowLeft, Send, MessageSquare, Search, Wrench } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { HermesTools } from './hermes-tools';
 import { toast } from 'sonner';
 
 interface HMsg { role: string; content: string; ts: number }
@@ -54,6 +55,7 @@ export function HermesTab() {
   const [extra, setExtra] = useState<Record<string, HMsg[]>>({});
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [moTools, setMoTools] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setExtra(loadExtra()); }, []);
@@ -107,12 +109,20 @@ export function HermesTab() {
         <PageHeader title="Hermes" count={convs.length}
           desc="Hội thoại của Hermes từ Telegram và CLI, gộp về một chỗ."
           actions={
+            <>
+            <Button variant="outline" size="sm" className="tap44 h-8 text-[12px]"
+              onClick={() => setMoTools(true)} data-testid="hermes-tools-btn">
+              <Wrench className="size-3.5" /> Công cụ
+            </Button>
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input value={q} onChange={(e) => setQ(e.target.value)} data-testid="hermes-search"
                 placeholder="Tìm hội thoại…" className="h-8 w-[180px] pl-8 text-[16px] md:text-[12.5px]" />
             </div>
+            </>
           } />
+
+      {moTools && <HermesTools onClose={() => setMoTools(false)} />}
 
       <div className="mx-auto flex max-w-[1000px] flex-col gap-2 px-4 md:px-6" data-testid="hermes-list">
         {shown.length === 0 && (

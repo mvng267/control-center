@@ -53,6 +53,8 @@ export const COMMANDS: Cmd[] = [
   { id: 'h:tools', label: 'hermes tools', desc: 'Tool bật/tắt theo nền tảng', group: 'Hermes', kind: 'hermes-run', cmd: 'tools' },
   { id: 'h:mcp', label: 'hermes mcp', desc: 'MCP server của Hermes', group: 'Hermes', kind: 'hermes-run', cmd: 'mcp' },
   { id: 'h:insights', label: 'hermes insights', desc: 'Thống kê sử dụng', group: 'Hermes', kind: 'hermes-run', cmd: 'insights' },
+  { id: 'h:version', label: 'hermes version', desc: 'Hermes đang chạy bản nào', group: 'Hermes', kind: 'hermes-run', cmd: 'version' },
+  { id: 'h:config', label: 'hermes config', desc: 'Cấu hình hiện tại', group: 'Hermes', kind: 'hermes-run', cmd: 'config' },
 
   // ---- Dashboard tự làm (gồm cả 4 lệnh CLI chặn ở chế độ -p) ----
   { id: 'ui:export', label: '/export', desc: 'Tải phiên ra .md / .json', group: 'Dashboard', kind: 'ui', needSession: true },
