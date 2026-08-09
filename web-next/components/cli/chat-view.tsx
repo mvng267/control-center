@@ -80,6 +80,14 @@ const dayLabel = (ts: string | null) => {
 export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => void; perm?: string }) {
   const [h, setH] = useState<History | null>(null);
   const [att, setAtt] = useState<Attachment[]>([]);
+  // Thẻ tool nào đang mở — giữ ở ĐÂY chứ không trong từng thẻ, xem chú thích ở
+  // tool-card.tsx. Khoá là tool_use_id nên bền qua mọi lần dựng lại cây.
+  const [openTools, setOpenTools] = useState<Set<string>>(new Set());
+  const toggleTool = (id: string) => setOpenTools((s) => {
+    const n = new Set(s);
+    n.has(id) ? n.delete(id) : n.add(id);
+    return n;
+  });
   const [text, setText] = useState('');
   const slash = useSlash(text, (v) => setText(v));
   // Tin vừa gửi, hiện NGAY trước khi server kịp ghi vào .jsonl. Đo thật: Claude CLI
@@ -203,7 +211,9 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
           const showDay = k && k !== lastDay;
           if (showDay) lastDay = k;
           return (
-            <div key={gi} className="contents">
+            /* key theo nội dung, không theo chỉ số: chỉ số đổi mỗi khi cách gộp
+               nhóm thay đổi -> React dựng lại cả lượt vô cớ. */
+            <div key={(m.ts || '') + ':' + (m.role || '') + ':' + gi} className="contents">
               {showDay && (
                 <div className="my-2 flex items-center gap-2.5" data-testid="day-divider">
                   <span className="h-px flex-1 bg-border" />
@@ -219,7 +229,8 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
                   'max-w-[85%] md:max-w-[76%]')}>
                 {parts.map((p, i) =>
                   p.t === 'tool' ? (
-                    <div key={i} className="w-full"><ToolCard part={p} sid={sid} /></div>
+                    <div key={p.id || i} className="w-full">
+                      <ToolCard part={p} sid={sid} open={openTools.has(p.id)} onToggle={toggleTool} /></div>
                   ) : p.text?.trim() ? (
                     <div key={i} data-testid="bubble"
                       className={cn(

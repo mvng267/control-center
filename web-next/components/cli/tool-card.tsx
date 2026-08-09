@@ -99,8 +99,17 @@ function DiffBlock({ text }: { text: string }) {
   );
 }
 
-export function ToolCard({ part, sid }: { part: ToolPart; sid: string }) {
-  const [open, setOpen] = useState(false);
+/* Trạng thái mở/đóng do CHA giữ, khoá theo tool_use_id.
+   Trước đây để useState ở đây: cứ 700ms poll một lần là React dựng lại cây, state cục
+   bộ mất theo -> đang đọc kết quả lệnh thì thẻ TỰ ĐÓNG sau ~3 giây. Đo được:
+   "vừa bấm mở: true -> sau 3s: false". Bản legacy không dính vì nó không rebuild DOM
+   (reconcileToolStatus ở web/legacy/js/chat.js:555). */
+export function ToolCard({ part, sid, open, onToggle }: {
+  part: ToolPart; sid: string;
+  open: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const setOpen = () => onToggle(part.id);
   const Icon = iconFor(part.name);
   const st = STATUS[part.status] || STATUS.pending;
   const isDiff = part.name === 'Edit' && part.input.startsWith('--- old');
@@ -121,7 +130,7 @@ export function ToolCard({ part, sid }: { part: ToolPart; sid: string }) {
     >
       <button
         data-testid="tool-card-head"
-        onClick={() => { setOpen((o) => !o); navigator.vibrate?.(10); }}
+        onClick={() => { setOpen(); navigator.vibrate?.(10); }}
         aria-expanded={open}
         className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors md:hover:bg-accent/40"
       >
