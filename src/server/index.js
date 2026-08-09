@@ -1081,6 +1081,69 @@ function tokenOk(req, url) {
   return !!(q && q === dashToken);
 }
 
+/* ---------------- mã khoá (passcode) ----------------
+   Token ở trên chặn NGƯỜI TỪ MẠNG (LAN/Tailscale). Nhưng loopback được miễn hoàn
+   toàn, nghĩa là ai cầm chính chiếc máy này mở Chrome vào localhost:7799 là vào
+   thẳng — không rào nào. Passcode bịt đúng chỗ đó: bật rồi thì loopback cũng phải
+   nhập mã.
+
+   Ba điều bắt buộc, thiếu cái nào là passcode thành vô nghĩa:
+   1. scrypt chứ không phải SHA-256 trần — PIN 4 số chỉ có 10.000 khả năng, hash
+      nhanh thì dò xong trong tích tắc.
+   2. timingSafeEqual — so sánh không lộ thời gian.
+   3. Đếm số lần sai + chờ tăng dần — không có thì cứ thử lần lượt 10.000 mã.
+
+   ĐƯỜNG THOÁT nếu quên mã: xoá ~/.claude/dashboard-passcode.json rồi khởi động lại. */
+const PASS_FILE = path.join(os.homedir(), '.claude', 'dashboard-passcode.json');
+let passState = null;   // { salt, hash, at } | null = chưa đặt mã
+try { passState = JSON.parse(fs.readFileSync(PASS_FILE, 'utf8')); } catch {}
+
+function savePass(st) {
+  passState = st;
+  try {
+    if (st) fs.writeFileSync(PASS_FILE, JSON.stringify(st, null, 2), { mode: 0o600 });
+    else fs.rmSync(PASS_FILE, { force: true });
+    return true;
+  } catch { return false; }
+}
+function hashPass(code, saltHex) {
+  return crypto.scryptSync(String(code), Buffer.from(saltHex, 'hex'), 32).toString('hex');
+}
+function passMatch(code) {
+  if (!passState) return false;
+  const got = Buffer.from(hashPass(code, passState.salt), 'hex');
+  const want = Buffer.from(passState.hash, 'hex');
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
+// Phiên đã mở khoá: token ngẫu nhiên -> hạn dùng. Giữ trong RAM, restart là khoá lại.
+const UNLOCK_TTL = 12 * 3600e3;
+const unlocked = new Map();
+function unlockOk(req) {
+  if (!passState) return true;                 // chưa đặt mã thì không khoá gì
+  const raw = String(req.headers.cookie || '');
+  const m = raw.match(/(?:^|;\s*)dashUnlock=([\w-]+)/);
+  if (!m) return false;
+  const exp = unlocked.get(m[1]);
+  if (!exp) return false;
+  if (exp < Date.now()) { unlocked.delete(m[1]); return false; }
+  return true;
+}
+function newUnlock() {
+  const t = crypto.randomBytes(18).toString('base64url');
+  unlocked.set(t, Date.now() + UNLOCK_TTL);
+  return t;
+}
+// Đếm nhập sai theo IP; sai càng nhiều chờ càng lâu (2^n giây, tối đa 5 phút)
+const passFail = new Map();
+function failWait(ip) {
+  const f = passFail.get(ip);
+  if (!f || f.n < 5) return 0;
+  const wait = Math.min(300e3, 1000 * Math.pow(2, f.n - 4));
+  const left = f.at + wait - Date.now();
+  return left > 0 ? Math.ceil(left / 1000) : 0;
+}
+
 /* ---------------- phục vụ giao diện tĩnh ----------------
    Hai giao diện song song trong lúc di trú:
      web-next/out  — bản mới (Next.js + shadcn, kiểu Atlas)
@@ -1132,6 +1195,67 @@ const server = http.createServer(async (req, res) => {
     || p.startsWith('/_next/') || /^\/js\/[a-z-]+\.js$/.test(p);
   if (!isShell && !isLoopback(req) && !tokenOk(req, url)) {
     return json(res, 401, { error: 'cần token truy cập' });
+  }
+
+  /* ---- mã khoá: chặn cả loopback ----
+     Đặt NGAY SAU chốt token và TRƯỚC mọi handler, để chỉ có một chỗ duy nhất quyết
+     định "được vào hay không" — dễ soi lại sau này. */
+  if (p.startsWith('/api/passcode/')) {
+    const ip = (req.socket && req.socket.remoteAddress) || '?';
+
+    if (p === '/api/passcode/status') {
+      return json(res, 200, { daDat: !!passState, daMo: unlockOk(req), choGiay: failWait(ip) });
+    }
+
+    // Đặt / đổi / gỡ mã. Đã có mã thì phải nhập mã cũ mới đổi được.
+    if (p === '/api/passcode/set' && req.method === 'POST') {
+      let body; try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+      const code = String(body.code == null ? '' : body.code);
+      if (passState && !passMatch(String(body.old || '')) && !unlockOk(req)) {
+        return json(res, 403, { error: 'cần mã hiện tại để đổi' });
+      }
+      if (!code) {                      // gỡ mã
+        if (!savePass(null)) return json(res, 500, { error: 'không ghi được file' });
+        return json(res, 200, { ok: true, daDat: false });
+      }
+      if (!/^\d{4,12}$/.test(code)) return json(res, 400, { error: 'mã phải là 4–12 chữ số' });
+      const salt = crypto.randomBytes(16).toString('hex');
+      if (!savePass({ salt, hash: hashPass(code, salt), at: Date.now() })) {
+        return json(res, 500, { error: 'không ghi được file' });
+      }
+      const t = newUnlock();            // đặt xong thì mở khoá luôn, khỏi nhập lại ngay
+      res.setHeader('Set-Cookie', `dashUnlock=${t}; Path=/; Max-Age=${UNLOCK_TTL / 1000}; SameSite=Strict`);
+      return json(res, 200, { ok: true, daDat: true });
+    }
+
+    if (p === '/api/passcode/verify' && req.method === 'POST') {
+      const wait = failWait(ip);
+      if (wait) return json(res, 429, { error: `sai nhiều lần, chờ ${wait} giây` , choGiay: wait });
+      let body; try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+      if (!passMatch(String(body.code || ''))) {
+        const f = passFail.get(ip) || { n: 0, at: 0 };
+        f.n++; f.at = Date.now(); passFail.set(ip, f);
+        return json(res, 401, { error: 'mã không đúng', choGiay: failWait(ip) });
+      }
+      passFail.delete(ip);
+      const t = newUnlock();
+      res.setHeader('Set-Cookie', `dashUnlock=${t}; Path=/; Max-Age=${UNLOCK_TTL / 1000}; SameSite=Strict`);
+      return json(res, 200, { ok: true });
+    }
+
+    if (p === '/api/passcode/lock' && req.method === 'POST') {
+      const m2 = String(req.headers.cookie || '').match(/(?:^|;\s*)dashUnlock=([\w-]+)/);
+      if (m2) unlocked.delete(m2[1]);
+      res.setHeader('Set-Cookie', 'dashUnlock=; Path=/; Max-Age=0; SameSite=Strict');
+      return json(res, 200, { ok: true });
+    }
+    return json(res, 404, { error: 'not found' });
+  }
+
+  // Vỏ app vẫn cho qua (nếu không thì màn nhập mã cũng không hiện được — trang trắng,
+  // đúng bài học từ token gate).
+  if (!isShell && !unlockOk(req)) {
+    return json(res, 423, { error: 'cần mã khoá' });
   }
 
   // Giao diện mới (Next.js, kiểu Atlas) — NEW_UI=0 để quay về bản cũ tức thì

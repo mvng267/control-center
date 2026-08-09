@@ -17,6 +17,7 @@ import { usePwa } from '@/lib/use-pwa';
 import { useSoftKeyboard } from '@/lib/use-soft-keyboard';
 import { CommandPalette } from '@/components/command-palette';
 import { CompareView } from '@/components/cli/compare-view';
+import { PasscodeGate, usePasscode } from '@/components/passcode-gate';
 import { toast } from 'sonner';
 
 export default function Page() {
@@ -24,6 +25,7 @@ export default function Page() {
   const [openSid, setOpenSid] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [comparing, setComparing] = useState(false);
+  const [taoMa, setTaoMa] = useState(false);
   // n tăng mỗi lần bấm để bấm LẠI cùng một lối tắt vẫn áp lại được bộ lọc
   const [quick, setQuick] = useState<{ q: string; n: number }>({ q: '', n: 0 });
 
@@ -62,6 +64,7 @@ export default function Page() {
   };
   const [ready, setReady] = useState(false);
   const { data, offline, unauthorized } = useStream();
+  const pass = usePasscode();
   usePwa();
   useSoftKeyboard();   // bàn phím ảo iPhone che ô nhập — xem lib/use-soft-keyboard.ts
 
@@ -102,7 +105,13 @@ export default function Page() {
       )}
 
       <AppShell tab={tab} onTab={setTab} badges={{ cli: unread }}
-        onQuick={(q) => { setOpenSid(null); setQuick({ q, n: quick.n + 1 }); }}>
+        onQuick={(q) => { setOpenSid(null); setQuick({ q, n: quick.n + 1 }); }}
+        daDatMa={!!pass.st?.daDat}
+        onLock={async () => {
+          if (!pass.st?.daDat) { setTaoMa(true); return; }
+          try { await api('/api/passcode/lock', { method: 'POST', body: '{}' }); } catch {}
+          location.reload();
+        }}>
         {tab === 'cli' && (openSid
           ? <ChatView sid={openSid} onBack={() => setOpenSid(null)} perm={data?.perm} />
           : <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} perm={data?.perm}
@@ -123,6 +132,14 @@ export default function Page() {
       {comparing && (
         <CompareView sessions={data?.sessions || []} initial={openSid}
           onClose={() => setComparing(false)} />
+      )}
+      {/* Đã đặt mã mà chưa mở khoá -> phủ màn khoá lên trên tất cả. Đặt TRƯỚC
+          TokenGate vì mã khoá là lớp trong cùng (chặn cả người cầm máy). */}
+      {pass.st?.daDat && !pass.st.daMo && (
+        <PasscodeGate daDat onDone={() => { pass.reload(); location.reload(); }} />
+      )}
+      {taoMa && !pass.st?.daDat && (
+        <PasscodeGate daDat={false} onDone={() => { setTaoMa(false); pass.reload(); }} />
       )}
       {unauthorized && <TokenGate />}
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} sid={openSid} onUi={onUi} />

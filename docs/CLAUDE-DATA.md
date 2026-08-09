@@ -97,3 +97,24 @@ Tôi đã kiểm tra thực tế trước khi khuyến nghị:
 Repo private cũng không đủ an toàn: lỡ tay đổi sang public là lộ hết, và lịch sử thì không xoá được.
 
 **Cách đúng:** git giữ mã nguồn; dữ liệu cá nhân sao lưu riêng (iCloud, ổ ngoài) sau khi đã loại `.credentials.json` và `dashboard-token.json`.
+
+## Mã khoá dashboard (passcode)
+
+`~/.claude/dashboard-passcode.json` — chỉ chứa `salt` + `hash` (scrypt), **không chứa
+mã thật**. Quyền file `0600`.
+
+Khác token thế nào:
+- **Token** (`dashboard-token.json`) chặn người truy cập **từ mạng** (LAN/Tailscale).
+  Request từ chính máy (loopback) được miễn.
+- **Mã khoá** chặn cả loopback — tức là chặn **người đang cầm chính chiếc máy này**.
+  Bật rồi thì mở Chrome vào `localhost:7799` cũng phải nhập mã.
+
+**QUÊN MÃ THÌ LÀM SAO:**
+```bash
+rm ~/.claude/dashboard-passcode.json
+# rồi khởi động lại server
+```
+Xoá file là gỡ khoá hoàn toàn, không mất dữ liệu gì khác.
+
+Chống dò mã: sai từ 5 lần trở lên thì phải chờ, thời gian chờ tăng gấp đôi mỗi lần
+(tối đa 5 phút). Đếm theo địa chỉ IP, giữ trong RAM nên khởi động lại là xoá.

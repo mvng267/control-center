@@ -2,7 +2,7 @@
 
 import {
   Terminal, MessageSquare, Settings2, PieChart, Sun, Moon,
-  ChevronRight, MoreHorizontal, LifeBuoy, Users,
+  ChevronRight, MoreHorizontal, Lock, ShieldPlus,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
@@ -35,7 +35,7 @@ function ThemeToggle() {
 }
 
 export function AppShell({
-  tab, onTab, badges, crumb, children, onQuick,
+  tab, onTab, badges, crumb, children, onQuick, daDatMa, onLock,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
@@ -43,6 +43,8 @@ export function AppShell({
   crumb?: string;
   children: React.ReactNode;
   onQuick?: (q: string) => void;   // ý định lọc kèm theo lối tắt "Xem nhanh"
+  daDatMa?: boolean;               // đã đặt mã khoá chưa
+  onLock?: () => void;
 }) {
   const active = TABS.find((t) => t.id === tab);
 
@@ -105,13 +107,14 @@ export function AppShell({
 
         {/* chân sidebar */}
         <div className="px-2.5 pb-2">
-          {[{ Icon: Users, label: 'Phiên' }, { Icon: LifeBuoy, label: 'Trợ giúp' }].map(({ Icon, label }) => (
-            <div key={label}
-              className="flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[14px] text-muted-foreground">
-              <Icon className="size-4 shrink-0" />
-              <span className="truncate">{label}</span>
-            </div>
-          ))}
+          {/* Trước đây chỗ này là hai dòng chữ CHẾT ("Phiên", "Trợ giúp") — có icon,
+              trông như nút, bấm không ra gì. Thay bằng nút khoá dùng được thật. */}
+          <button onClick={onLock} data-testid="lock-btn"
+            title={daDatMa ? 'Khoá dashboard ngay' : 'Đặt mã khoá để bảo vệ dashboard'}
+            className="tap44 flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[14px] text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground">
+            {daDatMa ? <Lock className="size-4 shrink-0" /> : <ShieldPlus className="size-4 shrink-0" />}
+            <span className="truncate">{daDatMa ? 'Khoá ngay' : 'Tạo mã khoá'}</span>
+          </button>
         </div>
         <div className="m-2.5 mt-0 flex items-center gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2">
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
