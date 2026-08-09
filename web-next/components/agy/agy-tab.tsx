@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Play, Square, RotateCw, Search, ChevronDown } from 'lucide-react';
+import { Play, Square, RotateCw, Search, ChevronDown, ArrowLeftRight, TriangleAlert, Coins } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { AgyStatus, AgyUsage } from '@/lib/types';
 import { PageHeader } from '@/components/layout/app-shell';
@@ -115,13 +115,13 @@ export function AgyTab() {
             )}
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <StatCard title="Request" sub="24 giờ qua" value={shortNum(usage.reqs)}
+            <StatCard title="Request" sub="request 24h" icon={ArrowLeftRight} value={shortNum(usage.reqs)}
               spark={usage.hours.map((h) => h.n)} tone="primary" dot="primary" testid="agy-reqs" />
-            <StatCard title="Lỗi" sub="tỉ lệ thất bại" value={usage.errs ? shortNum(usage.errs) : '0'}
+            <StatCard title="Lỗi" sub="lỗi" icon={TriangleAlert} value={usage.errs ? shortNum(usage.errs) : '0'}
               delta={errPct} deltaLabel="trên tổng request" tangLaTot={false}
               spark={usage.hours.map((h) => h.e)} tone={errPct >= 20 ? 'error' : 'ok'}
               dot={errPct >= 20 ? 'error' : 'ok'} testid="agy-errs" />
-            <StatCard title="Token" sub="đã dùng" value={shortNum(usage.tokens)}
+            <StatCard title="Token" sub="token đã dùng" icon={Coins} value={shortNum(usage.tokens)}
               deltaLabel={usage.avgMs ? `trễ TB ${(usage.avgMs / 1000).toFixed(1)}s` : undefined}
               tone="primary" testid="agy-tokens" />
           </div>

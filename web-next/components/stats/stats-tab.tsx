@@ -2,10 +2,10 @@
 
 import { useMemo } from 'react';
 import {
-  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, CartesianGrid,
   ResponsiveContainer, Tooltip, Legend,
 } from 'recharts';
-import { Download } from 'lucide-react';
+import { Download, Layers, Activity, Moon, MessageSquare } from 'lucide-react';
 import { PageHeader } from '@/components/layout/app-shell';
 import { StatCard } from '@/components/ui/stat-card';
 import { Card } from '@/components/ui/card';
@@ -100,14 +100,14 @@ export function StatsTab({ sessions }: { sessions: Session[] }) {
         } />
 
       <div className="flex flex-col gap-4 px-4 pb-24 md:px-6 md:pb-6" data-testid="stats-tab">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard title="Tổng phiên" sub="tất cả dự án" value={d.total} spark={d.days}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard title="Tổng phiên" sub="tổng phiên" icon={Layers} value={d.total} spark={d.days}
             delta={d.delta} deltaLabel={d.delta === undefined ? 'tất cả dự án' : 'so với trung bình tuần'} tone="primary" dot="primary" testid="stat-total" />
-          <StatCard title="Đang hoạt động" sub="đang chạy / vừa chạy" value={d.active}
+          <StatCard title="Đang hoạt động" sub="đang hoạt động" icon={Activity} value={d.active}
             spark={d.daysActive} tone="ok" dot={d.active ? 'ok' : 'idle'} testid="stat-active" />
-          <StatCard title="Nghỉ" sub="không hoạt động" value={d.idle} spark={d.daysIdle}
+          <StatCard title="Nghỉ" sub="nghỉ" icon={Moon} value={d.idle} spark={d.daysIdle}
             tone="idle" dot="idle" testid="stat-idle" />
-          <StatCard title="Tin nhắn" sub="tổng cộng" value={d.totalMsgs.toLocaleString('vi-VN')}
+          <StatCard title="Tin nhắn" sub="tin nhắn" icon={MessageSquare} value={d.totalMsgs.toLocaleString('vi-VN')}
             spark={d.daysMsgs} tone="primary" testid="stat-msgs" />
         </div>
 
@@ -149,13 +149,15 @@ export function StatsTab({ sessions }: { sessions: Session[] }) {
             </div>
             <div className="h-[240px]" data-testid="chart-bar">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={d.bars} margin={{ top: 4, right: 4, bottom: 4, left: -18 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <BarChart data={d.bars} margin={{ top: 14, right: 8, bottom: 4, left: 8 }}>
+                  <CartesianGrid strokeDasharray="4 8" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                     axisLine={false} tickLine={false} interval={0} angle={-18} textAnchor="end" height={44} />
-                  <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                  {/* Atlas KHÔNG có trục Y (đo: 0 phần tử .recharts-yAxis). Bỏ đi cho
+                      thoáng, bù lại ghi số ngay trên đỉnh cột nên vẫn đọc được giá trị. */}
                   <Tooltip cursor={{ fill: 'rgba(127,127,127,.12)' }} contentStyle={tooltipStyle} />
-                  <Bar dataKey="msgs" fill="#3b82f6" radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                  <Bar dataKey="msgs" fill="#3b82f6" radius={[6, 6, 0, 0]} isAnimationActive={false}
+                    label={{ position: 'top', fontSize: 10, fill: 'var(--muted-foreground)' }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -173,14 +175,16 @@ export function StatsTab({ sessions }: { sessions: Session[] }) {
             </div>
             <div className="h-[200px]" data-testid="chart-days">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={d.dayRows} margin={{ top: 4, right: 4, bottom: 4, left: -18 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <BarChart data={d.dayRows} margin={{ top: 14, right: 8, bottom: 4, left: 8 }}>
+                  <CartesianGrid strokeDasharray="4 8" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                     axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                  {/* Atlas KHÔNG có trục Y (đo: 0 phần tử .recharts-yAxis). Bỏ đi cho
+                      thoáng, bù lại ghi số ngay trên đỉnh cột nên vẫn đọc được giá trị. */}
                   <Tooltip cursor={{ fill: 'rgba(127,127,127,.12)' }} contentStyle={tooltipStyle} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="phiên" fill="#8b5cf6" radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                  <Bar dataKey="phiên" fill="#8b5cf6" radius={[6, 6, 0, 0]} isAnimationActive={false}
+                    label={{ position: 'top', fontSize: 10, fill: 'var(--muted-foreground)' }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
