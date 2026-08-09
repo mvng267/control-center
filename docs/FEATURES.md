@@ -54,7 +54,7 @@ Playwright (giao diện mới); `tay` nếu phải kiểm thủ công trên máy
 | # | Tính năng | Cách kiểm | Test |
 |---|---|---|---|
 | 31 | Danh sách hội thoại | Mở tab | e2e |
-| 32 | Gửi/nhận tin | Gõ tin → có phản hồi | tay |
+| 32 | Gửi/nhận tin | Gõ tin → có phản hồi | ui-new |
 | 33 | Giữ tin qua F5 (localStorage, 60 tin/hội thoại) | Gửi tin → F5 → vẫn còn | e2e |
 | 34 | Export hội thoại | Bấm nút export | e2e |
 | 35 | Bong bóng `role: tool` (tím, monospace) | Mở hội thoại có tool | tay |
@@ -85,7 +85,7 @@ Playwright (giao diện mới); `tay` nếu phải kiểm thủ công trên máy
 | # | Tính năng | Cách kiểm | Test |
 |---|---|---|---|
 | 47 | **Token truy cập** | Mở từ máy khác không token → hiện màn nhập mã | e2e |
-| 48 | Link `?t=` tự điền + tự dọn URL | Mở link có `?t=` → vào thẳng, URL sạch | tay |
+| 48 | Link `?t=` tự điền + tự dọn URL | Mở link có `?t=` → vào thẳng, URL sạch | ui-new |
 | 49 | Công tắc quyền 4 nấc | Bấm chip → xoay vòng | e2e |
 | 50 | Command palette ⌘K + gõ `/` | Nhấn ⌘K | e2e |
 | 51 | Lịch sử lệnh ↑/↓ | Gõ vài lệnh → nhấn ↑ | e2e |
@@ -99,7 +99,7 @@ Playwright (giao diện mới); `tay` nếu phải kiểm thủ công trên máy
 | 59 | Glass design + 2 theme sáng/tối | Xem giao diện | e2e |
 | 60 | Safe-area iPhone (notch + home indicator) | Xem tab bar dưới | tay |
 | 61 | `/model` toàn cục, `/theme`, `/help`, `/jobs`, `/summary`, `/enhance` | Gõ từng lệnh | tay |
-| 62 | Loop + cron job | `/loop 30s test`, `/schedule` | tay |
+| 62 | Loop + cron job | `/loop 30s test`, `/schedule` | ui-new |
 
 ---
 
@@ -117,7 +117,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 67 | Chế độ quyền 4 nấc **trong khung chat** | Mở phiên → nút khiên ở header | pw |
 | 68 | Nút ảnh nằm cạnh ô nhắn tin | Mở phiên → nhìn trái ô nhập | pw |
 | 69 | Tin của mình hiện ngay (~50ms), không đợi server | Gửi tin, bấm giờ | pw |
-| 70 | Nhịp poll co giãn: 700ms khi chạy, 2s khi rảnh | Xem Network lúc Claude chạy | tay |
+| 70 | Nhịp poll co giãn: 700ms khi chạy, 2s khi rảnh | Xem Network lúc Claude chạy | ui-new |
 | 71 | Thanh việc-đang-làm (TodoWrite mới nhất) | Mở phiên đang chạy có todo | pw |
 | 72 | Gõ `/` trong ô chat → gợi ý lệnh, ↑↓/Tab/Esc | Gõ `/` rồi `/comp` | pw |
 | 73 | Bàn phím ảo iOS không che ô nhập (`--kb`) | iPhone thật: chạm ô nhập | tay |
@@ -141,10 +141,10 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 91 | Mã khoá chặn CẢ loopback | `curl localhost/api/jobs` → 423 khi đã đặt mã | curl |
 | 92 | Mã sai rồi mã đúng vẫn vào được (ô được xoá) | gõ sai → `passcode-dots` về 0 → gõ đúng → vào | pw |
 | 93 | Chống dò mã: sai ≥5 lần phải chờ | 7 lần sai liên tiếp → 429 | curl |
-| 94 | Quên mã: xoá file passcode là mở lại | `rm ~/.claude/dashboard-passcode.json` + restart | tay |
+| 94 | Quên mã: xoá file passcode là mở lại | `rm ~/.claude/dashboard-passcode.json` + restart | ui-new |
 | 95 | Docker: xem/bật/tắt/khởi động lại/log | tab Docker → `dk-row`, bấm `dk-start` | pw |
 | 96 | Docker chặn lệnh nguy hiểm | action rm/kill/exec/run → từ chối; id có `;` → từ chối | curl |
-| 97 | Docker KHÔNG có nút xoá container/volume | không tồn tại testid nào cho xoá | tay |
+| 97 | Docker KHÔNG có nút xoá container/volume | không tồn tại testid nào cho xoá | ui-new |
 | 98 | 5 tab vừa màn 320px | mỗi tab 64px, chữ không tràn | pw |
 | 99 | Việc nền gập lại khi rảnh, tự mở khi có job | `jobs-toggle` | pw |
 | 100 | Nút bật/tắt thông báo ở header | bấm `notify-toggle` → `data-state` đổi bat/tat | pw |
@@ -158,7 +158,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 38 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 40 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục

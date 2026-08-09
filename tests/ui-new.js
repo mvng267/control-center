@@ -16,6 +16,10 @@ const os = require('os');
 
 const URL = process.env.DASH_URL || 'http://localhost:7799/';
 const PASS_FILE = path.join(os.homedir(), '.claude', 'dashboard-passcode.json');
+const TOKEN_FILE = path.join(os.homedir(), '.claude', 'dashboard-token.json');
+const layToken = () => {
+  try { return JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8')).token || ''; } catch { return ''; }
+};
 const PUSH_FILE = path.join(process.cwd(), '.push-state.json');
 
 const results = [];
@@ -408,6 +412,62 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     ok('Claude trả lời thật trong khung chat',
       tClaude > 0, tClaude > 0 ? tClaude + 'ms' : 'không thấy trả lời trong 150s');
 
+    await ctx.close();
+  }
+
+  /* ---- các mục còn ghi "kiểm tay" mà máy làm được ---- */
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await ctx.newPage();
+
+    // 48: link ?t= tự điền token rồi TỰ DỌN khỏi URL (để không lộ token khi chia sẻ link)
+    const tok = layToken();
+    if (tok) {
+      await page.goto(URL + '?t=' + tok, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(1800);
+      const con = await page.evaluate(() => location.search);
+      const luu = await page.evaluate(() => localStorage.getItem('dashToken'));
+      ok('link ?t= tự điền token rồi dọn khỏi URL',
+        !con.includes('t=') && luu === tok, `URL còn "${con}"`);
+    }
+
+    // 70: nhịp poll co giãn — Claude rảnh thì 2s, đang chạy thì 700ms
+    await page.goto(URL, { waitUntil: 'networkidle' });
+    await page.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+    await page.waitForTimeout(1200);
+    const j = await page.evaluate(() => [...document.querySelectorAll('[data-testid=session-row]')]
+      .filter((r) => r.offsetParent)
+      .findIndex((r) => !['RUNNING', 'ACTIVE'].includes(r.dataset.status)));
+    await page.locator('[data-testid=session-row]:visible').nth(Math.max(0, j)).click();
+    await page.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    let lanGoi = 0;
+    page.on('response', (r) => { if (r.url().includes('/api/history/')) lanGoi++; });
+    await page.waitForTimeout(6200);
+    // phiên RẢNH -> nhịp 2s -> trong 6.2s gọi khoảng 3 lần; nhịp 700ms sẽ ra ~9
+    ok('nhịp poll giãn ra 2s khi Claude rảnh (đỡ tốn pin)',
+      lanGoi >= 2 && lanGoi <= 5, `${lanGoi} lần trong 6.2s`);
+
+    // 62: tạo job lặp/cron rồi HUỶ — kiểm cả endpoint xoá (trước đây không có, job chạy mãi)
+    await page.click('[data-testid=chat-back]').catch(() => {});
+    await page.waitForTimeout(1200);
+    const truoc = await page.locator('[data-testid=job-row]').count();
+    await page.click('[data-testid=jobs-toggle]').catch(() => {});
+    await page.waitForTimeout(500);
+    await page.click('[data-testid=job-new-cron]');
+    await page.waitForTimeout(700);
+    await page.fill('[data-testid=job-prompt]', 'kiểm tra tự động');
+    await page.click('[data-testid=job-create]');
+    await page.waitForTimeout(3000);
+    const sauTao = await page.locator('[data-testid=job-row]').count();
+    ok('tạo việc nền (hẹn giờ) qua giao diện', sauTao === truoc + 1, `${truoc} -> ${sauTao}`);
+    if (sauTao > truoc) {
+      await page.locator('[data-testid=job-del]').last().click();
+      await page.waitForTimeout(3000);
+      const sauXoa = await page.locator('[data-testid=job-row]').count();
+      ok('huỷ việc nền (trước đây KHÔNG có cách dừng, phải restart server)',
+        sauXoa === truoc, `${sauTao} -> ${sauXoa}`);
+    }
     await ctx.close();
   }
 
