@@ -660,7 +660,8 @@ function agyLogPush(tag, chunk) {
 let agyDev = null;  // { proc, startedAt } — npm run dev do dashboard spawn
 let agyTask = null; // { name, proc, startedAt } — build/test/typecheck đang chạy (1 lúc 1 cái)
 const agyLast = {}; // name -> { ok, code, at, ms } kết quả lần chạy cuối
-let agyStatusCache = { at: 0, data: null }; // cache 3s — client poll 3s, probe HTTP không dồn dập
+let agyStatusCache = { at: 0, data: null };
+let dockerCache = { at: 0, data: null };   // docker ps chậm ~200ms, client poll 3s // cache 3s — client poll 3s, probe HTTP không dồn dập
 
 function agyPipe(proc, tag) {
   proc.stdout.on('data', d => agyLogPush(tag, d));
@@ -1702,6 +1703,73 @@ const server = http.createServer(async (req, res) => {
         json(res, 200, { ok: true, reply: (stdout || '').trim() || '(hermes không trả output)' });
       });
     return; // response trả trong callback execFile
+  }
+
+  /* ---- DOCKER: xem trạng thái + bật/tắt/khởi động lại ----
+     Theo mẫu AGY_TASKS chứ KHÔNG theo mẫu HERMES_SAFE: client gửi tên hành động,
+     server tra bảng cứng ra tham số. Client không bao giờ truyền cờ tự do — cho
+     truyền là mở đường cho `docker run -v /:/host` tức thoát hẳn ra khỏi máy.
+
+     Không có xoá container/image/volume: volume postgres/neo4j của webapp nằm trong
+     đó, bấm nhầm trên điện thoại là mất dữ liệu thật. Chỉ cho dọn build cache. */
+  if (p.startsWith('/api/docker/')) {
+    const DOCKER_ACTIONS = { start: 'start', stop: 'stop', restart: 'restart' };
+    // id do docker sinh (hoặc tên container), không nối chuỗi bao giờ
+    const okId = (s) => /^[a-zA-Z0-9][\w.-]{0,127}$/.test(String(s || ''));
+    const run = (args, timeout = 15000) => new Promise((resolve) => {
+      execFile('docker', args, { maxBuffer: 4 * 1024 * 1024, timeout, env: process.env },
+        (err, out, errOut) => resolve({ err, out: String(out || ''), errOut: String(errOut || '') }));
+    });
+    // mỗi dòng là một JSON riêng (--format '{{json .}}'), không phải mảng
+    const lines = (s) => String(s).split('\n').filter(Boolean)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+
+    if (p === '/api/docker/ps' && req.method === 'GET') {
+      const now = Date.now();
+      if (dockerCache.at > now - 3000 && dockerCache.data) return json(res, 200, dockerCache.data);
+      const [ps, df] = await Promise.all([
+        run(['ps', '-a', '--format', '{{json .}}']),
+        run(['system', 'df', '--format', '{{json .}}']),
+      ]);
+      if (ps.err) {
+        return json(res, 200, { ok: false, error: /not found|ENOENT/i.test(ps.err.message)
+          ? 'Máy chưa cài Docker' : 'Docker không phản hồi (Docker Desktop đang tắt?)' });
+      }
+      const data = { ok: true, containers: lines(ps.out), df: lines(df.out) };
+      dockerCache = { at: now, data };
+      return json(res, 200, data);
+    }
+
+    if (p === '/api/docker/logs' && req.method === 'GET') {
+      const id = url.searchParams.get('id');
+      if (!okId(id)) return json(res, 400, { error: 'id không hợp lệ' });
+      // --tail BẮT BUỘC: log không giới hạn có thể trả hàng GB, đủ để treo cả server
+      const r = await run(['logs', '--tail', '400', '--timestamps', id], 20000);
+      if (r.err && !r.out && !r.errOut) return json(res, 200, { ok: false, error: 'không đọc được log' });
+      return json(res, 200, { ok: true, log: (r.out + r.errOut).slice(-60000) });
+    }
+
+    if (p === '/api/docker/action' && req.method === 'POST') {
+      let body; try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+      const act = DOCKER_ACTIONS[String(body.action || '')];
+      if (!act) return json(res, 400, { error: 'hành động không được phép' });
+      if (!okId(body.id)) return json(res, 400, { error: 'id không hợp lệ' });
+      const r = await run([act, String(body.id)], 60000);
+      dockerCache = { at: 0, data: null };
+      if (r.err) return json(res, 200, { ok: false, error: (r.errOut || r.err.message).slice(0, 300) });
+      return json(res, 200, { ok: true, out: r.out.trim() });
+    }
+
+    // Dọn build cache — thứ duy nhất được phép xoá, và phải xác nhận rõ ràng
+    if (p === '/api/docker/prune-build' && req.method === 'POST') {
+      let body; try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+      if (body.confirm !== true) return json(res, 400, { error: 'cần xác nhận' });
+      const r = await run(['builder', 'prune', '-af'], 120000);
+      dockerCache = { at: 0, data: null };
+      if (r.err) return json(res, 200, { ok: false, error: (r.errOut || r.err.message).slice(0, 300) });
+      return json(res, 200, { ok: true, out: r.out.trim().slice(-2000) });
+    }
+    return json(res, 404, { error: 'not found' });
   }
 
   // ---- AGY-PROXY: status / log / config / control (gọi CLI, không tự implement proxy) ----

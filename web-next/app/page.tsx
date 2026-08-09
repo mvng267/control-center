@@ -7,6 +7,7 @@ import { AppShell, TABS, type TabId } from '@/components/layout/app-shell';
 import { usePullToRefresh, useSwipeTabs } from '@/lib/use-gestures';
 import { TokenGate } from '@/components/token-gate';
 import { AgyTab } from '@/components/agy/agy-tab';
+import { DockerTab } from '@/components/docker/docker-tab';
 import { StatsTab } from '@/components/stats/stats-tab';
 import { HermesTab } from '@/components/hermes/hermes-tab';
 import { SessionList } from '@/components/cli/session-list';
@@ -34,9 +35,9 @@ export default function Page() {
     const onKey = (e: KeyboardEvent) => {
       const inField = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName || "");
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPaletteOpen(true); return; }
-      if ((e.metaKey || e.ctrlKey) && "1234".includes(e.key)) {
+      if ((e.metaKey || e.ctrlKey) && "12345".includes(e.key)) {
         e.preventDefault();
-        setTab((["cli","hermes","agy","stats"] as TabId[])[+e.key - 1]);
+        setTab((["cli","hermes","agy","docker","stats"] as TabId[])[+e.key - 1]);
         return;
       }
       if (e.key === "Escape" && !inField && openSid) setOpenSid(null);
@@ -118,6 +119,7 @@ export default function Page() {
               onOpen={setOpenSid} quick={quick} />)}
         {tab === 'hermes' && <HermesTab />}
         {tab === 'agy' && <AgyTab />}
+        {tab === 'docker' && <DockerTab />}
         {tab === 'stats' && <StatsTab sessions={data?.sessions || []} />}
       </AppShell>
 

@@ -2,19 +2,20 @@
 
 import {
   Terminal, MessageSquare, Settings2, PieChart, Sun, Moon,
-  ChevronRight, MoreHorizontal, Lock, ShieldPlus,
+  ChevronRight, MoreHorizontal, Lock, ShieldPlus, Container,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-export type TabId = 'cli' | 'hermes' | 'agy' | 'stats';
+export type TabId = 'cli' | 'hermes' | 'agy' | 'docker' | 'stats';
 
 export const TABS: { id: TabId; label: string; short: string; icon: typeof Terminal }[] = [
   { id: 'cli', label: 'Claude', short: 'CLAUDE', icon: Terminal },
   { id: 'hermes', label: 'Hermes', short: 'HERMES', icon: MessageSquare },
   { id: 'agy', label: 'Agy Proxy', short: 'AGY', icon: Settings2 },
+  { id: 'docker', label: 'Docker', short: 'DOCKER', icon: Container },
   { id: 'stats', label: 'Thống kê', short: 'STATS', icon: PieChart },
 ];
 
