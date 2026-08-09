@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Send, Square, Check, Pencil } from 'lucide-react';
+import { ArrowLeft, Send, Square, Check, Pencil, Terminal, Copy, CheckCheck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
 import { Markdown } from './markdown';
@@ -9,6 +9,7 @@ import { ChatToolbar, AttachBar, AttachButton, type Attachment } from './chat-to
 import { PermSwitch } from './perm-switch';
 import { TodoBar } from './todo-bar';
 import { SlashHint, useSlash } from './slash-hint';
+import { ThinkCard } from './think-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -76,6 +77,25 @@ const dayLabel = (ts: string | null) => {
   if (d.toDateString() === y.toDateString()) return 'Hôm qua';
   return d.toLocaleDateString('vi-VN');
 };
+
+/* Chép NGUYÊN cả lượt (chữ + tóm tắt tool). Trước chỉ chép được từng khối code. */
+function CopyTurn({ parts }: { parts: Part[] }) {
+  const [done, setDone] = useState(false);
+  const text = parts.map((p) => p.t === 'tool'
+    ? `[${p.disp}] ${p.summary}` : (p as TextPart).text).filter(Boolean).join('\n\n');
+  if (!text.trim()) return null;
+  return (
+    <button data-testid="copy-turn" title="Chép cả lượt"
+      onClick={() => {
+        navigator.clipboard?.writeText(text).then(() => {
+          setDone(true); setTimeout(() => setDone(false), 1200);
+        }).catch(() => {});
+      }}
+      className="ml-auto shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground">
+      {done ? <CheckCheck className="size-3.5 text-status-ok" /> : <Copy className="size-3.5" />}
+    </button>
+  );
+}
 
 export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => void; perm?: string }) {
   const [h, setH] = useState<History | null>(null);
@@ -223,43 +243,59 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
                   <span className="h-px flex-1 bg-border" />
                 </div>
               )}
-              <div data-testid="msg-wrap" data-role={m.role}
-                className={cn('flex w-full flex-col gap-1.5',
-                  m.role === 'user' ? 'items-end self-end' : 'items-start self-start',
-                  'max-w-[85%] md:max-w-[76%]')}>
+              {/* MỘT KHỐI LƯỢT kiểu Claude CLI: đầu lượt là avatar + tên vai + giờ,
+                  thân lượt thụt vào và có đường dọc bên trái nối các tool cùng lượt —
+                  đúng cách CLI in ra trên terminal. Trước đây bong bóng và thẻ tool
+                  xếp chung một cột dính lề trái (đo được L=16 cho tất cả), không avatar
+                  không nhãn vai, nhìn ra là bảng log chứ không phải hội thoại. */}
+              <div data-testid="msg-wrap" data-role={m.role} className="flex w-full flex-col">
+                <div className="mb-1 flex items-center gap-2">
+                  <span data-testid="msg-avatar" className={cn(
+                    'flex size-[22px] shrink-0 items-center justify-center rounded-full text-[10px] font-semibold',
+                    m.role === 'user'
+                      ? 'bg-primary/15 text-primary'
+                      : 'bg-tool-accent/15 text-tool-accent')}>
+                    {m.role === 'user' ? 'V' : <Terminal className="size-3" />}
+                  </span>
+                  <span data-testid="msg-role" className="text-[12px] font-semibold">
+                    {m.role === 'user' ? 'Vinh' : 'Claude'}
+                  </span>
+                  {m.ts && <span className="text-[10.5px] text-muted-foreground">{clock(m.ts)}</span>}
+                  {m.role === 'assistant' && tools.length > 0 && (
+                    <span className={cn('text-[10.5px]',
+                      tools.some((t) => t.status === 'error') ? 'text-status-error' : 'text-muted-foreground')}>
+                      · {tools.length} tool
+                    </span>
+                  )}
+                  <CopyTurn parts={parts} />
+                </div>
+
+                <div className={cn('flex flex-col gap-1.5 pl-[11px]',
+                  m.role === 'assistant' && 'border-l border-border')}>
+                  <div className="flex flex-col gap-1.5 pl-3">
                 {parts.map((p, i) =>
                   p.t === 'tool' ? (
                     <div key={p.id || i} className="w-full">
                       <ToolCard part={p} sid={sid} open={openTools.has(p.id)} onToggle={toggleTool} /></div>
+                  ) : p.t === 'think' ? (
+                    <ThinkCard key={i} text={p.text} />
                   ) : p.text?.trim() ? (
                     <div key={i} data-testid="bubble"
                       className={cn(
-                        'max-w-full break-words rounded-2xl px-3.5 py-2.5 text-[14px] leading-relaxed',
-                        (m.role === 'user' || p.t === 'think') && 'whitespace-pre-wrap',
+                        'max-w-full break-words rounded-xl px-3.5 py-2.5 text-[14px] leading-relaxed',
                         m.role === 'user'
-                          ? 'rounded-br-md bg-primary text-primary-foreground'
-                          : 'rounded-bl-md border border-border border-l-2 border-l-primary/45 bg-card',
-                        p.t === 'think' && 'border-dashed italic text-muted-foreground',
+                          ? 'self-start whitespace-pre-wrap bg-primary text-primary-foreground'
+                          : 'bg-card/60',
                       )}>
-                      {m.role === 'user' || p.t === 'think'
-                        ? p.text
-                        : <Markdown>{p.text}</Markdown>}
+                      {m.role === 'user' ? p.text : <Markdown>{p.text}</Markdown>}
                     </div>
                   ) : null,
                 )}
-                {m.ts && (
-                  <div className="flex items-center gap-1.5 px-1 text-[10.5px] leading-none text-muted-foreground">
-                    <span>{clock(m.ts)}</span>
-                    {tools.length > 0 && (
-                      <span className={cn(
-                        tools.some((t) => t.status === 'error') ? 'text-status-error'
-                          : tools.some((t) => t.status === 'running') ? 'text-status-run' : '',
-                      )}>
-                        · {tools.length} tool
-                        {tools.some((t) => t.status === 'error')
-                          ? ` · ${tools.filter((t) => t.status === 'error').length} lỗi` : ''}
-                      </span>
-                    )}
+                  </div>
+                </div>
+                {tools.some((t) => t.status === 'error') && (
+                  <div className="mt-1 pl-[26px] text-[10.5px] leading-none text-status-error">
+                    {tools.filter((t) => t.status === 'error').length} tool lỗi
                   </div>
                 )}
               </div>
