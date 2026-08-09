@@ -5,6 +5,7 @@ import { Send, Sparkles, Wand2, Loader2, ShieldCheck, Shield, ShieldAlert, Clipb
 import { api } from '@/lib/api';
 import { PermSwitch } from './perm-switch';
 import { Segmented } from '@/components/ui/segmented';
+import { EffortSwitch } from './effort-switch';
 import { JobsPanel, type Job } from './jobs-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,7 +43,7 @@ const PERM_TOAST: Record<string, string> = {
   bypassPermissions: 'CẨN THẬN: bỏ qua MỌI kiểm tra quyền',
 };
 
-export function TaskBar({ perm, onOpen }: { perm?: string; onOpen: (sid: string) => void }) {
+export function TaskBar({ perm, effort, onOpen }: { perm?: string; effort?: string; onOpen: (sid: string) => void }) {
   const [text, setText] = useState('');
   const [mode, setMode] = useState<string>('');
   const [busy, setBusy] = useState(false);
@@ -131,6 +132,7 @@ export function TaskBar({ perm, onOpen }: { perm?: string; onOpen: (sid: string)
           {/* Công tắc quyền — CÙNG component với khung chat, để hai nơi không lệch
               nhau về nhãn lẫn cách đổi. */}
           <PermSwitch perm={perm} />
+          <EffortSwitch effort={effort} />
         </div>
 
         <div className="flex items-center gap-2">

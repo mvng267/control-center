@@ -36,9 +36,9 @@ type SortKey = 'title' | 'project' | 'msgs' | 'mtimeMs';
 const PAGE = 10;
 
 export function SessionList({
-  sessions, jobs, perm, onOpen, quick,
+  sessions, jobs, perm, effort, onOpen, quick,
 }: {
-  sessions: Session[]; jobs: Job[]; perm?: string;
+  sessions: Session[]; jobs: Job[]; perm?: string; effort?: string;
   onOpen: (sid: string) => void;
   quick?: { q: string; n: number };   // lối tắt "Xem nhanh" ở sidebar
 }) {
@@ -341,7 +341,7 @@ export function SessionList({
           </div>
         </div>
       </div>
-      <TaskBar perm={perm} onOpen={onOpen} />
+      <TaskBar perm={perm} effort={effort} onOpen={onOpen} />
     </div>
   );
 }

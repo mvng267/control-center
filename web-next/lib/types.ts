@@ -27,6 +27,7 @@ export interface StreamData {
   jobs: Job[];
   model: string | null;
   perm: string;
+  effort?: string;   // mức suy nghĩ (--effort), '' = để CLI tự quyết
 }
 
 // ---- agy-proxy ----

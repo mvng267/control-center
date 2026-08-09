@@ -114,8 +114,8 @@ export default function Page() {
           location.reload();
         }}>
         {tab === 'cli' && (openSid
-          ? <ChatView sid={openSid} onBack={() => setOpenSid(null)} perm={data?.perm} />
-          : <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} perm={data?.perm}
+          ? <ChatView sid={openSid} onBack={() => setOpenSid(null)} perm={data?.perm} effort={data?.effort} />
+          : <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} perm={data?.perm} effort={data?.effort}
               onOpen={setOpenSid} quick={quick} />)}
         {tab === 'hermes' && <HermesTab />}
         {tab === 'agy' && <AgyTab />}

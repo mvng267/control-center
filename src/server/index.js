@@ -41,12 +41,26 @@ try {
   const saved = JSON.parse(fs.readFileSync(PERM_FILE, 'utf8'));
   if (PERM_MODES.indexOf(saved.mode) >= 0) permMode = saved.mode;
 } catch {}
-function savePermMode() {
-  try { fs.writeFileSync(PERM_FILE, JSON.stringify({ mode: permMode })); } catch {}
-}
 // Cờ --permission-mode cho mọi lần spawn ('default' = để CLI tự quyết, không truyền cờ)
 function permArgs() {
   return permMode === 'default' ? [] : ['--permission-mode', permMode];
+}
+
+/* Mức suy nghĩ (--effort). CLI nhận low|medium|high|xhigh|max; càng cao Claude càng
+   nghĩ kỹ nhưng càng lâu và tốn token. Dashboard trước đây KHÔNG truyền cờ này, nên
+   dù người dùng có đổi ở terminal thì task giao từ app vẫn chạy mức mặc định.
+   Lưu chung file với chế độ quyền cho gọn. */
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+let effort = '';   // '' = để CLI tự quyết
+try {
+  const saved = JSON.parse(fs.readFileSync(PERM_FILE, 'utf8'));
+  if (EFFORTS.indexOf(saved.effort) >= 0) effort = saved.effort;
+} catch {}
+function effortArgs() {
+  return effort ? ['--effort', effort] : [];
+}
+function saveModes() {
+  try { fs.writeFileSync(PERM_FILE, JSON.stringify({ mode: permMode, effort }, null, 2)); } catch {}
 }
 // Loop/cron jobs: id -> { id, kind: 'loop'|'cron', spec, prompt, runs, lastSid, timer?, lastKey? }
 const jobs = new Map();
@@ -455,7 +469,7 @@ function parseInterval(s) {
 // Chạy 1 lượt của loop/cron job: mỗi lượt là 1 session claude mới
 function runJob(job) {
   const sid = crypto.randomUUID();
-  const args = ['-p', job.prompt, '--session-id', sid].concat(permArgs());
+  const args = ['-p', job.prompt, '--session-id', sid].concat(permArgs(), effortArgs());
   if (currentModel) args.push('--model', currentModel);
   spawnClaude(args, sid, { task: job.prompt, project: '(job:' + job.id + ')' });
   job.runs++;
@@ -1319,7 +1333,7 @@ const server = http.createServer(async (req, res) => {
     });
     const send = () => {
       // payload object: sessions + jobs đang chạy + model hiện tại
-      try { res.write(`data: ${JSON.stringify({ sessions: listSessions(), jobs: listJobs(), model: currentModel, perm: permMode })}\n\n`); } catch {}
+      try { res.write(`data: ${JSON.stringify({ sessions: listSessions(), jobs: listJobs(), model: currentModel, perm: permMode, effort })}\n\n`); } catch {}
     };
     send();
     const iv = setInterval(send, 2000);
@@ -1333,7 +1347,7 @@ const server = http.createServer(async (req, res) => {
     const task = (body.task || '').trim();
     if (!task) return json(res, 400, { error: 'task required' });
     const sid = crypto.randomUUID();
-    const args = ['-p', task, '--session-id', sid].concat(permArgs());
+    const args = ['-p', task, '--session-id', sid].concat(permArgs(), effortArgs());
     if (currentModel) args.push('--model', currentModel); // model đã set qua /model
     spawnClaude(args, sid, { task, project: '(new)' });
     return json(res, 200, { ok: true, sid });
@@ -1347,7 +1361,7 @@ const server = http.createServer(async (req, res) => {
     const msg = (body.message || '').trim();
     if (!msg) return json(res, 400, { error: 'message required' });
     if (procs.has(sid)) return json(res, 409, { error: 'session is busy' });
-    const cargs = ['-p', msg, '--resume', sid].concat(permArgs());
+    const cargs = ['-p', msg, '--resume', sid].concat(permArgs(), effortArgs());
     const mdl = modelFor(sid);              // model riêng phiên > model toàn cục
     if (mdl) cargs.push('--model', mdl);
     spawnClaude(cargs, sid, { task: msg });
@@ -1445,7 +1459,7 @@ const server = http.createServer(async (req, res) => {
       ? 'Duyệt kế hoạch, làm luôn. Lưu ý thêm: ' + note
       : 'Duyệt kế hoạch. Thực hiện đúng như đã trình bày.';
     // ép acceptEdits cho lượt này, bất kể công tắc đang ở chế độ nào — người dùng vừa duyệt rồi
-    const aargs = ['-p', msg, '--resume', sid, '--permission-mode', 'acceptEdits'];
+    const aargs = ['-p', msg, '--resume', sid, '--permission-mode', 'acceptEdits'].concat(effortArgs());
     const amdl = modelFor(sid);
     if (amdl) aargs.push('--model', amdl);
     spawnClaude(aargs, sid, { task: msg });
@@ -1561,13 +1575,25 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ---- chế độ quyền: quyết định Claude có tự sửa file được không ----
+  /* Mức suy nghĩ. Tách route riêng khỏi /api/perm để đổi cái này không vô tình
+     ghi đè cái kia. */
+  if (p === '/api/effort' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const v = String(body.effort || '');
+    if (v && EFFORTS.indexOf(v) < 0) return json(res, 400, { error: 'mức không hợp lệ' });
+    effort = v;              // '' = để CLI tự quyết
+    saveModes();
+    return json(res, 200, { ok: true, effort });
+  }
+
   if (p === '/api/perm' && req.method === 'POST') {
     let body;
     try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
     const mode = String(body.mode || '');
     if (PERM_MODES.indexOf(mode) < 0) return json(res, 400, { error: 'mode không hợp lệ' });
     permMode = mode;
-    savePermMode();
+    saveModes();
     return json(res, 200, { ok: true, mode: permMode });
   }
 
@@ -1686,7 +1712,7 @@ const server = http.createServer(async (req, res) => {
     const cmd = String(body.cmd || '').trim();
     if (!cmd.startsWith('/')) return json(res, 400, { ok: false, error: 'phải là lệnh slash' });
     const cwd = body.sid ? (sessionCwd(String(body.sid)) || os.homedir()) : os.homedir();
-    const args = ['-p', cmd].concat(permArgs());
+    const args = ['-p', cmd].concat(permArgs(), effortArgs());
     execFile('claude', args, { cwd, maxBuffer: 4 * 1024 * 1024, timeout: 60000, env: process.env },
       (err, stdout, stderr) => {
         const out = ((stdout || '') + (stderr || '')).trim();

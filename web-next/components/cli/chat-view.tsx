@@ -7,6 +7,7 @@ import { ToolCard, type ToolPart } from './tool-card';
 import { Markdown } from './markdown';
 import { ChatToolbar, AttachBar, AttachButton, type Attachment } from './chat-toolbar';
 import { PermSwitch } from './perm-switch';
+import { EffortSwitch } from './effort-switch';
 import { TodoBar } from './todo-bar';
 import { SlashHint, useSlash } from './slash-hint';
 import { ThinkCard } from './think-card';
@@ -101,7 +102,7 @@ function CopyTurn({ parts }: { parts: Part[] }) {
   );
 }
 
-export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => void; perm?: string }) {
+export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: () => void; perm?: string; effort?: string }) {
   const [h, setH] = useState<History | null>(null);
   const [att, setAtt] = useState<Attachment[]>([]);
   // Thẻ tool nào đang mở — giữ ở ĐÂY chứ không trong từng thẻ, xem chú thích ở
@@ -244,6 +245,7 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
         {/* Chế độ quyền phải thấy được NGAY TRONG chat: đang nhắn mà không biết Claude
             có tự sửa file được không thì không dám giao việc. */}
         <PermSwitch perm={perm} compact testid="chat-perm" />
+        <EffortSwitch effort={effort} compact />
         <ChatToolbar sid={sid} title={h?.title || ''} model={h?.model ?? null} usage={h?.usage}
           onTitle={(t) => setH((x) => (x ? { ...x, title: t } : x))}
           onModel={(mo) => setH((x) => (x ? { ...x, model: mo } : x))} />
