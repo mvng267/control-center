@@ -27,7 +27,7 @@ Playwright (giao diện mới); `tay` nếu phải kiểm thủ công trên máy
 
 | # | Tính năng | Cách kiểm | Test |
 |---|---|---|---|
-| 10 | Gửi tin, Claude trả lời | Gõ tin → có phản hồi | tay |
+| 10 | Gửi tin, Claude trả lời | `node tests/ui-new.js` (nhắn thật) | ui-new |
 | 11 | **Tool card** đóng/mở | Tap card → mở ra INPUT + KẾT QUẢ | e2e |
 | 12 | Trạng thái tool ✓/✗/đang chạy/ngắt | Xem chip màu ở mỗi card | e2e |
 | 13 | Cập nhật chip tại chỗ khi tool xong | Card đang mở phải **giữ nguyên**, chỉ chip đổi | e2e |
@@ -158,7 +158,8 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 36 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 38 mục (server ở 7799)
+SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục
 node tests/push.js              # Web Push, 19 mục

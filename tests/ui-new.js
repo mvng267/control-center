@@ -364,6 +364,53 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     await ctx.close();
   }
 
+  /* ---- NHẮN THẬT: gửi tin, đợi Claude trả lời ----
+     Đây là luồng dùng hằng ngày, và là thứ e2e cũ không phủ được vì nó chạy trên
+     bản legacy. Gọi Claude THẬT nên chậm (vài giây tới hơn phút) — đặt SKIP_CHAT=1
+     để bỏ qua khi chỉ muốn kiểm nhanh phần giao diện. */
+  if (!process.env.SKIP_CHAT) {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await ctx.newPage();
+    await page.goto(URL, { waitUntil: 'networkidle' });
+    await page.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+    await page.waitForTimeout(1500);
+
+    // chọn phiên KHÔNG chạy, để không chen ngang việc đang làm
+    const i = await page.evaluate(() => [...document.querySelectorAll('[data-testid=session-row]')]
+      .filter((r) => r.offsetParent)
+      .findIndex((r) => !['RUNNING', 'ACTIVE'].includes(r.dataset.status)));
+    await page.locator('[data-testid=session-row]:visible').nth(Math.max(0, i)).click();
+    await page.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+    await page.waitForTimeout(2500);
+
+    const dau = 'ping-' + Math.floor(Math.random() * 9000 + 1000);
+    await page.fill('[data-testid=chat-input]', 'Đáp đúng một từ, không giải thích: ' + dau);
+    const t0 = Date.now();
+    await page.click('[data-testid=chat-send]');
+
+    // tin CỦA MÌNH phải hiện gần như tức thì — trước đây mất ~4s vì đợi server
+    let tMinh = -1;
+    try {
+      await page.waitForFunction((m) => document.body.innerText.includes(m), dau, { timeout: 15000 });
+      tMinh = Date.now() - t0;
+    } catch {}
+    ok('tin của mình hiện ngay (< 1s, không đợi server ghi file)',
+      tMinh >= 0 && tMinh < 1000, tMinh < 0 ? 'không hiện' : tMinh + 'ms');
+
+    // Claude trả lời: dấu hiệu xuất hiện LẦN THỨ HAI (một của mình, một của Claude)
+    let tClaude = -1;
+    try {
+      await page.waitForFunction(
+        (m) => (document.querySelector('[data-testid=chat-bubbles]').innerText.split(m).length - 1) >= 2,
+        dau, { timeout: 150000 });
+      tClaude = Date.now() - t0;
+    } catch {}
+    ok('Claude trả lời thật trong khung chat',
+      tClaude > 0, tClaude > 0 ? tClaude + 'ms' : 'không thấy trả lời trong 150s');
+
+    await ctx.close();
+  }
+
   await browser.close();
   traPasscode();
   const fails = results.filter((r) => !r.pass);
