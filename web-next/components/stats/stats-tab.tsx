@@ -50,6 +50,19 @@ export function StatsTab({ sessions }: { sessions: Session[] }) {
       const to = from + 86400000;
       return sessions.filter((s) => s.mtimeMs >= from && s.mtimeMs < to).length;
     });
+    // Sparkline cho CẢ 4 thẻ, không chỉ thẻ đầu — Atlas thẻ nào cũng có đường xu
+    // hướng, thiếu thì 4 thẻ nhìn so le. Cùng khung 7 ngày, khác bộ lọc.
+    const daySeries = (pick: (s: Session) => boolean, val?: (s: Session) => number) =>
+      Array.from({ length: 7 }, (_, i) => {
+        const from = dayStart(6 - i);
+        const hit = sessions.filter((s) => s.mtimeMs >= from && s.mtimeMs < from + 86400000 && pick(s));
+        return val ? hit.reduce((a, s) => a + val(s), 0) : hit.length;
+      });
+    const isRun = (s: Session) => s.status === 'RUNNING' || s.status === 'ACTIVE';
+    const daysActive = daySeries(isRun);
+    const daysIdle = daySeries((s) => !isRun(s));
+    const daysMsgs = daySeries(() => true, (s) => s.msgs || 0);
+
     const dayRows = days.map((n, i) => ({
       day: new Date(dayStart(6 - i)).toLocaleDateString('vi-VN', { weekday: 'short' }),
       phiên: n,
@@ -62,7 +75,8 @@ export function StatsTab({ sessions }: { sessions: Session[] }) {
     const delta = prevAvg >= 1 ? Math.round(((today - prevAvg) / prevAvg) * 100) : undefined;
 
     const recent = [...sessions].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 6);
-    return { total: sessions.length, active, idle, totalMsgs, donut, bars, days, dayRows, delta, recent };
+    return { total: sessions.length, active, idle, totalMsgs, donut, bars, days,
+      daysActive, daysIdle, daysMsgs, dayRows, delta, recent };
   }, [sessions]);
 
   const exportJson = () => {
@@ -90,11 +104,11 @@ export function StatsTab({ sessions }: { sessions: Session[] }) {
           <StatCard title="Tổng phiên" sub="tất cả dự án" value={d.total} spark={d.days}
             delta={d.delta} deltaLabel={d.delta === undefined ? 'tất cả dự án' : 'so với trung bình tuần'} tone="primary" dot="primary" testid="stat-total" />
           <StatCard title="Đang hoạt động" sub="đang chạy / vừa chạy" value={d.active}
-            tone="ok" dot={d.active ? 'ok' : 'idle'} testid="stat-active" />
-          <StatCard title="Nghỉ" sub="không hoạt động" value={d.idle} tone="idle" dot="idle"
-            testid="stat-idle" />
+            spark={d.daysActive} tone="ok" dot={d.active ? 'ok' : 'idle'} testid="stat-active" />
+          <StatCard title="Nghỉ" sub="không hoạt động" value={d.idle} spark={d.daysIdle}
+            tone="idle" dot="idle" testid="stat-idle" />
           <StatCard title="Tin nhắn" sub="tổng cộng" value={d.totalMsgs.toLocaleString('vi-VN')}
-            tone="primary" testid="stat-msgs" />
+            spark={d.daysMsgs} tone="primary" testid="stat-msgs" />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">

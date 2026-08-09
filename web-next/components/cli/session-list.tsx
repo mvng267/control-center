@@ -46,6 +46,8 @@ export function SessionList({
   const [proj, setProj] = useState('');
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: 'mtimeMs', dir: -1 });
   const [page, setPage] = useState(0);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [perPage, setPerPage] = useState(PAGE);
   const [stat, setStat] = useState('');       // lọc theo trạng thái ('' = tất cả)
 
   // Bấm "Phiên đang chạy" ở sidebar -> áp bộ lọc luôn. Phụ thuộc quick.n (không phải
@@ -81,9 +83,9 @@ export function SessionList({
     return out;
   }, [sessions, q, proj, stat, sort]);
 
-  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  const pages = Math.max(1, Math.ceil(rows.length / perPage));
   const cur = Math.min(page, pages - 1);
-  const view = rows.slice(cur * PAGE, cur * PAGE + PAGE);
+  const view = rows.slice(cur * perPage, cur * perPage + perPage);
 
   const th = (k: SortKey, label: string, cls?: string) => (
     <th className={cn('h-11 px-3 text-left align-middle font-medium text-muted-foreground', cls)}>
@@ -173,10 +175,47 @@ export function SessionList({
           <JobsPanel jobs={jobs} onOpen={onOpen} />
 
           {/* bảng — desktop */}
+          {/* Chọn xong phải LÀM ĐƯỢC gì đó, không thì checkbox chỉ để trang trí.
+              Dừng hàng loạt các phiên đang chạy — việc duy nhất hợp lý ở đây, vì
+              dashboard KHÔNG được xoá .jsonl (đó là dữ liệu gốc của Claude CLI). */}
+          {sel.size > 0 && (
+            <div className="flex items-center gap-2 border-b border-border bg-accent/30 px-3 py-2"
+              data-testid="bulk-bar">
+              <span className="text-[13px] font-medium">Đã chọn {sel.size}</span>
+              <Button variant="outline" size="sm" className="ml-auto h-8 text-[12px]"
+                data-testid="bulk-clear" onClick={() => setSel(new Set())}>
+                Bỏ chọn
+              </Button>
+              <Button variant="outline" size="sm" className="h-8 text-[12px] text-status-error"
+                data-testid="bulk-stop"
+                onClick={async () => {
+                  const ids = [...sel];
+                  const rs = await Promise.all(ids.map((id) =>
+                    api('/api/kill/' + id, { method: 'POST' }).then(() => true).catch(() => false)));
+                  const n = rs.filter(Boolean).length;
+                  setSel(new Set());
+                  toast(n ? `Đã dừng ${n} phiên` : 'Không phiên nào đang chạy');
+                }}>
+                <Square className="size-3.5" /> Dừng
+              </Button>
+            </div>
+          )}
+
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-[14px]">
               <thead className="border-b border-border">
                 <tr>
+                  {/* Chọn hàng loạt như Atlas — bấm ô đầu chọn/bỏ cả trang hiện tại */}
+                  <th className="h-11 w-10 px-3 align-middle">
+                    <input type="checkbox" data-testid="sel-all"
+                      className="size-4 cursor-pointer accent-primary align-middle"
+                      checked={view.length > 0 && view.every((s) => sel.has(s.sid))}
+                      onChange={(e) => {
+                        const next = new Set(sel);
+                        view.forEach((s) => (e.target.checked ? next.add(s.sid) : next.delete(s.sid)));
+                        setSel(next);
+                      }} />
+                  </th>
                   {th('title', 'Phiên')}
                   {th('project', 'Dự án')}
                   <th className="h-11 px-3 text-left align-middle text-[14px] font-medium text-muted-foreground">
@@ -194,6 +233,16 @@ export function SessionList({
                     <tr key={s.sid} data-testid="session-row" data-sid={s.sid} data-status={s.status}
                       onClick={() => onOpen(s.sid)}
                       className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-accent/40">
+                      <td className="w-10 px-3 align-middle" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" data-testid="sel-row"
+                          className="size-4 cursor-pointer accent-primary align-middle"
+                          checked={sel.has(s.sid)}
+                          onChange={(e) => {
+                            const next = new Set(sel);
+                            e.target.checked ? next.add(s.sid) : next.delete(s.sid);
+                            setSel(next);
+                          }} />
+                      </td>
                       <td className="h-[57px] px-3 align-middle">
                         <div className="flex items-center gap-2">
                           <span className="truncate font-medium" data-testid="session-title" title={s.sid}>
@@ -263,6 +312,14 @@ export function SessionList({
 
           {/* phân trang */}
           <div className="flex items-center justify-between gap-2 border-t border-border p-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] text-muted-foreground">Dòng mỗi trang</span>
+              <select value={perPage} data-testid="per-page"
+                onChange={(e) => { setPerPage(+e.target.value); setPage(0); }}
+                className="h-8 rounded-lg border border-border bg-card px-2 text-[13px]">
+                {[10, 25, 50].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
             <span className="text-[13px] text-muted-foreground" data-testid="pagination-info">
               {rows.length ? `${cur * PAGE + 1} – ${Math.min((cur + 1) * PAGE, rows.length)} / ${rows.length}` : '0'}
             </span>
