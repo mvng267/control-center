@@ -7,6 +7,7 @@ import type { AgyStatus, AgyUsage } from '@/lib/types';
 import { PageHeader } from '@/components/layout/app-shell';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
+import { RankList } from '@/components/ui/rank-list';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -136,20 +137,15 @@ export function AgyTab() {
           {/* biểu đồ cột theo giờ: đỏ chồng trên xanh */}
           <HourBars hours={usage.hours} />
 
-          <div className="mt-3 flex flex-col gap-1.5">
-            {usage.models.map((m) => {
-              const max = Math.max(1, ...usage.models.map((x) => x.n));
-              return (
-                <div key={m.model} className="relative overflow-hidden rounded-lg bg-muted/40">
-                  <div className="absolute inset-y-0 left-0 bg-primary/15" style={{ width: `${(m.n / max) * 100}%` }} />
-                  <div className="relative flex items-center gap-2 px-2.5 py-1.5 text-[12px]">
-                    <span className="min-w-0 flex-1 truncate font-mono">{m.model}</span>
-                    <span className="shrink-0 text-[11.5px] text-muted-foreground">{m.n}</span>
-                    {!!m.e && <span className="shrink-0 text-[11px] text-status-error">{m.e} lỗi</span>}
-                  </div>
-                </div>
-              );
-            })}
+          {/* Dùng RankList chuẩn Atlas: thanh mảnh 6px dưới nhãn, không tô nền cả
+              hàng rồi đặt chữ đè lên (chữ nằm trên nền loang lổ, khó đọc). */}
+          <div className="mt-3">
+            <RankList mono testid="agy-model-rank"
+              rows={usage.models.map((m) => ({
+                label: m.model,
+                value: m.n,
+                sub: m.e ? `${m.e} lỗi` : undefined,
+              }))} />
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-2.5">

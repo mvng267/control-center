@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Send, Sparkles, Wand2, Loader2, ShieldCheck, Shield, ShieldAlert, ClipboardList } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PermSwitch } from './perm-switch';
+import { Segmented } from '@/components/ui/segmented';
 import { JobsPanel, type Job } from './jobs-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -120,18 +121,12 @@ export function TaskBar({ perm, onOpen }: { perm?: string; onOpen: (sid: string)
       data-testid="task-bar">
       <div className="mx-auto flex max-w-[1000px] flex-col gap-2">
         <div className="flex items-center gap-2">
-          {/* chế độ */}
-          <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-lg border border-border p-0.5"
-            style={{ scrollbarWidth: 'none' }} data-testid="mode-seg">
-            {MODES.map((m) => (
-              <button key={m.id} onClick={() => setMode(m.id)} data-active={mode === m.id}
-                className={cn(
-                  'tap44 shrink-0 rounded-md px-2.5 py-1 text-[12.5px] transition-colors',
-                  mode === m.id ? 'bg-primary text-primary-foreground font-medium' : 'text-muted-foreground',
-                )}>
-                {m.label}
-              </button>
-            ))}
+          {/* Chế độ — dùng Segmented dùng chung (đúng mẫu Atlas). Trước đây tự vẽ
+              với nền xanh đậm bo 6px chữ 12.5px, lệch hẳn mẫu và lệch cả các chỗ
+              chọn dải khác trong app. */}
+          <div className="min-w-0 flex-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            <Segmented items={MODES} value={mode as (typeof MODES)[number]['id']}
+              onChange={(v) => setMode(v)} testid="mode-seg" size="sm" />
           </div>
           {/* Công tắc quyền — CÙNG component với khung chat, để hai nơi không lệch
               nhau về nhãn lẫn cách đổi. */}
