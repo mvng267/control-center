@@ -10,8 +10,10 @@
     "test:push": "node tests/push.js",
     "test:kb": "node tests/keyboard.js",
     "test:safearea": "node tests/safearea.js",
-    "test:all": "npm run test && npm run test:push",
+    "test:ui": "node tests/ui-new.js",
+    "test:all": "node scripts/test-all.js",
     "verify": "node scripts/verify.js",
+    "buttons": "node scripts/dead-buttons.js",
     "procs": "node scripts/check-procs.js",
     "bench": "node scripts/bench.js",
     "setup": "npm i --no-save playwright-core"

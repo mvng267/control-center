@@ -1,0 +1,102 @@
+#!/usr/bin/env node
+/* Chạy TẤT CẢ bộ test, mỗi bộ trong đúng môi trường của nó.
+
+   Vì sao cần script này thay vì nối `npm run a && npm run b`:
+   tests/e2e.js viết cho giao diện CŨ (tìm #sidenav, #bubbles…), còn tests/ui-new.js
+   viết cho giao diện MỚI. Chạy nhầm chỗ thì e2e treo 3 giây mỗi selector rồi ném
+   TimeoutError — nhìn như code hỏng trong khi chỉ là chạy sai môi trường.
+
+   Nên: tự bật hai server ở hai cổng riêng (bản cũ NEW_UI=0, bản mới mặc định),
+   chạy đúng bộ vào đúng cổng, xong thì tắt cả hai. Không đụng server 7799 mà Vinh
+   đang dùng.
+*/
+const { spawn, execFile } = require('child_process');
+const path = require('path');
+const http = require('http');
+
+const ROOT = path.join(__dirname, '..');
+const CONG_CU = 7896;   // bản cũ (NEW_UI=0)
+const CONG_MOI = 7897;  // bản mới
+
+const cho = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function batServer(cong, moi) {
+  const env = { ...process.env, PORT: String(cong) };
+  if (!moi) env.NEW_UI = '0';
+  const p = spawn('node', [path.join(ROOT, 'src/server/index.js')],
+    { cwd: ROOT, env, stdio: 'ignore' });
+  p.unref();
+  return p;
+}
+
+function doiSan(cong, hetHan = 15000) {
+  const den = Date.now() + hetHan;
+  return new Promise((ok, hong) => {
+    const thu = () => {
+      const req = http.get({ host: '127.0.0.1', port: cong, path: '/', timeout: 1500 }, (res) => {
+        res.resume(); ok();
+      });
+      req.on('error', () => (Date.now() > den ? hong(new Error('server ' + cong + ' không lên')) : setTimeout(thu, 400)));
+      req.on('timeout', () => { req.destroy(); });
+    };
+    thu();
+  });
+}
+
+function chay(nhan, file, env) {
+  return new Promise((done) => {
+    execFile('node', [path.join(ROOT, file)],
+      { cwd: ROOT, env: { ...process.env, ...env }, maxBuffer: 8e6, timeout: 600000 },
+      (err, out, errOut) => {
+        const txt = String(out) + String(errOut);
+        // Hai kiểu báo kết quả: bộ test in "N/N PASS", còn verify/dead-buttons chỉ
+        // in một câu rồi dựa vào MÃ THOÁT. Nhận cả hai, đừng bắt mỗi một kiểu.
+        const m = txt.match(/(\d+)\/(\d+)\s*PASS/i);
+        const cauCuoi = txt.trim().split('\n').filter(Boolean).pop() || '';
+        const ket = m ? `${m[1]}/${m[2]}` : (err ? 'HỎNG' : cauCuoi.slice(0, 34));
+        const dat = m ? (!err && m[1] === m[2]) : !err;
+        console.log(`  ${dat ? 'OK  ' : 'HỎNG'}  ${nhan.padEnd(22)} ${ket}`);
+        if (!dat) {
+          const cuoi = txt.trim().split('\n').filter((l) => /FAIL|Error|error/.test(l)).slice(0, 4);
+          cuoi.forEach((l) => console.log('        ' + l.slice(0, 110)));
+          // Vài bài đòi DỮ LIỆU THẬT phải có sẵn, không phải lỗi code. Nói rõ ra để
+          // lần sau không mất công đi tìm bug không tồn tại.
+          if (/agy lưu lượng/.test(txt) && /"reqs":"0"/.test(txt)) {
+            console.log('        ^ agy-proxy chưa có request nào trong 24h -> không có gì để vẽ.');
+            console.log('          Đây là do MÔI TRƯỜNG, không phải lỗi code.');
+          }
+        }
+        done(dat);
+      });
+  });
+}
+
+(async () => {
+  console.log('Chạy toàn bộ test — mỗi bộ ở đúng môi trường của nó\n');
+  const ket = [];
+
+  ket.push(await chay('cú pháp', 'scripts/verify.js', {}));
+
+  const sCu = batServer(CONG_CU, false);
+  const sMoi = batServer(CONG_MOI, true);
+  const donDep = () => { try { sCu.kill(); } catch {} try { sMoi.kill(); } catch {} };
+  process.on('exit', donDep);
+  process.on('SIGINT', () => { donDep(); process.exit(130); });
+
+  try {
+    await Promise.all([doiSan(CONG_CU), doiSan(CONG_MOI)]);
+    await cho(800);
+
+    ket.push(await chay('rà nút chết', 'scripts/dead-buttons.js', { DASH_URL: `http://localhost:${CONG_MOI}/` }));
+    ket.push(await chay('giao diện cũ (e2e)', 'tests/e2e.js', { DASH_URL: `http://localhost:${CONG_CU}/` }));
+    ket.push(await chay('Web Push', 'tests/push.js', { DASH_URL: `http://localhost:${CONG_CU}/` }));
+    ket.push(await chay('giao diện mới', 'tests/ui-new.js',
+      { DASH_URL: `http://localhost:${CONG_MOI}/`, ...(process.env.SKIP_CHAT ? {} : {}) }));
+  } finally {
+    donDep();
+  }
+
+  const hong = ket.filter((x) => !x).length;
+  console.log(hong ? `\n${hong} bộ HỎNG` : '\nTất cả đều đạt');
+  process.exit(hong ? 1 : 0);
+})();
