@@ -1888,6 +1888,36 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  // Chiến lược xoay hiện tại — /api/agy/status đọc SQLite nên không có thông tin này
+  if (p === '/api/agy/rotation' && req.method === 'GET') {
+    const r = await agyApi('/api/gateway/config');
+    return json(res, 200, r.ok
+      ? { ok: true, rotation: r.data.rotation, enabled: r.data.enabled }
+      : { ok: false, error: r.error });
+  }
+
+  // Tải CSV — proxy qua server để token không bao giờ ra client
+  if (p === '/api/agy/export.csv' && req.method === 'GET') {
+    const range = ['7d', '30d', '90d'].includes(url.searchParams.get('range') || '')
+      ? url.searchParams.get('range') : '7d';
+    const token = await agyToken();
+    if (!token) return json(res, 200, { ok: false, error: 'chưa có CLI token' });
+    const port = await agyPort();
+    try {
+      const r = await fetch('http://127.0.0.1:' + port + '/api/gateway/usage/export.csv?range=' + range, {
+        headers: { authorization: 'Basic ' + Buffer.from(':' + token).toString('base64') },
+        signal: AbortSignal.timeout(60000),
+      });
+      if (!r.ok) return json(res, 200, { ok: false, error: 'agy trả lỗi ' + r.status });
+      const csv = await r.text();
+      res.writeHead(200, {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="agy-' + range + '.csv"',
+      });
+      return res.end(csv);
+    } catch { return json(res, 200, { ok: false, error: 'không tải được CSV' }); }
+  }
+
   if (p === '/api/agy/quota-history' && req.method === 'GET') {
     const range = ['1d', '7d', '30d', '90d'].includes(url.searchParams.get('range') || '')
       ? url.searchParams.get('range') : '7d';

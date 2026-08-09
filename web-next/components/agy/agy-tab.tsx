@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AgyLog } from './agy-log';
+import { AgyReport } from './agy-report';
+import { AgyControl } from './agy-control';
 import { AgyConfig } from './agy-config';
 import { cn } from '@/lib/utils';
 
@@ -255,6 +257,12 @@ export function AgyTab() {
           )}
         </div>
       </Card>
+
+      {/* Báo cáo lấy qua API chính thức — nhiều số liệu hơn hẳn phần đọc SQLite ở
+          trên (có tỉ lệ thành công, độ trễ p95, phân rã theo API key). */}
+      <AgyReport />
+
+      <AgyControl />
 
       {/* Log + cấu hình: hai cột trên màn rộng, xếp dọc trên điện thoại */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
