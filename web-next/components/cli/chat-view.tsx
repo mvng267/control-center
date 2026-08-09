@@ -10,6 +10,7 @@ import { PermSwitch } from './perm-switch';
 import { TodoBar } from './todo-bar';
 import { SlashHint, useSlash } from './slash-hint';
 import { ThinkCard } from './think-card';
+import { NoteLine, type NotePart } from './note-line';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,9 +20,9 @@ import { toast } from 'sonner';
 
 type TextPart = { t: 'text'; text: string };
 type ThinkPart = { t: 'think'; text: string };
-type Part = TextPart | ThinkPart | ToolPart;
+type Part = TextPart | ThinkPart | ToolPart | NotePart;
 
-interface Msg { role: string; content: string; ts: string | null; parts?: Part[]; n?: number }
+interface Msg { role: string; content: string; ts: string | null; parts?: Part[]; n?: number; sub?: boolean }
 interface Usage { turns: number; inTok: number; outTok: number; cacheRead: number; cacheWrite: number }
 interface History {
   messages: Msg[]; total: number; start: number; typing: boolean; status: string;
@@ -50,7 +51,10 @@ function groupMessages(msgs: Msg[]): Msg[] {
   for (const m of msgs) {
     const prev = out[out.length - 1];
     const near = prev?.ts && m.ts && Math.abs(Date.parse(m.ts) - Date.parse(prev.ts)) < GROUP_GAP_MS;
-    if (prev && prev.role === 'assistant' && m.role === 'assistant' && near) {
+    // Không gộp qua dòng system (hook lỗi / mốc compact) và không trộn lượt của
+    // subagent với lượt chính — gộp vào là mất luôn ranh giới.
+    if (prev && prev.role === 'assistant' && m.role === 'assistant' && near
+        && !prev.sub === !m.sub) {
       prev.parts = mergeTextParts([...(prev.parts || [{ t: 'text', text: prev.content }]),
         ...(m.parts || [{ t: 'text', text: m.content }])]);
       prev.content = (prev.content ? prev.content + '\n' : '') + (m.content || '');
@@ -276,6 +280,13 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
                   đúng cách CLI in ra trên terminal. Trước đây bong bóng và thẻ tool
                   xếp chung một cột dính lề trái (đo được L=16 cho tất cả), không avatar
                   không nhãn vai, nhìn ra là bảng log chứ không phải hội thoại. */}
+              {m.role === 'system' ? (
+                /* Dòng ghi chú của hệ thống: không có "người nói" nên bỏ avatar,
+                   vẽ trần giữa dòng chat cho khỏi giả vờ là một lượt hội thoại. */
+                <div data-testid="msg-wrap" data-role="system" className="flex w-full flex-col gap-1">
+                  {parts.map((p, i) => p.t === 'note' ? <NoteLine key={i} part={p} /> : null)}
+                </div>
+              ) : (
               <div data-testid="msg-wrap" data-role={m.role} className="flex w-full flex-col">
                 <div className="mb-1 flex items-center gap-2">
                   <span data-testid="msg-avatar" className={cn(
@@ -289,6 +300,12 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
                     {m.role === 'user' ? 'Vinh' : 'Claude'}
                   </span>
                   {m.ts && <span className="text-[10.5px] text-muted-foreground">{clock(m.ts)}</span>}
+                  {m.sub && (
+                    <span data-testid="msg-sub"
+                      className="shrink-0 rounded border border-tool-accent/35 px-1.5 text-[9.5px] font-medium text-tool-accent">
+                      Subagent
+                    </span>
+                  )}
                   {m.role === 'assistant' && tools.length > 0 && (
                     <span className={cn('text-[10.5px]',
                       tools.some((t) => t.status === 'error') ? 'text-status-error' : 'text-muted-foreground')}>
@@ -305,6 +322,8 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
                   p.t === 'tool' ? (
                     <div key={p.id || i} className="w-full">
                       <ToolCard part={p} sid={sid} open={openTools.has(p.id)} onToggle={toggleTool} /></div>
+                  ) : p.t === 'note' ? (
+                    <NoteLine key={i} part={p} />
                   ) : p.t === 'think' ? (
                     <ThinkCard key={i} text={p.text} />
                   ) : p.text?.trim() ? (
@@ -327,6 +346,7 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
                   </div>
                 )}
               </div>
+              )}
             </div>
           );
         })}

@@ -84,6 +84,47 @@ function parseSessionFile(file) {
     let obj;
     try { obj = JSON.parse(line); } catch { continue; }
     if (obj.type === 'ai-title') { if (obj.aiTitle) aiTitle = obj.aiTitle; continue; }
+
+    /* Các dòng dưới đây TRƯỚC ĐÂY BỊ BỎ HẾT bởi một câu `continue`. Đếm trên 180 file
+       .jsonl thật: 11.881 hook chạy LỖI, 4.023 dòng subagent, 16 lỗi API (có cả 401
+       hết hạn đăng nhập), 7 mốc /compact — không thứ nào hiện ra trên dashboard, nên
+       phiên tự dưng đứt đoạn hoặc im lặng hỏng mà không biết vì sao. */
+
+    // Hook chạy lỗi: giữ lại để hiện; hook chạy OK thì bỏ (nhiều nghìn dòng, chỉ gây nhiễu)
+    if (obj.type === 'attachment' && obj.attachment && obj.attachment.hookName) {
+      const a = obj.attachment;
+      if (a.exitCode) {
+        msgs.push({
+          role: 'system', text: '', ts: obj.timestamp || null,
+          parts: [{
+            t: 'note', kind: 'hook-error',
+            title: 'Hook lỗi: ' + a.hookName,
+            body: clampText(String(a.stderr || a.stdout || '').trim(), 600),
+          }],
+        });
+      }
+      continue;
+    }
+
+    // Mốc /compact: hội thoại bị dọn ngữ cảnh ở đây, không phải tự dưng mất tin
+    if (obj.type === 'system' && obj.subtype === 'compact_boundary') {
+      msgs.push({
+        role: 'system', text: '', ts: obj.timestamp || null,
+        parts: [{ t: 'note', kind: 'compact', title: 'Đã dọn ngữ cảnh tại đây', body: '' }],
+      });
+      continue;
+    }
+
+    // Lỗi từ phía API (401 hết hạn đăng nhập, quá tải…) — trước đây im lặng hoàn toàn
+    if (obj.type === 'system' && (obj.subtype === 'api_error' || obj.level === 'error')) {
+      const em = (obj.error && obj.error.message) || obj.content || '';
+      msgs.push({
+        role: 'system', text: '', ts: obj.timestamp || null,
+        parts: [{ t: 'note', kind: 'api-error', title: 'Lỗi từ máy chủ Claude', body: clampText(String(em).trim(), 400) }],
+      });
+      continue;
+    }
+
     if (obj.type !== 'user' && obj.type !== 'assistant') continue;
     // token đã dùng: CLI ghi sẵn usage mỗi lượt assistant -> cộng dồn, khỏi gọi /cost
     const u = obj.message && obj.message.usage;
@@ -151,7 +192,10 @@ function parseSessionFile(file) {
       const t = text.trim();
       if (t[0] !== '/' && t.indexOf('<') !== 0) firstUser = t;
     }
-    msgs.push({ role: obj.type, text, ts: obj.timestamp || null, parts });
+    // isSidechain = lượt của subagent (Task/Agent), không phải hội thoại chính.
+    // 4.023 dòng trên máy này. Không đánh dấu thì lời của subagent trộn lẫn vào
+    // lời Claude, đọc không hiểu ai đang nói.
+    msgs.push({ role: obj.type, text, ts: obj.timestamp || null, parts, sub: !!obj.isSidechain });
   }
   // tsMs: timestamp (ms) từng message — precompute 1 lần để đếm unread không tốn Date.parse mỗi tick
   // title: ai-title của Claude CLI; chưa có thì lấy câu đầu của user (cắt gọn)
