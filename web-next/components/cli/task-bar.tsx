@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Send, Sparkles, ShieldCheck, Shield, ShieldAlert, ClipboardList } from 'lucide-react';
+import { Send, Sparkles, Wand2, Loader2, ShieldCheck, Shield, ShieldAlert, ClipboardList } from 'lucide-react';
 import { api } from '@/lib/api';
+import { PermSwitch } from './perm-switch';
+import { JobsPanel, type Job } from './jobs-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -78,7 +81,38 @@ export function TaskBar({ perm, onOpen }: { perm?: string; onOpen: (sid: string)
     setBusy(false);
   };
 
-  const cur = PERMS.find((p) => p.id === permMode) || PERMS[0];
+  // Làm đẹp câu lệnh: gửi câu thô, Claude viết lại thành prompt rõ ràng hơn.
+  // Chạy nền (oneshot) nên phải hỏi lại kết quả; server giữ 10 phút.
+  const [enhancing, setEnhancing] = useState(false);
+  const enhance = async () => {
+    const v = text.trim();
+    if (!v) return;
+    setEnhancing(true);
+    try {
+      const r = await api<{ ok?: boolean; id?: string; error?: string }>('/api/enhance', {
+        method: 'POST', body: JSON.stringify({ text: v }),
+      });
+      if (!r.ok || !r.id) { toast.error(r.error || 'Không gọi được'); return; }
+      for (let i = 0; i < 40; i++) {
+        await new Promise((s) => setTimeout(s, 1500));
+        const o = await api<{ status: string; output: string }>('/api/oneshot/' + r.id).catch(() => null);
+        if (!o || o.status === 'running') continue;
+        if (o.status === 'done' && o.output.trim()) {
+          // Claude hay bọc prompt trong rào ``` — bóc ra, không thì gửi đi
+          // nguyên cả dấu rào.
+          const clean = o.output.trim()
+            .replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/, '').trim();
+          setText(clean);
+          toast.success('Đã viết lại — xem rồi bấm gửi');
+          navigator.vibrate?.(12);
+        } else toast.error('Viết lại thất bại');
+        return;
+      }
+      toast.error('Chờ quá lâu, thử lại sau');
+    } catch { toast.error('Lỗi mạng'); }
+    finally { setEnhancing(false); }
+  };
+
 
   return (
     <div className="shrink-0 border-t border-border bg-card/40 px-3 py-3"
@@ -99,20 +133,35 @@ export function TaskBar({ perm, onOpen }: { perm?: string; onOpen: (sid: string)
               </button>
             ))}
           </div>
-          {/* công tắc quyền */}
-          <button onClick={cyclePerm} data-testid="perm-btn" data-perm={permMode}
-            title={'Quyền của Claude: ' + cur.label + ' — bấm để đổi'}
-            className={cn('flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 text-[12.5px] transition-colors',
-              cur.cls)}>
-            <cur.Icon className="size-3.5" />
-            <span className="hidden sm:inline">{cur.label}</span>
-          </button>
+          {/* Công tắc quyền — CÙNG component với khung chat, để hai nơi không lệch
+              nhau về nhãn lẫn cách đổi. */}
+          <PermSwitch perm={perm} />
         </div>
 
         <div className="flex items-center gap-2">
-          <Input value={text} onChange={(e) => setText(e.target.value)} data-testid="task-input"
-            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && submit()}
-            placeholder="Giao task mới cho Claude…" className="h-11 text-[16px]" />
+          {/* Textarea chứ không phải input 1 dòng: sau khi bấm "làm đẹp câu lệnh",
+              prompt trả về dài vài nghìn ký tự nhiều đoạn — ô 1 dòng thì không đọc
+              nổi. Tự giãn theo nội dung, tối đa ~40% màn rồi mới cuộn.
+              Enter gửi, Shift+Enter xuống dòng. */}
+          <Textarea value={text} onChange={(e) => setText(e.target.value)} data-testid="task-input"
+            rows={1}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault(); submit();
+              }
+            }}
+            ref={(el) => {
+              if (!el) return;
+              el.style.height = 'auto';
+              el.style.height = Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.4)) + 'px';
+            }}
+            placeholder="Giao task mới cho Claude…"
+            className="max-h-[40dvh] min-h-11 resize-none py-2.5 text-[16px]" />
+          <Button size="icon" variant="ghost" className="size-11 shrink-0" onClick={enhance}
+            disabled={enhancing || !text.trim()} data-testid="enhance-btn"
+            title="Nhờ Claude viết lại câu lệnh cho rõ ràng hơn">
+            {enhancing ? <Loader2 className="size-[18px] animate-spin" /> : <Wand2 className="size-[18px]" />}
+          </Button>
           <Button size="icon" className="size-11 shrink-0" onClick={submit} disabled={busy || !text.trim()}
             data-testid="task-send" title="Giao task">
             {busy ? <Sparkles className="size-4 animate-pulse" /> : <Send className="size-4" />}

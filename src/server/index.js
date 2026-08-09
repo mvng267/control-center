@@ -1440,6 +1440,18 @@ const server = http.createServer(async (req, res) => {
 
   // ---- danh sách / dừng jobs ----
   if (p === '/api/jobs' && req.method === 'GET') return json(res, 200, { jobs: listJobs() });
+
+  // ---- huỷ việc nền ----
+  // TRƯỚC ĐÂY KHÔNG CÓ: tạo /loop xong là nó chạy mãi, muốn dừng phải restart server
+  // (mất luôn mọi job khác). Job kiểu loop giữ timer của setInterval nên phải
+  // clearInterval, chỉ xoá khỏi Map thì timer vẫn nổ và vẫn spawn claude.
+  if ((m = p.match(/^\/api\/jobs\/([\w-]+)$/)) && req.method === 'DELETE') {
+    const job = jobs.get(m[1]);
+    if (!job) return json(res, 404, { error: 'không có job này' });
+    if (job.timer) clearInterval(job.timer);
+    jobs.delete(m[1]);
+    return json(res, 200, { ok: true, id: m[1] });
+  }
   if ((m = p.match(/^\/api\/jobs\/stop\/([\w-]+)$/)) && req.method === 'POST') {
     const job = jobs.get(m[1]);
     if (!job) return json(res, 404, { error: 'job không tồn tại' });

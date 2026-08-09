@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { TaskBar } from './task-bar';
+import { JobsPanel } from './jobs-panel';
 
 function ago(ms: number) {
   const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
@@ -165,13 +166,11 @@ export function SessionList({
               <option value="">Tất cả dự án</option>
               {projects.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
-            {jobs.length > 0 && (
-              <span className="shrink-0 rounded-lg border border-border px-2.5 py-1.5 text-[12px]"
-                data-testid="jobs-bar">
-                <b className="text-primary">{jobs.length}</b> job đang chạy
-              </span>
-            )}
           </div>
+
+          {/* Việc nền: tạo/xem/huỷ ngay tại đây. Trước chỉ có một nhãn đếm số job,
+              bấm không được và không có cách nào huỷ. */}
+          <JobsPanel jobs={jobs} onOpen={onOpen} />
 
           {/* bảng — desktop */}
           <div className="hidden overflow-x-auto md:block">

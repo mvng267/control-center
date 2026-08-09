@@ -11,6 +11,7 @@ import { TodoBar } from './todo-bar';
 import { SlashHint, useSlash } from './slash-hint';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -296,12 +297,23 @@ export function ChatView({ sid, onBack, perm }: { sid: string; onBack: () => voi
           {/* Nút ảnh nằm CẠNH ô nhắn tin, không phải trên header: đính ảnh là một
               phần của việc soạn tin, để tít trên cùng thì tay phải với. */}
           <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])} />
-          <Input value={text} onChange={(e) => setText(e.target.value)} data-testid="chat-input"
+          {/* Textarea: dán đoạn dài / viết nhiều dòng vẫn đọc được.
+              Enter gửi, Shift+Enter xuống dòng. */}
+          <Textarea value={text} onChange={(e) => setText(e.target.value)} data-testid="chat-input"
+            rows={1}
             onKeyDown={(e) => {
               if (slash.onKeyDown(e)) return;   // ↑↓ chọn, Tab/Enter điền, Esc đóng
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) send();
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault(); send();
+              }
             }}
-            placeholder="Tiếp tục cuộc trò chuyện…" className="h-11 text-[16px]" />
+            ref={(el) => {
+              if (!el) return;
+              el.style.height = 'auto';
+              el.style.height = Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.35)) + 'px';
+            }}
+            placeholder="Tiếp tục cuộc trò chuyện…"
+            className="max-h-[35dvh] min-h-11 resize-none py-2.5 text-[16px]" />
           <Button size="icon" className="size-11 shrink-0" onClick={send}
             disabled={!text.trim() && !att.length} data-testid="chat-send">
             <Send className="size-4" />
