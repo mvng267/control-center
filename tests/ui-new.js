@@ -42,6 +42,17 @@ function traPasscode() {
   } catch {}
 }
 
+/* Trả mã KỂ CẢ KHI CHẾT GIỮA CHỪNG. Trước đây traPasscode chỉ chạy ở cuối hàm main,
+   nên hễ bộ này ném lỗi (Playwright timeout chẳng hạn) là file mã do chính nó tạo
+   nằm lại trong ~/.claude — LẦN CHẠY SAU của e2e gặp màn khoá và fail 423 hàng loạt.
+   Mất cả buổi tưởng e2e hỏng, thật ra là rác của ui-new để lại. */
+let daTra = false;
+const traMotLan = () => { if (!daTra) { daTra = true; traPasscode(); } };
+process.on('exit', traMotLan);
+process.on('uncaughtException', (e) => { traMotLan(); console.error(e); process.exit(1); });
+process.on('unhandledRejection', (e) => { traMotLan(); console.error(e); process.exit(1); });
+process.on('SIGINT', () => { traMotLan(); process.exit(130); });
+
 const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
 
 (async () => {
@@ -128,7 +139,11 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     } else {
       const card = page.locator('[data-testid=tool-card]').first();
       const tid = await card.getAttribute('data-tid');
-      await card.click();
+      /* Bấm đúng NÚT, đừng bấm giữa thẻ. Bản viết lại tách nút gập thành một hàng
+         cao 21px, còn cả thẻ cao 85px vì có sẵn dòng ⎿ kết quả bên dưới — bấm giữa
+         thẻ là trượt xuống vùng kết quả, không toggle gì cả. Đo được: bấm giữa thẻ
+         -> data-open vẫn false; bấm vào nút -> true. */
+      await page.locator('[data-testid=tool-card-head]').first().click();
       await page.waitForTimeout(500);
       const mo1 = await card.getAttribute('data-open');
       // 8s > nhiều vòng poll (700ms khi chạy / 2s khi rảnh)
@@ -138,23 +153,43 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         `mở=${mo1} sau 8s=${mo2}`);
     }
 
-    // Chat kiểu CLI: có avatar + nhãn vai, thẻ tool THỤT LỀ so với bong bóng
+    /* Bản chép phải TRÔNG như terminal, không phải khung chat của app:
+       - phông chữ đều (monospace) cho cả khối
+       - ký tự đánh dấu ⏺ / ⎿ / > đúng như Claude CLI in ra
+       - KHÔNG bong bóng bo tròn, KHÔNG nền màu cho câu chữ
+       Bản trước có avatar tròn + nhãn "Claude"/"Vinh" + bong bóng nền xanh; terminal
+       không có thứ nào trong đó nên đây là chỗ sai rõ nhất. */
     const cli = await page.evaluate(() => {
       const box = document.querySelector('[data-testid=chat-bubbles]');
-      const L = (s) => {
-        const e = box.querySelector(s);
-        return e ? Math.round(e.getBoundingClientRect().left - box.getBoundingClientRect().left) : -1;
-      };
+      const chu = getComputedStyle(box).fontFamily.toLowerCase();
+      const noiDung = box.innerText;
+      const bb = box.querySelector('[data-testid=bubble]');
+      const st = bb ? getComputedStyle(bb) : null;
       return {
-        avatar: box.querySelectorAll('[data-testid=msg-avatar]').length,
-        vai: box.querySelectorAll('[data-testid=msg-role]').length,
-        Lbubble: L('[data-testid=bubble]'),
-        Ltool: L('[data-testid=tool-card]'),
+        mono: /mono|consol|menlo|courier|ui-monospace/.test(chu),
+        chamTron: (noiDung.match(/⏺/g) || []).length,
+        ngoac: (noiDung.match(/⎿/g) || []).length,
+        avatarCu: box.querySelectorAll('[data-testid=msg-avatar]').length,
+        vaiCu: box.querySelectorAll('[data-testid=msg-role]').length,
+        // bong bóng cũ bo 12px + nền đặc; kiểu CLI thì không bo, nền trong suốt
+        bo: st ? parseFloat(st.borderRadius) : -1,
+        nen: st ? st.backgroundColor : '',
       };
     });
-    ok('chat kiểu CLI: có avatar + nhãn vai', cli.avatar > 0 && cli.vai > 0, JSON.stringify(cli));
-    ok('nội dung thụt lề (không dính lề trái như bảng log)',
-      cli.Lbubble > 20 || cli.Ltool > 20, `bubble L=${cli.Lbubble} tool L=${cli.Ltool}`);
+    ok('bản chép dùng phông chữ đều như terminal', cli.mono, JSON.stringify(cli).slice(0, 120));
+    /* ⎿ chỉ có khi phiên CÓ tool. Phiên nào đứng đầu danh sách là tuỳ máy, gặp phiên
+       chỉ toàn câu chữ thì đòi ⎿ là bắt lỗi môi trường chứ không phải lỗi code
+       (đã dính: ⏺=1 ⎿=0 ở một phiên không có tool nào). */
+    ok('có ký tự đánh dấu ⏺ như Claude CLI', cli.chamTron > 0, `⏺=${cli.chamTron}`);
+    if (n) {
+      ok('có ký tự ⎿ cho dòng kết quả tool', cli.ngoac > 0, `⎿=${cli.ngoac} (${n} tool)`);
+    } else {
+      ok('có ký tự ⎿ cho dòng kết quả tool', true, 'bỏ qua: phiên không có tool');
+    }
+    ok('KHÔNG còn avatar tròn / nhãn vai (terminal không có)',
+      cli.avatarCu === 0 && cli.vaiCu === 0, `avatar=${cli.avatarCu} vai=${cli.vaiCu}`);
+    ok('câu chữ không nằm trong bong bóng bo tròn có nền',
+      cli.bo <= 0 && /rgba\(0, 0, 0, 0\)|transparent/.test(cli.nen), `bo=${cli.bo} nền=${cli.nen}`);
 
     await ctx.close();
   }
@@ -210,16 +245,25 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     ok('chưa đặt mã: vào thẳng, không có màn khoá',
       (await page.locator('[data-testid=passcode-gate]').count()) === 0);
 
-    // đặt mã qua giao diện (2 bước: nhập + xác nhận)
+    /* Đặt mã qua giao diện: 2 bước (nhập rồi xác nhận).
+       CHỜ THEO TRẠNG THÁI, đừng ngủ cố định. Bản cũ chờ 600ms giữa hai bước; máy bận
+       (đang chạy song song server + bộ test khác) thì màn chưa kịp chuyển sang bước
+       xác nhận, 4 phím của lần hai rơi tiếp vào ô bước một -> mã thành 8 số, bấm xong
+       vẫn ở bước một, gate không tắt. Cả loạt test sau đó đứng sau màn khoá rồi chết
+       vì "passcode-gate intercepts pointer events" — nhìn như hỏng chỗ khác. */
     await page.click('[data-testid=lock-btn]');
-    await page.waitForTimeout(700);
+    await page.waitForSelector('[data-testid=passcode-gate]', { timeout: 15000 });
     const MA = ['9', '1', '7', '3'];
     for (const k of MA) await page.click(`[data-testid=key-${k}]`);
     await page.click('[data-testid=passcode-submit]');
-    await page.waitForTimeout(600);
+    // bước 2 hiện ra thì chữ trên màn đổi thành "Nhập lại mã vừa tạo"
+    await page.waitForFunction(
+      () => /Nhập lại mã/.test(document.querySelector('[data-testid=passcode-gate]')?.innerText || ''),
+      null, { timeout: 15000 });
     for (const k of MA) await page.click(`[data-testid=key-${k}]`);
     await page.click('[data-testid=passcode-submit]');
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('[data-testid=passcode-gate]', { state: 'detached', timeout: 15000 })
+      .catch(() => {});
     ok('tạo mã qua giao diện (nhập 2 lần)',
       (await page.locator('[data-testid=passcode-gate]').count()) === 0
       && fs.existsSync(PASS_FILE));
@@ -421,8 +465,13 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     const page = await ctx.newPage();
 
     /* Bảng chọn khi Claude hỏi: bấm lựa chọn rồi "Gửi lựa chọn" phải GỬI THẬT vào
-       phiên. Chèn part hỏi vào lượt assistant cuối — thẻ chỉ vẽ trong lượt assistant
-       vì Claude mới là bên hỏi. */
+       phiên.
+
+       DỰNG HẲN danh sách tin, không chèn vào lịch sử thật. Bản trước chèn part hỏi
+       vào lượt assistant CUỐI của phiên đang chạy — nhưng phiên đó vẫn đang chạy nên
+       nội dung đổi liên tục: hễ tin cuối là của người dùng thì thẻ hỏi không còn nằm
+       ở lượt cuối, `daTraLoi` bật lên và mọi nút bị disabled. Test treo 30 giây rồi
+       ném TimeoutError, nhìn như code hỏng trong khi chỉ là dữ liệu đã trôi. */
     {
       const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const pg = await cx.newPage();
@@ -430,18 +479,18 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.route('**/api/history/**', async (r) => {
         const res = await r.fetch();
         const j = await res.json();
-        const ms = j.messages || [];
-        for (let i = ms.length - 1; i >= 0; i--) {
-          if (ms[i].role === 'assistant') {
-            (ms[i].parts = ms[i].parts || []).push({
-              t: 'tool', name: 'AskUserQuestion', id: 't-ask', disp: 'AskUserQuestion',
-              summary: '', input: '', status: 'ok', result: '', images: [],
-              hoi: [{ hoi: 'Thu bang chon?', nhan: 'Pham vi', nhieu: false,
-                chon: [{ nhan: 'Lua chon A', mo: 'mo ta a' }, { nhan: 'Lua chon B', mo: 'mo ta b' }] }],
-            });
-            break;
-          }
-        }
+        const t0 = Date.now();
+        const gio = (s) => new Date(t0 + s * 1000).toISOString();
+        j.awaiting = false;
+        j.messages = [
+          { role: 'user', content: 'lam giup tao viec nay', ts: gio(0) },
+          { role: 'assistant', content: '', ts: gio(1), parts: [{
+            t: 'tool', name: 'AskUserQuestion', id: 't-ask', disp: 'AskUserQuestion',
+            summary: '', input: '', status: 'ok', result: '', images: [],
+            hoi: [{ hoi: 'Thu bang chon?', nhan: 'Pham vi', nhieu: false,
+              chon: [{ nhan: 'Lua chon A', mo: 'mo ta a' }, { nhan: 'Lua chon B', mo: 'mo ta b' }] }],
+          }] },
+        ];
         await r.fulfill({ response: res, json: j });
       });
       // Chặn gửi thật: test không được làm bẩn phiên đang dùng, nhưng vẫn xem được
@@ -597,27 +646,47 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.goto(URL, { waitUntil: 'networkidle' });
       await pg.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
       await pg.waitForTimeout(1200);
-      const hang = pg.locator('[data-testid=session-row]:visible').first();
-      const sidThu = await hang.getAttribute('data-sid');
-      await hang.click();
-      await pg.waitForSelector('[data-testid=chat-input]', { timeout: 20000 });
 
-      /* KHÔNG gõ sẵn "chat-view": phiên đứng đầu danh sách là phiên nào tuỳ máy, thư
-         mục của nó có thể chẳng có file tên như vậy -> test hỏng vì môi trường chứ
-         không phải vì code (đã dính đúng bẫy này: nó bấm vào phiên 7e31e9e3).
-         Hỏi server lấy một file CÓ THẬT trong thư mục của chính phiên đó rồi mới gõ. */
-      const thuc = await pg.evaluate(async (sid) => {
-        const r = await fetch('/api/files?sid=' + encodeURIComponent(sid) + '&q=',
-          { headers: { 'X-Dash-Token': localStorage.getItem('dashToken') || '' } });
-        const j = await r.json().catch(() => ({}));
-        return (j.files || [])[0] || '';
-      }, sidThu);
+      /* CHỌN PHIÊN CÓ THƯ MỤC THẬT, đừng lấy phiên đầu danh sách.
+         Hai lần đã hỏng vì chỗ này: lần đầu nó bấm trúng phiên 7e31e9e3 (thư mục
+         agy-proxy, không có file tên "chat-view"); lần sau trúng e2e00000-... là
+         PHIÊN GIẢ do chính bộ e2e dựng ra, không có thư mục nào cả.
+         Hỏi thẳng server từng phiên cho tới khi gặp phiên phân giải được thư mục. */
+      const sids = await pg.$$eval('[data-testid=session-row]',
+        (rs) => rs.filter((r) => r.offsetParent).map((r) => r.dataset.sid).slice(0, 10));
+      /* Giữ lại MÃ HTTP của lần hỏi đầu. Có lần cả 10 phiên đều "không phân giải
+         được thư mục" mà thật ra server trả 423 (màn khoá còn bật do bộ test trước
+         chết giữa chừng) — nuốt mất mã lỗi thì lần sau lại đi mò từ đầu. */
+      const dodac = await pg.evaluate(async (ds) => {
+        let ma = 0;
+        for (const sid of ds) {
+          const r = await fetch('/api/files?sid=' + encodeURIComponent(sid) + '&q=');
+          if (!ma) ma = r.status;
+          const j = await r.json().catch(() => ({}));
+          if ((j.files || []).length) return { ma, sid, file: j.files[0], root: j.root };
+        }
+        return { ma };
+      }, sids);
+      const chon = dodac.file ? dodac : null;
+
+      const sidThu = chon ? chon.sid : sids[0];
+      await pg.locator(`[data-testid=session-row][data-sid="${sidThu}"]:visible`).first().click();
+      await pg.waitForSelector('[data-testid=chat-input]', { timeout: 20000 });
+      const thuc = chon ? chon.file : '';
       const ten = thuc.slice(thuc.lastIndexOf('/') + 1);
       const gocTen = ten.slice(0, Math.max(3, ten.indexOf('.') > 0 ? ten.indexOf('.') : ten.length));
 
       if (!thuc) {
-        ok('go "@" -> hien goi y duong dan file', false,
-          'phien ' + sidThu + ' khong phan giai duoc thu muc -> khong co gi de goi y | ' + veFile);
+        /* Không phiên nào phân giải được thư mục. Nếu server trả 200 thì đúng là máy
+           này thiếu dữ liệu -> bỏ qua. Còn trả mã khác (423 màn khoá, 401 thiếu
+           token) thì đó là HỎNG THẬT, không được im lặng cho qua. */
+        const laMoiTruong = dodac.ma === 200;
+        ok('go "@" -> hien goi y duong dan file', laMoiTruong,
+          laMoiTruong
+            ? 'bo qua: ' + sids.length + ' phien deu khong phan giai duoc thu muc'
+            : 'server tra HTTP ' + dodac.ma + ' cho /api/files');
+        ok('Esc dong bang goi y "@"', true, 'bo qua: nhu tren');
+        ok('sau Esc, go "@" MOI van mo lai duoc goi y', true, 'bo qua: nhu tren');
       } else {
         await pg.locator('[data-testid=chat-input]').click();
         await pg.locator('[data-testid=chat-input]').type('sua @' + gocTen, { delay: 30 });
@@ -636,30 +705,31 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
           ok('chon goi y -> dien duong dan vao o nhap, giu nguyen chu da go',
             val.indexOf('@' + file) >= 0 && val.startsWith('sua '), JSON.stringify(val));
         }
+
+        /* Esc đóng gợi ý, nhưng gõ "@" MỚI phải mở lại được.
+           Lỗi đã gặp: chỉ mở lại khi chuỗi hết sạch "@", nên sau một lần Esc là câm
+           luôn tới cuối câu. */
+        await pg.locator('[data-testid=chat-input]').fill('');
+        await pg.locator('[data-testid=chat-input]').type('@' + gocTen, { delay: 30 });
+        await pg.waitForSelector('[data-testid=mention-item]', { timeout: 15000 }).catch(() => {});
+        await pg.keyboard.press('Escape');
+        await pg.waitForTimeout(400);
+        const sauEsc = await pg.locator('[data-testid=mention-item]').count();
+        ok('Esc dong bang goi y "@"', sauEsc === 0, sauEsc + ' goi y');
+
+        await pg.locator('[data-testid=chat-input]').type(' roi @' + gocTen, { delay: 30 });
+        await pg.waitForSelector('[data-testid=mention-item]', { timeout: 15000 }).catch(() => {});
+        const moLai = await pg.locator('[data-testid=mention-item]').count();
+        ok('sau Esc, go "@" MOI van mo lai duoc goi y', moLai > 0, moLai + ' goi y');
       }
 
-      // "@" trong email KHÔNG được kích hoạt gợi ý
+      // "@" trong email KHÔNG được kích hoạt gợi ý — chạy được kể cả khi không có
+      // thư mục nào, vì phép này chỉ cần "KHÔNG hiện gì".
       await pg.locator('[data-testid=chat-input]').fill('');
       await pg.locator('[data-testid=chat-input]').type('gui cho a@b', { delay: 30 });
       await pg.waitForTimeout(900);
       const emailGoiY = await pg.locator('[data-testid=mention-item]').count();
       ok('"@" giua email khong kich hoat goi y', emailGoiY === 0, emailGoiY + ' goi y');
-
-      /* Esc đóng gợi ý, nhưng gõ "@" MỚI phải mở lại được.
-         Lỗi đã gặp: chỉ mở lại khi chuỗi hết sạch "@", nên sau một lần Esc là câm
-         luôn tới cuối câu. */
-      await pg.locator('[data-testid=chat-input]').fill('');
-      await pg.locator('[data-testid=chat-input]').type('@' + gocTen, { delay: 30 });
-      await pg.waitForSelector('[data-testid=mention-item]', { timeout: 15000 }).catch(() => {});
-      await pg.keyboard.press('Escape');
-      await pg.waitForTimeout(400);
-      const sauEsc = await pg.locator('[data-testid=mention-item]').count();
-      ok('Esc dong bang goi y "@"', sauEsc === 0, sauEsc + ' goi y');
-
-      await pg.locator('[data-testid=chat-input]').type(' roi @' + gocTen, { delay: 30 });
-      await pg.waitForSelector('[data-testid=mention-item]', { timeout: 15000 }).catch(() => {});
-      const moLai = await pg.locator('[data-testid=mention-item]').count();
-      ok('sau Esc, go "@" MOI van mo lai duoc goi y', moLai > 0, moLai + ' goi y');
       await cx.close();
     }
 

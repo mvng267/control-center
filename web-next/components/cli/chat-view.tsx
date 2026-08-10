@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Send, Square, Check, Pencil, Terminal, Copy, CheckCheck, ImagePlus } from 'lucide-react';
+import { ArrowLeft, Send, Square, Check, Pencil, Copy, CheckCheck, ImagePlus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
 import { Markdown } from './markdown';
@@ -325,12 +325,13 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           const el = e.currentTarget;
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
-        /* Căn giữa và chặn bề rộng: trên màn 1440px mà để dòng chạy hết chiều ngang thì
-           mắt phải quét quá xa, đọc rất mệt. 920px ~ 100 ký tự/dòng. */
-        className="mx-auto flex w-full min-h-0 max-w-[920px] flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-4">
+        /* font-mono cho CẢ bản chép: terminal chỉ có một phông chữ đều, mọi cột thẳng
+           hàng. Đây là thứ tạo cảm giác "đúng là CLI" rõ nhất, hơn cả ký tự ⏺ ⎿.
+           Căn giữa và chặn bề rộng 920px (~100 ký tự/dòng): màn 1440px mà để dòng chạy
+           hết chiều ngang thì mắt phải quét quá xa. */
+        className="mx-auto flex w-full min-h-0 max-w-[920px] flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-4 font-mono">
         {groups.map((m, gi) => {
           const parts = m.parts?.length ? mergeTextParts(m.parts) : [{ t: 'text', text: m.content } as TextPart];
-          const tools = parts.filter((p): p is ToolPart => p.t === 'tool');
           const k = dayKey(m.ts);
           const showDay = k && k !== lastDay;
           if (showDay) lastDay = k;
@@ -339,93 +340,76 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                nhóm thay đổi -> React dựng lại cả lượt vô cớ. */
             <div key={(m.ts || '') + ':' + (m.role || '') + ':' + gi} className="contents">
               {showDay && (
-                <div className="my-2 flex items-center gap-2.5" data-testid="day-divider">
+                <div className="my-2 flex items-center gap-2.5 text-[10.5px] text-muted-foreground/70"
+                  data-testid="day-divider">
                   <span className="h-px flex-1 bg-border" />
-                  <span className="rounded-full border border-border bg-card px-2.5 py-[3px] text-[10.5px] text-muted-foreground">
-                    {dayLabel(m.ts)}
-                  </span>
+                  <span className="shrink-0">{dayLabel(m.ts)}</span>
                   <span className="h-px flex-1 bg-border" />
                 </div>
               )}
-              {/* MỘT KHỐI LƯỢT kiểu Claude CLI: đầu lượt là avatar + tên vai + giờ,
-                  thân lượt thụt vào và có đường dọc bên trái nối các tool cùng lượt —
-                  đúng cách CLI in ra trên terminal. Trước đây bong bóng và thẻ tool
-                  xếp chung một cột dính lề trái (đo được L=16 cho tất cả), không avatar
-                  không nhãn vai, nhìn ra là bảng log chứ không phải hội thoại. */}
+              {/* MỘT LƯỢT vẽ y như terminal in ra:
+                    > câu của mình
+                    ⏺ câu trả lời
+                    ⏺ Bash(lệnh)
+                      ⎿  kết quả
+                  Không bong bóng, không avatar, không nhãn vai — terminal không có
+                  những thứ đó. Bản trước tôi thêm avatar + tên vai + đường dọc, nhìn
+                  vẫn ra giao diện chat của một app chứ không phải bản chép phiên CLI. */}
               {m.role === 'system' ? (
-                /* Dòng ghi chú của hệ thống: không có "người nói" nên bỏ avatar,
-                   vẽ trần giữa dòng chat cho khỏi giả vờ là một lượt hội thoại. */
-                <div data-testid="msg-wrap" data-role="system" className="flex w-full flex-col gap-1">
+                <div data-testid="msg-wrap" data-role="system" className="flex w-full flex-col">
                   {parts.map((p, i) => p.t === 'note' ? <NoteLine key={i} part={p} /> : null)}
                 </div>
               ) : (
-              <div data-testid="msg-wrap" data-role={m.role} className="flex w-full flex-col">
-                <div className="mb-1 flex items-center gap-2">
-                  <span data-testid="msg-avatar" className={cn(
-                    'flex size-[22px] shrink-0 items-center justify-center rounded-full text-[10px] font-semibold',
-                    m.role === 'user'
-                      ? 'bg-primary/15 text-primary'
-                      : 'bg-tool-accent/15 text-tool-accent')}>
-                    {m.role === 'user' ? 'V' : <Terminal className="size-3" />}
-                  </span>
-                  <span data-testid="msg-role" className="text-[12px] font-semibold">
-                    {m.role === 'user' ? 'Vinh' : 'Claude'}
-                  </span>
-                  {m.ts && <span className="text-[10.5px] text-muted-foreground">{clock(m.ts)}</span>}
+              <div data-testid="msg-wrap" data-role={m.role} className="relative flex w-full flex-col pr-12">
+                {/* Giờ + nút chép: terminal không có, nhưng đây là dashboard xem lại
+                    phiên nên vẫn cần. Đặt nổi ở góc phải, rất mờ, chừa sẵn pr-12 để
+                    không đè lên chữ. Neo ở LƯỢT chứ không ở dòng chữ đầu — có lượt
+                    chỉ toàn tool, không có câu văn nào để bám vào. */}
+                <span className="absolute right-0 top-0 flex items-center gap-1.5 opacity-45 transition-opacity hover:opacity-100">
                   {m.sub && (
-                    <span data-testid="msg-sub"
-                      className="shrink-0 rounded border border-tool-accent/35 px-1.5 text-[9.5px] font-medium text-tool-accent">
-                      Subagent
-                    </span>
+                    <span data-testid="msg-sub" className="text-[10px] text-tool-accent">sub</span>
                   )}
-                  {m.role === 'assistant' && tools.length > 0 && (
-                    <span className={cn('text-[10.5px]',
-                      tools.some((t) => t.status === 'error') ? 'text-status-error' : 'text-muted-foreground')}>
-                      · {tools.length} tool
+                  {m.ts && (
+                    <span className="select-none text-[10px] tabular-nums text-muted-foreground">
+                      {clock(m.ts)}
                     </span>
                   )}
                   <CopyTurn parts={parts} />
-                </div>
+                </span>
 
-                <div className={cn('flex flex-col gap-1.5 pl-[11px]',
-                  m.role === 'assistant' && 'border-l border-border')}>
-                  <div className="flex flex-col gap-1.5 pl-3">
                 {parts.map((p, i) =>
                   p.t === 'tool' && p.hoi?.length ? (
                     // Bảng chọn: bấm rồi gửi lựa chọn thành tin nhắn mới
-                    <AskCard key={p.id || i} hoi={p.hoi}
-                      daTraLoi={gi < groups.length - 1}
-                      onGui={(t) => send(t)} />
+                    <div key={p.id || i} className="my-1">
+                      <AskCard hoi={p.hoi} daTraLoi={gi < groups.length - 1} onGui={(t) => send(t)} />
+                    </div>
                   ) : p.t === 'tool' && p.ke ? (
-                    <PlanCard key={p.id || i} ke={p.ke}
-                      daDuyet={!h?.awaiting}
-                      onDuyet={approve}
-                      onSua={() => document.querySelector<HTMLTextAreaElement>('[data-testid=chat-input]')?.focus()} />
+                    <div key={p.id || i} className="my-1">
+                      <PlanCard ke={p.ke} daDuyet={!h?.awaiting} onDuyet={approve}
+                        onSua={() => document.querySelector<HTMLTextAreaElement>('[data-testid=chat-input]')?.focus()} />
+                    </div>
                   ) : p.t === 'tool' ? (
-                    <div key={p.id || i} className="w-full">
-                      <ToolCard part={p} sid={sid} open={openTools.has(p.id)} onToggle={toggleTool} /></div>
+                    <ToolCard key={p.id || i} part={p} sid={sid}
+                      open={openTools.has(p.id)} onToggle={toggleTool} />
                   ) : p.t === 'note' ? (
                     <NoteLine key={i} part={p} />
                   ) : p.t === 'think' ? (
                     <ThinkCard key={i} text={p.text} />
                   ) : p.text?.trim() ? (
-                    <div key={i} data-testid="bubble"
-                      className={cn(
-                        'max-w-full break-words rounded-xl px-3.5 py-2.5 text-[14px] leading-relaxed',
-                        m.role === 'user'
-                          ? 'self-start whitespace-pre-wrap bg-primary text-primary-foreground'
-                          : 'bg-card/60',
-                      )}>
-                      {m.role === 'user' ? p.text : <Markdown>{p.text}</Markdown>}
+                    /* Câu văn: mình thì "> ", Claude thì "⏺ ". Đúng hai ký tự terminal
+                       dùng để phân biệt ai đang nói — không cần tô màu cả khối. */
+                    <div key={i} data-testid="bubble" data-role={m.role}
+                      className="flex w-full items-start gap-2 text-[13px] leading-relaxed">
+                      <span className={cn('shrink-0 select-none',
+                        m.role === 'user' ? 'text-primary' : 'text-tool-accent')}>
+                        {m.role === 'user' ? '>' : '⏺'}
+                      </span>
+                      <div className={cn('min-w-0 flex-1 break-words',
+                        m.role === 'user' && 'whitespace-pre-wrap text-foreground/90')}>
+                        {m.role === 'user' ? p.text : <Markdown>{p.text}</Markdown>}
+                      </div>
                     </div>
                   ) : null,
-                )}
-                  </div>
-                </div>
-                {tools.some((t) => t.status === 'error') && (
-                  <div className="mt-1 pl-[26px] text-[10.5px] leading-none text-status-error">
-                    {tools.filter((t) => t.status === 'error').length} tool lỗi
-                  </div>
                 )}
               </div>
               )}
@@ -475,10 +459,15 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         <SlashHint items={slash.items} active={slash.active} onPick={slash.pick} />
         <MentionHint items={mention.items} active={mention.active} onPick={mention.pick} />
         <AttachBar items={att} onRemove={(i) => setAtt((xs) => xs.filter((_, k) => k !== i))} />
-        <div className="flex items-center gap-2">
+        {/* Khung viền quanh ô gõ — Claude CLI vẽ hẳn một hộp bo góc quanh dòng nhập.
+            Viền chuyển sang màu chính khi đang gõ để biết con trỏ đang ở đây. */}
+        <div className={cn('flex items-center gap-2 rounded-[10px] border px-2 transition-colors',
+          text.trim() ? 'border-primary/50' : 'border-border')}>
           {/* Nút ảnh nằm CẠNH ô nhắn tin, không phải trên header: đính ảnh là một
               phần của việc soạn tin, để tít trên cùng thì tay phải với. */}
           <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])} />
+          {/* Dấu nhắc ">" trước ô gõ, đúng như dòng nhập của Claude CLI. */}
+          <span aria-hidden className="shrink-0 select-none font-mono text-[15px] text-primary">&gt;</span>
           {/* Textarea: dán đoạn dài / viết nhiều dòng vẫn đọc được.
               Enter gửi, Shift+Enter xuống dòng. */}
           <Textarea value={text} data-testid="chat-input"
@@ -511,8 +500,8 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               el.style.height = 'auto';
               el.style.height = Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.35)) + 'px';
             }}
-            placeholder="Tiếp tục cuộc trò chuyện…"
-            className="max-h-[35dvh] min-h-11 resize-none py-2.5 text-[16px]" />
+            placeholder="Nhắn cho Claude…"
+            className="max-h-[35dvh] min-h-11 resize-none border-0 bg-transparent px-0 py-2.5 font-mono text-[16px] shadow-none focus-visible:ring-0" />
           <Button size="icon" className="size-11 shrink-0" onClick={() => send()} title="Gửi tin nhắn"
             aria-label="Gửi tin nhắn"
             disabled={!text.trim() && !att.length} data-testid="chat-send">

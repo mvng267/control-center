@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ListChecks, ChevronDown, Circle, CircleDot, CheckCircle2 } from 'lucide-react';
+import { ListChecks, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Server trả {text, status} — xem extractTodos trong src/server/tools.js
@@ -11,11 +11,6 @@ export interface Todo { text: string; status: string }
    ngược lên và bấm mở mới thấy — trong khi đây là thứ hay cần nhất: "Claude đang
    làm bước nào rồi?". Lấy TodoWrite MỚI NHẤT của phiên và ghim ngay dưới header. */
 
-const ICON: Record<string, typeof Circle> = {
-  completed: CheckCircle2,
-  in_progress: CircleDot,
-  pending: Circle,
-};
 const TONE: Record<string, string> = {
   completed: 'text-status-ok',
   in_progress: 'text-primary',
@@ -51,20 +46,21 @@ export function TodoBar({ todos }: { todos: Todo[] }) {
       </button>
 
       {open && (
-        <div className="mt-1.5 flex flex-col gap-1 rounded-[10px] border border-border bg-card px-3 py-2.5"
+        /* ☒ / ☐ — đúng ký tự Claude CLI in danh sách việc, không dùng icon vector */
+        <div className="mt-1.5 flex flex-col gap-0.5 rounded-[10px] border border-border bg-card px-3 py-2.5 font-mono"
           data-testid="todo-list">
-          {todos.map((t, i) => {
-            const Ico = ICON[t.status] || Circle;
-            return (
-              <div key={i} className="flex items-start gap-2 text-[12.5px]">
-                <Ico className={cn('mt-[2px] size-3.5 shrink-0', TONE[t.status])} />
-                <span className={cn('min-w-0 leading-snug',
-                  t.status === 'completed' && 'text-muted-foreground line-through')}>
-                  {t.text}
-                </span>
-              </div>
-            );
-          })}
+          {todos.map((t, i) => (
+            <div key={i} className="flex items-start gap-2 text-[12.5px]">
+              <span className={cn('shrink-0 select-none', TONE[t.status])}>
+                {t.status === 'completed' ? '☒' : '☐'}
+              </span>
+              <span className={cn('min-w-0 leading-snug',
+                t.status === 'completed' && 'text-muted-foreground line-through',
+                t.status === 'in_progress' && 'text-foreground')}>
+                {t.text}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>

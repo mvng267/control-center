@@ -1,14 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { Brain, ChevronDown } from 'lucide-react';
 import { Markdown } from './markdown';
 import { cn } from '@/lib/utils';
 
-/* Thẻ "Suy nghĩ" gập được — port từ renderThinkCard (web/legacy/js/chat.js:293-329).
-   Bản mới trước đây vẽ nó thành bong bóng viền nét đứt LUÔN MỞ, đổ hết 1500 ký tự
-   (THINK_CAP ở src/server/tools.js) ra giữa dòng chat, đẩy câu trả lời thật xuống
-   dưới màn. Giờ mặc định gập, chỉ ló 90 ký tự đầu như bản cũ. */
+/* Khối "suy nghĩ" — trên terminal Claude in ra:
+
+     ✻ Thinking…
+       nội dung nghĩ, chữ mờ nghiêng
+
+   Trước đây bản này vẽ thành thẻ viền nét đứt có nền, nhìn ra một widget của app
+   quản trị. Giờ đúng kiểu terminal: một dấu ✻ và chữ mờ, mặc định gập chỉ ló 90 ký
+   tự đầu (THINK_CAP ở src/server/tools.js cho tới 1500 ký tự, đổ hết ra thì câu trả
+   lời thật bị đẩy xuống dưới màn). */
 
 const PEEK = 90;
 
@@ -18,29 +22,22 @@ export function ThinkCard({ text }: { text: string }) {
   const peek = flat.length > PEEK ? flat.slice(0, PEEK) + '…' : flat;
 
   return (
-    <div data-testid="think-card" data-open={open}
-      className="w-full overflow-hidden rounded-xl border border-dashed border-border bg-card/50">
+    <div data-testid="think-card" data-open={open} className="w-full text-[13px] leading-relaxed">
       <button onClick={() => setOpen((v) => !v)} data-testid="think-toggle"
-        className="tap44 flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/30">
-        <Brain className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 text-[12px] font-medium text-muted-foreground">Suy nghĩ</span>
-        {!open && (
-          <span className="min-w-0 flex-1 truncate text-[12px] italic text-muted-foreground/70">{peek}</span>
-        )}
-        <ChevronDown className={cn('ml-auto size-3.5 shrink-0 text-muted-foreground transition-transform',
-          open && 'rotate-180')} />
+        className="tap44 flex w-full items-start gap-2 text-left transition-colors md:hover:bg-accent/25">
+        <span className="shrink-0 select-none text-muted-foreground/70">✻</span>
+        <span className="min-w-0 flex-1 italic text-muted-foreground">
+          <span className="not-italic">Đang nghĩ…</span>
+          {!open && peek && <span className="text-muted-foreground/70"> {peek}</span>}
+        </span>
+        <span className="shrink-0 select-none text-[11px] text-muted-foreground/50">{open ? '−' : '+'}</span>
       </button>
 
-      <div className={cn('grid transition-[grid-template-rows] duration-200',
-        open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
-        <div className="min-h-0 overflow-hidden">
-          {open && (
-            <div className="border-t border-dashed border-border px-3 py-2.5 text-[13px] leading-relaxed text-muted-foreground">
-              <Markdown>{text}</Markdown>
-            </div>
-          )}
+      {open && (
+        <div className="ml-[18px] border-l border-border pl-3 text-muted-foreground">
+          <Markdown>{text}</Markdown>
         </div>
-      </div>
+      )}
     </div>
   );
 }

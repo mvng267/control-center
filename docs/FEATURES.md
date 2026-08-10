@@ -168,6 +168,11 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 118 | Gõ `@` → gợi ý đường dẫn file của phiên | `/api/files?sid=&q=`, chọn thì điền vào ô nhập | ui-new |
 | 119 | `@` giữa email không kích hoạt gợi ý | gõ `a@b` → 0 gợi ý | ui-new |
 | 120 | Esc đóng gợi ý `@`, gõ `@` mới lại mở | Esc rồi gõ tiếp → gợi ý hiện lại | ui-new |
+| 121 | Bản chép dùng phông chữ đều như terminal | `font-mono` ăn thật (trước trỏ vào biến không tồn tại) | ui-new |
+| 122 | Ký tự `⏺` cho lượt/tool, `⎿` cho kết quả | đếm trên nội dung khung chat | ui-new |
+| 123 | KHÔNG còn avatar tròn / nhãn vai | terminal không có, đếm phải = 0 | ui-new |
+| 124 | Câu chữ không nằm trong bong bóng có nền | borderRadius = 0, nền trong suốt | ui-new |
+| 125 | Ô nhập có dấu nhắc `>` và khung viền như CLI | nhìn bằng mắt | tay |
 
 ---
 
@@ -176,7 +181,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 54 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 57 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục

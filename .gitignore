@@ -2,6 +2,8 @@ node_modules/
 *.log
 .DS_Store
 .push-state.json
+# bộ test Web Push ghi ra file trạng thái riêng khi chạy — là rác, không phải mã nguồn
+.push-state.test.json
 
 # token truy cập dashboard — KHÔNG commit
 dashboard-token.json
