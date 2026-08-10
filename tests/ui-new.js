@@ -53,6 +53,16 @@ process.on('uncaughtException', (e) => { traMotLan(); console.error(e); process.
 process.on('unhandledRejection', (e) => { traMotLan(); console.error(e); process.exit(1); });
 process.on('SIGINT', () => { traMotLan(); process.exit(130); });
 
+/* Đóng context ĐANG CÓ route chặn: phải gỡ route TRƯỚC.
+   Khung chat poll /api/history liên tục (700ms–2s). Đóng thẳng context thì handler
+   đang dở dang gọi r.fetch() trên một context vừa bị huỷ -> ném TargetClosedError
+   và giết cả bộ test, dù mọi assertion đã PASS. Đúng lỗi này làm test-all báo
+   "giao diện mới HỎNG" ba lần liên tiếp trong khi chạy riêng vẫn 57/57. */
+async function dongSach(pg, cx) {
+  await pg.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {});
+  await cx.close().catch(() => {});
+}
+
 const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
 
 (async () => {
@@ -477,8 +487,9 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       const pg = await cx.newPage();
       let daGui = null;
       await pg.route('**/api/history/**', async (r) => {
-        const res = await r.fetch();
-        const j = await res.json();
+        // Bọc kín: vòng poll có thể còn bay giữa chừng khi context đóng
+        let res, j;
+        try { res = await r.fetch(); j = await res.json(); } catch { return; }
         const t0 = Date.now();
         const gio = (s) => new Date(t0 + s * 1000).toISOString();
         j.awaiting = false;
@@ -491,7 +502,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
               chon: [{ nhan: 'Lua chon A', mo: 'mo ta a' }, { nhan: 'Lua chon B', mo: 'mo ta b' }] }],
           }] },
         ];
-        await r.fulfill({ response: res, json: j });
+        await r.fulfill({ response: res, json: j }).catch(() => {});
       });
       // Chặn gửi thật: test không được làm bẩn phiên đang dùng, nhưng vẫn xem được
       // nội dung gửi đi để khẳng định nút hoạt động.
@@ -520,7 +531,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         ok('bam "Gui lua chon" -> gui THAT vao phien',
           !!daGui && daGui.indexOf('Lua chon A') >= 0, JSON.stringify(daGui || '(khong gui)'));
       }
-      await cx.close();
+      await dongSach(pg, cx);
     }
 
     /* Dòng "hook lỗi" KHÔNG được cắt đôi lượt của Claude.
@@ -532,8 +543,8 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const pg = await cx.newPage();
       await pg.route('**/api/history/**', async (r) => {
-        const res = await r.fetch();
-        const j = await res.json();
+        let res, j;
+        try { res = await r.fetch(); j = await res.json(); } catch { return; }
         const t0 = Date.now();
         const gio = (s) => new Date(t0 + s * 1000).toISOString();
         j.messages = [
@@ -550,7 +561,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
             parts: [{ t: 'note', kind: 'hook-error', title: 'Hook loi: PreToolUse:Edit', body: 'chi tiet' }] },
           { role: 'assistant', content: 'xong roi', ts: gio(5) },
         ];
-        await r.fulfill({ response: res, json: j });
+        await r.fulfill({ response: res, json: j }).catch(() => {});
       });
       await pg.goto(URL, { waitUntil: 'networkidle' });
       await pg.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
@@ -571,8 +582,8 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       // mốc /compact thì NGƯỢC LẠI: phải cắt lượt, vì đó là ranh giới thật của phiên
       await pg.unroute('**/api/history/**');
       await pg.route('**/api/history/**', async (r) => {
-        const res = await r.fetch();
-        const j = await res.json();
+        let res, j;
+        try { res = await r.fetch(); j = await res.json(); } catch { return; }
         const t0 = Date.now();
         const gio = (s) => new Date(t0 + s * 1000).toISOString();
         j.messages = [
@@ -581,7 +592,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
             parts: [{ t: 'note', kind: 'compact', title: 'Da don ngu canh tai day', body: '' }] },
           { role: 'assistant', content: 'sau khi don', ts: gio(3) },
         ];
-        await r.fulfill({ response: res, json: j });
+        await r.fulfill({ response: res, json: j }).catch(() => {});
       });
       await pg.reload({ waitUntil: 'networkidle' });
       await pg.waitForTimeout(1200);
@@ -591,7 +602,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       const sauCompact = await pg.locator('[data-testid=msg-wrap][data-role=assistant]').count();
       ok('moc /compact VAN cat luot (do la ranh gioi that)',
         sauCompact === 2, sauCompact + ' khoi "Claude" (dung phai 2)');
-      await cx.close();
+      await dongSach(pg, cx);
     }
 
     /* Dán ảnh từ clipboard vào ô chat -> ảnh phải lên thanh đính kèm.
@@ -628,7 +639,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       const soAnh = await pg.locator('[data-testid=attach-item]').count();
       ok('dan anh tu clipboard -> len thanh dinh kem',
         daTai && soAnh === 1, 'da goi upload=' + daTai + ', so anh=' + soAnh);
-      await cx.close();
+      await dongSach(pg, cx);
     }
 
     /* Gõ "@" -> gợi ý file trong thư mục của phiên, chọn thì điền vào ô nhập. */
@@ -731,6 +742,54 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       const emailGoiY = await pg.locator('[data-testid=mention-item]').count();
       ok('"@" giua email khong kich hoat goi y', emailGoiY === 0, emailGoiY + ' goi y');
       await cx.close();
+    }
+
+    /* Danh sách phiên kiểu THẺ — thay cho bảng 6 cột.
+       Kiểm ở 390px vì đó là chỗ lỗi thật đã xảy ra: ô lưới mặc định min-width:auto,
+       nên câu cuối dài đẩy thẻ phình lên 455px trong khung 356px, chữ bị cắt mất
+       bên phải. Đo cả bề rộng chứ không chỉ đếm thẻ. */
+    {
+      const mp = await browser.newContext({
+        viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+      });
+      const pg = await mp.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+      await pg.waitForTimeout(2000);
+
+      const d = await pg.evaluate(() => {
+        const luoi = document.querySelector('[data-testid=session-grid]');
+        if (!luoi) return null;
+        const g = luoi.getBoundingClientRect();
+        const the = [...document.querySelectorAll('[data-testid=session-row]')];
+        return {
+          so: the.length,
+          tran: the.filter((c) => c.getBoundingClientRect().right > g.right + 1).length,
+          coCauCuoi: document.querySelectorAll('[data-testid=card-last]').length,
+          tranTrang: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        };
+      });
+      ok('danh sach phien dung LUOI THE', !!d && d.so > 0, d ? d.so + ' the' : 'khong thay luoi');
+      ok('the KHONG tran khoi luoi tren iPhone 390px',
+        !!d && d.tran === 0 && !d.tranTrang,
+        d ? d.tran + ' the tran, trang tran=' + d.tranTrang : '-');
+      ok('the co hien cau cuoi (dang do viec gi)',
+        !!d && d.coCauCuoi > 0, d ? d.coCauCuoi + '/' + d.so + ' the co cau cuoi' : '-');
+
+      // Ô chọn và menu ⋯ trước chỉ có ở bảng desktop; bản mobile cũ thiếu hẳn.
+      ok('the co O CHON va menu ⋯ ngay tren dien thoai',
+        (await pg.locator('[data-testid=sel-row]').count()) > 0
+        && (await pg.locator('[data-testid=row-menu]').count()) > 0,
+        'sel-row=' + (await pg.locator('[data-testid=sel-row]').count())
+        + ' row-menu=' + (await pg.locator('[data-testid=row-menu]').count()));
+
+      // Sắp xếp: bảng cũ để ở tiêu đề cột, bỏ bảng thì phải còn chỗ khác
+      await pg.locator('[data-testid=sort-title]').click();
+      await pg.waitForTimeout(700);
+      ok('doi sap xep tu thanh dieu khien cua luoi',
+        (await pg.locator('[data-testid=sort-title]').getAttribute('data-active')) === 'true',
+        'data-active=' + (await pg.locator('[data-testid=sort-title]').getAttribute('data-active')));
+      await mp.close();
     }
 
     // Nút chọn phân đoạn phải CUỘN được trên màn hẹp. Lỗi thật đã gặp: vùng cuộn

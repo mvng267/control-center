@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { TaskBar } from './task-bar';
 import { JobsPanel } from './jobs-panel';
+import { SessionCard } from './session-card';
 
 function ago(ms: number) {
   const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
@@ -26,11 +27,7 @@ function ago(ms: number) {
   return Math.floor(s / 86400) + ' ngày';
 }
 
-const STATUS_UI: Record<string, { dot: string; text: string; label: string }> = {
-  RUNNING: { dot: 'bg-status-ok', text: 'text-status-ok', label: 'Đang chạy' },
-  ACTIVE: { dot: 'bg-primary', text: 'text-primary', label: 'Vừa hoạt động' },
-  IDLE: { dot: 'bg-status-idle', text: 'text-muted-foreground', label: 'Nghỉ' },
-};
+// Bảng màu trạng thái đã chuyển sang session-card.tsx cùng với thẻ.
 
 type SortKey = 'title' | 'project' | 'msgs' | 'mtimeMs';
 const PAGE = 10;
@@ -87,14 +84,16 @@ export function SessionList({
   const cur = Math.min(page, pages - 1);
   const view = rows.slice(cur * perPage, cur * perPage + perPage);
 
-  const th = (k: SortKey, label: string, cls?: string) => (
-    <th className={cn('h-11 px-3 text-left align-middle font-medium text-muted-foreground', cls)}>
-      <button className="flex items-center gap-1 text-[14px] transition-colors hover:text-foreground"
-        onClick={() => setSort((s) => ({ k, dir: s.k === k && s.dir === -1 ? 1 : -1 }))}>
-        {label}
-        <ChevronsUpDown className="size-3.5 opacity-50" />
-      </button>
-    </th>
+  /* Nút sắp xếp — bảng cũ để việc này ở tiêu đề cột, bỏ bảng thì phải có chỗ khác.
+     Bấm lại vào nút đang chọn để đảo chiều tăng/giảm. */
+  const sapXep = (k: SortKey, nhan: string) => (
+    <button data-testid={'sort-' + k} data-active={sort.k === k}
+      onClick={() => setSort((s) => ({ k, dir: s.k === k && s.dir === -1 ? 1 : -1 }))}
+      className={cn('tap44 flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] transition-colors',
+        sort.k === k ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/50')}>
+      {nhan}
+      {sort.k === k && <ChevronsUpDown className="size-3 opacity-60" />}
+    </button>
   );
 
   return (
@@ -203,110 +202,47 @@ export function SessionList({
             </div>
           )}
 
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full text-[14px]">
-              <thead className="border-b border-border">
-                <tr>
-                  {/* Chọn hàng loạt như Atlas — bấm ô đầu chọn/bỏ cả trang hiện tại */}
-                  <th className="h-11 w-10 px-3 align-middle">
-                    <input type="checkbox" data-testid="sel-all"
-                      className="size-4 cursor-pointer accent-primary align-middle"
-                      checked={view.length > 0 && view.every((s) => sel.has(s.sid))}
-                      onChange={(e) => {
-                        const next = new Set(sel);
-                        view.forEach((s) => (e.target.checked ? next.add(s.sid) : next.delete(s.sid)));
-                        setSel(next);
-                      }} />
-                  </th>
-                  {th('title', 'Phiên')}
-                  {th('project', 'Dự án')}
-                  <th className="h-11 px-3 text-left align-middle text-[14px] font-medium text-muted-foreground">
-                    Trạng thái
-                  </th>
-                  {th('msgs', 'Tin nhắn', 'text-right')}
-                  {th('mtimeMs', 'Cập nhật')}
-                  <th className="h-11 w-10 px-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {view.map((s) => {
-                  const ui = STATUS_UI[s.status] || STATUS_UI.IDLE;
-                  return (
-                    <tr key={s.sid} data-testid="session-row" data-sid={s.sid} data-status={s.status}
-                      onClick={() => onOpen(s.sid)}
-                      className="cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-accent/40">
-                      <td className="w-10 px-3 align-middle" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" data-testid="sel-row"
-                          className="size-4 cursor-pointer accent-primary align-middle"
-                          checked={sel.has(s.sid)}
-                          onChange={(e) => {
-                            const next = new Set(sel);
-                            e.target.checked ? next.add(s.sid) : next.delete(s.sid);
-                            setSel(next);
-                          }} />
-                      </td>
-                      <td className="h-[57px] px-3 align-middle">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate font-medium" data-testid="session-title" title={s.sid}>
-                            {s.title || s.sid.slice(0, 8)}
-                          </span>
-                          {s.unread > 0 && (
-                            <span className="shrink-0 rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
-                              {s.unread}
-                            </span>
-                          )}
-                        </div>
-                        <div className="truncate font-mono text-[12px] text-muted-foreground">{s.sid.slice(0, 8)}</div>
-                      </td>
-                      <td className="px-3 align-middle text-muted-foreground">{s.project}</td>
-                      <td className="px-3 align-middle">
-                        <span className={cn('inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[12px]', ui.text)}>
-                          <i className={cn('size-1.5 rounded-full', ui.dot)} /> {ui.label}
-                        </span>
-                      </td>
-                      <td className="px-3 text-right align-middle tabular-nums">{s.msgs}</td>
-                      <td className="px-3 align-middle text-muted-foreground">{ago(s.mtimeMs)}</td>
-                      <td className="px-3 align-middle">
-                        <RowMenu s={s} onOpen={onOpen} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          {/* Thanh điều khiển của lưới — giữ lại hai thứ vốn nằm trong đầu bảng:
+              ô chọn-tất-cả và nút sắp xếp. Bỏ bảng mà quên chúng là mất tính năng. */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+            <label className="flex cursor-pointer items-center gap-2 text-[12.5px] text-muted-foreground">
+              <input type="checkbox" data-testid="sel-all"
+                className="size-4 cursor-pointer accent-primary"
+                checked={view.length > 0 && view.every((s) => sel.has(s.sid))}
+                onChange={(e) => {
+                  const next = new Set(sel);
+                  view.forEach((s) => (e.target.checked ? next.add(s.sid) : next.delete(s.sid)));
+                  setSel(next);
+                }} />
+              Chọn cả trang
+            </label>
+            <div className="ml-auto flex items-center gap-1">
+              <span className="text-[12.5px] text-muted-foreground">Sắp xếp</span>
+              {sapXep('mtimeMs', 'Mới nhất')}
+              {sapXep('title', 'Tên')}
+              {sapXep('msgs', 'Tin nhắn')}
+            </div>
           </div>
 
-          {/* danh sách — mobile (bảng ngang không dùng được trên 390px) */}
-          <div className="md:hidden">
-            {view.map((s) => {
-              const ui = STATUS_UI[s.status] || STATUS_UI.IDLE;
-              return (
-                <div key={s.sid} data-testid="session-row" data-sid={s.sid} data-status={s.status}
-                  onClick={() => onOpen(s.sid)}
-                  className="flex min-h-[64px] cursor-pointer items-center gap-3 border-b border-border px-3 py-2.5 last:border-0 active:bg-accent/40">
-                  <i className={cn('size-2 shrink-0 rounded-full', ui.dot)} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-[14px] font-medium" data-testid="session-title" title={s.sid}>
-                        {s.title || s.sid.slice(0, 8)}
-                      </span>
-                      {s.unread > 0 && (
-                        <span className="shrink-0 rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
-                          {s.unread}
-                        </span>
-                      )}
-                    </div>
-                    <div className="truncate text-[12px] text-muted-foreground">
-                      {s.project} · {s.msgs} tin
-                    </div>
-                  </div>
-                  <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
-                    {ago(s.mtimeMs)}
-                  </span>
-                </div>
-              );
-            })}
+          {/* LƯỚI THẺ — dùng CHUNG cho điện thoại và máy tính.
+              Trước đây có hai bản riêng: bảng 6 cột cho desktop, dòng gọn cho mobile.
+              Hai bản lệch nhau (mobile thiếu hẳn menu ⋯ và ô chọn), và cả hai đều
+              không có chỗ hiện "phiên đang dở việc gì". Một lưới co giãn là đủ. */}
+          <div data-testid="session-grid"
+            className="grid gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
+            {view.map((s) => (
+              <SessionCard key={s.sid} s={s} truoc={ago}
+                chon={sel.has(s.sid)}
+                onChon={(v) => {
+                  const next = new Set(sel);
+                  v ? next.add(s.sid) : next.delete(s.sid);
+                  setSel(next);
+                }}
+                onOpen={onOpen}
+                menu={<RowMenu s={s} onOpen={onOpen} />} />
+            ))}
           </div>
+
 
           {view.length === 0 && (
             <div className="py-12 text-center text-[14px] text-muted-foreground">Không có phiên nào khớp</div>

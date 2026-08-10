@@ -11,6 +11,13 @@ export interface Session {
   mtimeMs: number;
   status: Status;
   model?: string | null;
+  /* Thẻ phiên: đủ thông tin để xem lướt là biết phiên nào đáng mở.
+     Đều do parseSessionFile tính sẵn, không tốn thêm lần đọc file nào. */
+  vaiCuoi?: string;    // ai nói câu cuối: 'user' | 'assistant'
+  tinCuoi?: string;    // trích câu cuối (đã cắt gọn)
+  tok?: number;        // token cả phiên (vào + ra)
+  luot?: number;       // số lượt hỏi-đáp
+  choDuyet?: boolean;  // đang dừng chờ duyệt kế hoạch
 }
 
 export interface Job {

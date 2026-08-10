@@ -396,6 +396,27 @@ function listSessions() {
       if (!lastSeen.has(sid)) lastSeen.set(sid, parsed.mtimeMs);
       const seen = lastSeen.get(sid);
       const unread = parsed.tsMs.reduce((n, t) => n + (t > seen ? 1 : 0), 0);
+      /* Thẻ phiên cần nhiều hơn một dòng tiêu đề: xem lướt là biết phiên nào đáng mở.
+         Mấy trường dưới đây parseSessionFile ĐÃ tính sẵn, trước giờ chỉ bị bỏ không.
+         Không đọc thêm file nào, nên danh sách không chậm đi. */
+      /* Lấy tin cuối ĐỌC ĐƯỢC. Hai cái bẫy:
+         - tin cuối tuyệt đối rất hay là dòng system rỗng (hook lỗi, mốc /compact);
+         - lượt chỉ chạy tool bị đè phẳng thành "[tool: Bash]", vô nghĩa với người đọc.
+         Nên: ưu tiên câu chữ thật; không có thì mới nói phiên đang chạy tool gì. */
+      let cuoi = null;
+      let toolCuoi = '';
+      for (let i = parsed.msgs.length - 1; i >= 0 && !cuoi; i--) {
+        const m = parsed.msgs[i];
+        if (m.role === 'system') continue;
+        const chu = (m.parts || []).filter(p => p.t === 'text')
+          .map(p => p.text).join(' ').replace(/\s+/g, ' ').trim();
+        if (chu) { cuoi = { role: m.role, text: chu }; break; }
+        if (!toolCuoi) {
+          const tl = (m.parts || []).find(p => p.t === 'tool');
+          if (tl) toolCuoi = tl.disp || tl.name || '';
+        }
+      }
+      if (!cuoi && toolCuoi) cuoi = { role: 'assistant', text: 'đang chạy ' + toolCuoi };
       out.push({
         sid,
         project,
@@ -404,6 +425,14 @@ function listSessions() {
         unread,
         mtimeMs: parsed.mtimeMs,
         status: statusOf(sid, parsed.mtimeMs),
+        // ai nói câu cuối + trích câu đó -> biết phiên dừng ở đâu mà chưa cần mở
+        vaiCuoi: cuoi ? cuoi.role : '',
+        tinCuoi: cuoi ? clampText(String(cuoi.text || '').replace(/\s+/g, ' '), 160) : '',
+        // token của cả phiên (CLI ghi sẵn mỗi lượt) — biết phiên nào đang ngốn
+        tok: (parsed.usage.inTok || 0) + (parsed.usage.outTok || 0),
+        luot: parsed.usage.turns || 0,
+        // đang dừng chờ duyệt kế hoạch: phải nhìn thấy NGAY ở danh sách
+        choDuyet: !!parsed.planFile,
       });
     }
   }

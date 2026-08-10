@@ -173,6 +173,13 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 123 | KHÔNG còn avatar tròn / nhãn vai | terminal không có, đếm phải = 0 | ui-new |
 | 124 | Câu chữ không nằm trong bong bóng có nền | borderRadius = 0, nền trong suốt | ui-new |
 | 125 | Ô nhập có dấu nhắc `>` và khung viền như CLI | nhìn bằng mắt | tay |
+| 126 | Danh sách phiên là **lưới thẻ**, 1/2/3 cột theo bề rộng | `session-grid` có thẻ | ui-new |
+| 127 | Thẻ KHÔNG tràn khỏi lưới trên iPhone 390px | đo `right` của thẻ vs lưới (lỗi thật: 455px trong 356px) | ui-new |
+| 128 | Thẻ hiện câu cuối — biết phiên đang dở việc gì | `card-last` có nội dung | ui-new |
+| 129 | Thẻ hiện số lượt + token cả phiên | đọc trên thẻ | ui-new |
+| 130 | Ô chọn + menu ⋯ có ngay trên điện thoại | trước đây bản mobile thiếu hẳn | ui-new |
+| 131 | Sắp xếp chuyển từ tiêu đề cột sang thanh trên lưới | bấm `sort-title` → `data-active=true` | ui-new |
+| 132 | Thẻ báo "Đang chờ duyệt kế hoạch" | `card-plan` khi `choDuyet` | tay |
 
 ---
 
@@ -181,7 +188,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 57 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 62 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục
