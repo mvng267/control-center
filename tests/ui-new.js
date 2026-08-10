@@ -474,6 +474,195 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await cx.close();
     }
 
+    /* Dòng "hook lỗi" KHÔNG được cắt đôi lượt của Claude.
+       Lỗi thật đã gặp (chụp màn hình phiên 11:54–11:55): mỗi dòng hook lỗi đẩy ra một
+       nhóm mới, nên một lượt bị xé thành 6 khối "Claude · 1 tool" liên tiếp. Trên
+       terminal chúng chảy liền một mạch.
+       Dựng đúng cảnh: assistant -> note hook -> assistant, cách nhau vài giây. */
+    {
+      const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const pg = await cx.newPage();
+      await pg.route('**/api/history/**', async (r) => {
+        const res = await r.fetch();
+        const j = await res.json();
+        const t0 = Date.now();
+        const gio = (s) => new Date(t0 + s * 1000).toISOString();
+        j.messages = [
+          { role: 'user', content: 'lam gi do di', ts: gio(0) },
+          { role: 'assistant', content: '', ts: gio(1),
+            parts: [{ t: 'tool', name: 'Bash', id: 'b1', disp: 'Bash', summary: 'lenh 1',
+              input: '', status: 'ok', result: '', images: [] }] },
+          { role: 'system', content: '', ts: gio(2),
+            parts: [{ t: 'note', kind: 'hook-error', title: 'Hook loi: PreToolUse:Bash', body: 'chi tiet' }] },
+          { role: 'assistant', content: '', ts: gio(3),
+            parts: [{ t: 'tool', name: 'Edit', id: 'e1', disp: 'Edit', summary: 'sua file',
+              input: '', status: 'ok', result: '', images: [] }] },
+          { role: 'system', content: '', ts: gio(4),
+            parts: [{ t: 'note', kind: 'hook-error', title: 'Hook loi: PreToolUse:Edit', body: 'chi tiet' }] },
+          { role: 'assistant', content: 'xong roi', ts: gio(5) },
+        ];
+        await r.fulfill({ response: res, json: j });
+      });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+      await pg.waitForTimeout(2500);
+
+      const soClaude = await pg.locator('[data-testid=msg-wrap][data-role=assistant]').count();
+      ok('dong hook loi KHONG cat doi luot cua Claude',
+        soClaude === 1, soClaude + ' khoi "Claude" (dung phai 1, truoc khi sua la 3)');
+
+      // và dòng hook lỗi vẫn phải HIỆN, chỉ là hiện BÊN TRONG lượt đó
+      const trongLuot = await pg.locator(
+        '[data-testid=msg-wrap][data-role=assistant] [data-testid=note-line]').count();
+      ok('hook loi van hien, nam trong than luot', trongLuot === 2, trongLuot + ' dong ghi chu');
+
+      // mốc /compact thì NGƯỢC LẠI: phải cắt lượt, vì đó là ranh giới thật của phiên
+      await pg.unroute('**/api/history/**');
+      await pg.route('**/api/history/**', async (r) => {
+        const res = await r.fetch();
+        const j = await res.json();
+        const t0 = Date.now();
+        const gio = (s) => new Date(t0 + s * 1000).toISOString();
+        j.messages = [
+          { role: 'assistant', content: 'truoc khi don', ts: gio(1) },
+          { role: 'system', content: '', ts: gio(2),
+            parts: [{ t: 'note', kind: 'compact', title: 'Da don ngu canh tai day', body: '' }] },
+          { role: 'assistant', content: 'sau khi don', ts: gio(3) },
+        ];
+        await r.fulfill({ response: res, json: j });
+      });
+      await pg.reload({ waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+      await pg.waitForTimeout(2500);
+      const sauCompact = await pg.locator('[data-testid=msg-wrap][data-role=assistant]').count();
+      ok('moc /compact VAN cat luot (do la ranh gioi that)',
+        sauCompact === 2, sauCompact + ' khoi "Claude" (dung phai 2)');
+      await cx.close();
+    }
+
+    /* Dán ảnh từ clipboard vào ô chat -> ảnh phải lên thanh đính kèm.
+       Claude CLI trên terminal dán thẳng được; trước đây ở đây chỉ có nút chọn file
+       nên chụp màn hình xong phải lưu ra đĩa rồi mới đính được. */
+    {
+      const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const pg = await cx.newPage();
+      let daTai = false;
+      await pg.route('**/api/upload', async (r) => {
+        daTai = true;
+        await r.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({ ok: true, path: '/tmp/dan-thu.png', name: 'dan-thu.png' }) });
+      });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-input]', { timeout: 20000 });
+
+      // PNG 1x1 thật, dựng thành File rồi bắn sự kiện paste đúng như trình duyệt làm
+      await pg.evaluate(() => {
+        const b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        const bin = atob(b64);
+        const u8 = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        const f = new File([u8], 'dan-thu.png', { type: 'image/png' });
+        const dt = new DataTransfer();
+        dt.items.add(f);
+        const el = document.querySelector('[data-testid=chat-input]');
+        el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      });
+      await pg.waitForTimeout(2000);
+      const soAnh = await pg.locator('[data-testid=attach-item]').count();
+      ok('dan anh tu clipboard -> len thanh dinh kem',
+        daTai && soAnh === 1, 'da goi upload=' + daTai + ', so anh=' + soAnh);
+      await cx.close();
+    }
+
+    /* Gõ "@" -> gợi ý file trong thư mục của phiên, chọn thì điền vào ô nhập. */
+    {
+      const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const pg = await cx.newPage();
+      // Ghi lại lời gọi /api/files để khi hỏng còn biết vì sao (sai sid? rỗng? 404?)
+      let veFile = '(chua goi /api/files)';
+      pg.on('response', async (r) => {
+        if (r.url().includes('/api/files')) {
+          veFile = r.status() + ' ' + r.url().split('?')[1] + ' -> '
+            + (await r.text().catch(() => '?')).slice(0, 160);
+        }
+      });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+      await pg.waitForTimeout(1200);
+      const hang = pg.locator('[data-testid=session-row]:visible').first();
+      const sidThu = await hang.getAttribute('data-sid');
+      await hang.click();
+      await pg.waitForSelector('[data-testid=chat-input]', { timeout: 20000 });
+
+      /* KHÔNG gõ sẵn "chat-view": phiên đứng đầu danh sách là phiên nào tuỳ máy, thư
+         mục của nó có thể chẳng có file tên như vậy -> test hỏng vì môi trường chứ
+         không phải vì code (đã dính đúng bẫy này: nó bấm vào phiên 7e31e9e3).
+         Hỏi server lấy một file CÓ THẬT trong thư mục của chính phiên đó rồi mới gõ. */
+      const thuc = await pg.evaluate(async (sid) => {
+        const r = await fetch('/api/files?sid=' + encodeURIComponent(sid) + '&q=',
+          { headers: { 'X-Dash-Token': localStorage.getItem('dashToken') || '' } });
+        const j = await r.json().catch(() => ({}));
+        return (j.files || [])[0] || '';
+      }, sidThu);
+      const ten = thuc.slice(thuc.lastIndexOf('/') + 1);
+      const gocTen = ten.slice(0, Math.max(3, ten.indexOf('.') > 0 ? ten.indexOf('.') : ten.length));
+
+      if (!thuc) {
+        ok('go "@" -> hien goi y duong dan file', false,
+          'phien ' + sidThu + ' khong phan giai duoc thu muc -> khong co gi de goi y | ' + veFile);
+      } else {
+        await pg.locator('[data-testid=chat-input]').click();
+        await pg.locator('[data-testid=chat-input]').type('sua @' + gocTen, { delay: 30 });
+        // Chờ CÓ ĐIỀU KIỆN, không ngủ cố định: gợi ý phải đi một vòng server (quét cây
+        // thư mục lần đầu ~vài trăm ms) nên mốc 1200ms cố định lúc đạt lúc không.
+        await pg.waitForSelector('[data-testid=mention-item]', { timeout: 15000 }).catch(() => {});
+        const soGoiY = await pg.locator('[data-testid=mention-item]').count();
+        ok('go "@" -> hien goi y duong dan file', soGoiY > 0,
+          soGoiY + ' goi y cho "@' + gocTen + '" | ' + veFile);
+
+        if (soGoiY) {
+          const file = await pg.locator('[data-testid=mention-item]').first().getAttribute('data-file');
+          await pg.locator('[data-testid=mention-item]').first().click();
+          await pg.waitForTimeout(500);
+          const val = await pg.locator('[data-testid=chat-input]').inputValue();
+          ok('chon goi y -> dien duong dan vao o nhap, giu nguyen chu da go',
+            val.indexOf('@' + file) >= 0 && val.startsWith('sua '), JSON.stringify(val));
+        }
+      }
+
+      // "@" trong email KHÔNG được kích hoạt gợi ý
+      await pg.locator('[data-testid=chat-input]').fill('');
+      await pg.locator('[data-testid=chat-input]').type('gui cho a@b', { delay: 30 });
+      await pg.waitForTimeout(900);
+      const emailGoiY = await pg.locator('[data-testid=mention-item]').count();
+      ok('"@" giua email khong kich hoat goi y', emailGoiY === 0, emailGoiY + ' goi y');
+
+      /* Esc đóng gợi ý, nhưng gõ "@" MỚI phải mở lại được.
+         Lỗi đã gặp: chỉ mở lại khi chuỗi hết sạch "@", nên sau một lần Esc là câm
+         luôn tới cuối câu. */
+      await pg.locator('[data-testid=chat-input]').fill('');
+      await pg.locator('[data-testid=chat-input]').type('@' + gocTen, { delay: 30 });
+      await pg.waitForSelector('[data-testid=mention-item]', { timeout: 15000 }).catch(() => {});
+      await pg.keyboard.press('Escape');
+      await pg.waitForTimeout(400);
+      const sauEsc = await pg.locator('[data-testid=mention-item]').count();
+      ok('Esc dong bang goi y "@"', sauEsc === 0, sauEsc + ' goi y');
+
+      await pg.locator('[data-testid=chat-input]').type(' roi @' + gocTen, { delay: 30 });
+      await pg.waitForSelector('[data-testid=mention-item]', { timeout: 15000 }).catch(() => {});
+      const moLai = await pg.locator('[data-testid=mention-item]').count();
+      ok('sau Esc, go "@" MOI van mo lai duoc goi y', moLai > 0, moLai + ' goi y');
+      await cx.close();
+    }
+
     // Nút chọn phân đoạn phải CUỘN được trên màn hẹp. Lỗi thật đã gặp: vùng cuộn
     // đặt nhầm ở div cha nên nút cuối ("Creative") tràn ra 290px trong khi khung chỉ
     // tới 170px — bị cắt, ngón tay không với tới, chế độ đó thành không chọn được.

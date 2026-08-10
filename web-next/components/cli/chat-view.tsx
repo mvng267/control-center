@@ -1,15 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Send, Square, Check, Pencil, Terminal, Copy, CheckCheck } from 'lucide-react';
+import { ArrowLeft, Send, Square, Check, Pencil, Terminal, Copy, CheckCheck, ImagePlus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
 import { Markdown } from './markdown';
-import { ChatToolbar, AttachBar, AttachButton, type Attachment } from './chat-toolbar';
+import { ChatToolbar, AttachBar, AttachButton, taiAnhLen, type Attachment } from './chat-toolbar';
 import { PermSwitch } from './perm-switch';
 import { EffortSwitch } from './effort-switch';
 import { TodoBar } from './todo-bar';
 import { SlashHint, useSlash } from './slash-hint';
+import { MentionHint, useMention } from './mention-hint';
 import { ThinkCard } from './think-card';
 import { NoteLine, type NotePart } from './note-line';
 import { AskCard } from './ask-card';
@@ -49,13 +50,30 @@ function mergeTextParts(parts: Part[]): Part[] {
   return out;
 }
 
+/* Ghi chú nào THUỘC VỀ lượt đang chạy, ghi chú nào là ranh giới thật.
+   hook lỗi / lỗi API sinh ra TRONG lúc Claude làm việc -> phải nằm trong lượt đó.
+   Mốc /compact là ranh giới thật của phiên -> luôn đứng riêng, cắt lượt là đúng. */
+const noteTrongLuot = (m: Msg) => m.role === 'system'
+  && !!m.parts?.length
+  && m.parts.every((p) => p.t === 'note' && p.kind !== 'compact');
+
 function groupMessages(msgs: Msg[]): Msg[] {
   const out: Msg[] = [];
   for (const m of msgs) {
     const prev = out[out.length - 1];
     const near = prev?.ts && m.ts && Math.abs(Date.parse(m.ts) - Date.parse(prev.ts)) < GROUP_GAP_MS;
-    // Không gộp qua dòng system (hook lỗi / mốc compact) và không trộn lượt của
-    // subagent với lượt chính — gộp vào là mất luôn ranh giới.
+
+    /* Hút dòng hook lỗi vào lượt assistant ngay trước nó. Trước đây mỗi dòng như vậy
+       đẩy ra một nhóm mới, nên MỘT lượt của Claude bị xé thành 6 khối "Claude · 1 tool"
+       liên tiếp (chụp màn hình phiên thật lúc 11:54–11:55 thấy rõ). Trên terminal
+       chúng chảy liền một mạch trong cùng lượt. */
+    if (prev && prev.role === 'assistant' && noteTrongLuot(m) && near) {
+      prev.parts = [...(prev.parts || [{ t: 'text', text: prev.content }]), ...(m.parts || [])];
+      prev.ts = m.ts;
+      continue;
+    }
+
+    // Không trộn lượt của subagent với lượt chính — gộp vào là mất luôn ranh giới.
     if (prev && prev.role === 'assistant' && m.role === 'assistant' && near
         && !prev.sub === !m.sub) {
       prev.parts = mergeTextParts([...(prev.parts || [{ t: 'text', text: prev.content }]),
@@ -117,6 +135,16 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   });
   const [text, setText] = useState('');
   const slash = useSlash(text, (v) => setText(v));
+  // Vị trí con trỏ — "@" đứng giữa câu được nên phải biết đang gõ ở đâu, chỉ nhìn
+  // toàn chuỗi như "/" là không đủ.
+  const caret = useRef(0);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const mention = useMention(sid, text, (v, c) => {
+    setText(v);
+    caret.current = c;
+    // đặt lại con trỏ sau khi React vẽ xong, không thì nó nhảy về cuối chuỗi
+    requestAnimationFrame(() => inputRef.current?.setSelectionRange(c, c));
+  }, caret);
   // Lịch sử tin đã gửi, ↑/↓ gọi lại như terminal (port attachHistory —
   // web/legacy/js/palette.js:175-194). Giữ trong localStorage để F5 không mất.
   const HIST_KEY = 'hist:chat';
@@ -146,6 +174,21 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   const [pending, setPending] = useState<Msg[]>([]);
   const boxRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+
+  /* Dán / kéo-thả ảnh. Trên terminal Claude nhận ảnh dán thẳng; ở đây trước chỉ có
+     nút chọn file, nên chụp màn hình xong phải lưu ra đĩa rồi mới đính được.
+     Giới hạn 4 ảnh một lần: dán cả album vào thì mỗi ảnh là một lượt tải lên. */
+  const [keoVao, setKeoVao] = useState(false);
+  const nhanAnh = async (fs: File[]) => {
+    const anh = fs.filter((f) => f.type.startsWith('image/'));
+    if (!anh.length) return false;
+    if (anh.length > 4) toast('Chỉ nhận 4 ảnh một lần');
+    for (const f of anh.slice(0, 4)) {
+      const a = await taiAnhLen(f);
+      if (a) setAtt((xs) => [...xs, a]);
+    }
+    return true;
+  };
 
   // Nhịp hỏi lại server: Claude ĐANG chạy thì hỏi dày (700ms) để chữ hiện ra gần như
   // tức thì; rảnh thì giãn ra 2s cho đỡ tốn pin và băng thông Tailscale.
@@ -234,7 +277,18 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   let lastDay = '';
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="chat-view">
+    <div className="relative flex h-full min-h-0 flex-col" data-testid="chat-view"
+      /* Thả ảnh vào BẤT KỲ đâu trong khung chat, không bắt nhắm đúng ô nhập.
+         Chỉ bật khi thứ đang rê thật sự là file — rê chữ bôi đen cũng bắn dragover. */
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        e.preventDefault(); setKeoVao(true);
+      }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setKeoVao(false); }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        e.preventDefault(); setKeoVao(false); nhanAnh([...e.dataTransfer.files]);
+      }}>
       <div className="mx-auto flex w-full max-w-[920px] shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
         <Button variant="ghost" size="icon" className="tap44 size-8" onClick={onBack}
           title="Quay lại danh sách" aria-label="Quay lại danh sách" data-testid="chat-back">
@@ -254,6 +308,15 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           onTitle={(t) => setH((x) => (x ? { ...x, title: t } : x))}
           onModel={(mo) => setH((x) => (x ? { ...x, model: mo } : x))} />
       </div>
+
+      {keoVao && (
+        <div data-testid="drop-overlay"
+          className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-background/80">
+          <span className="flex items-center gap-2 text-[14px] font-medium text-primary">
+            <ImagePlus className="size-4" /> Thả ảnh vào đây
+          </span>
+        </div>
+      )}
 
       <TodoBar todos={todos} />
 
@@ -410,6 +473,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
       <div className="mx-auto w-full max-w-[920px] shrink-0 border-t border-border px-3 py-3"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
         <SlashHint items={slash.items} active={slash.active} onPick={slash.pick} />
+        <MentionHint items={mention.items} active={mention.active} onPick={mention.pick} />
         <AttachBar items={att} onRemove={(i) => setAtt((xs) => xs.filter((_, k) => k !== i))} />
         <div className="flex items-center gap-2">
           {/* Nút ảnh nằm CẠNH ô nhắn tin, không phải trên header: đính ảnh là một
@@ -417,10 +481,20 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])} />
           {/* Textarea: dán đoạn dài / viết nhiều dòng vẫn đọc được.
               Enter gửi, Shift+Enter xuống dòng. */}
-          <Textarea value={text} onChange={(e) => setText(e.target.value)} data-testid="chat-input"
+          <Textarea value={text} data-testid="chat-input"
             rows={1}
+            onChange={(e) => { caret.current = e.target.selectionStart ?? 0; setText(e.target.value); }}
+            // Bấm chuột / dùng phím mũi tên cũng đổi vị trí con trỏ, không chỉ lúc gõ
+            onSelect={(e) => { caret.current = e.currentTarget.selectionStart ?? 0; }}
+            /* Dán ảnh: chỉ chặn sự kiện khi clipboard THẬT SỰ có ảnh, không thì
+               chặn nhầm cả dán chữ thường. */
+            onPaste={(e) => {
+              const fs = [...(e.clipboardData?.files || [])];
+              if (fs.some((f) => f.type.startsWith('image/'))) { e.preventDefault(); nhanAnh(fs); }
+            }}
             onKeyDown={(e) => {
-              if (slash.onKeyDown(e)) return;   // ↑↓ chọn, Tab/Enter điền, Esc đóng
+              if (slash.onKeyDown(e)) return;     // ↑↓ chọn, Tab/Enter điền, Esc đóng
+              if (mention.onKeyDown(e)) return;   // như trên, cho bảng gợi ý file "@"
               // ↑/↓ gọi lại tin cũ — CHỈ khi ô rỗng hoặc đang duyệt lịch sử, nếu không
               // sẽ cướp mất thao tác di chuyển con trỏ trong đoạn nhiều dòng.
               if ((e.key === 'ArrowUp' || e.key === 'ArrowDown')
@@ -432,6 +506,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               }
             }}
             ref={(el) => {
+              inputRef.current = el;
               if (!el) return;
               el.style.height = 'auto';
               el.style.height = Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.35)) + 'px';

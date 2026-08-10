@@ -161,6 +161,13 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 111 | Bấm lựa chọn -> gửi thành tin nhắn mới | `node tests/ui-new.js` (kiểm nội dung gửi đi) | ui-new |
 | 112 | Kế hoạch render markdown, gập được | `plan-card`, dài > 900 ký tự thì gập | pw |
 | 113 | Nút chọn chế độ cuộn được trên iPhone | `mode-seg` scrollWidth > clientWidth | pw |
+| 114 | Hook lỗi KHÔNG cắt đôi lượt của Claude | 1 khối "Claude" thay vì 3 (dựng assistant→note→assistant) | ui-new |
+| 115 | Mốc `/compact` VẪN cắt lượt (ranh giới thật) | 2 khối "Claude" quanh dải phân cách | ui-new |
+| 116 | Dán ảnh từ clipboard vào ô chat | bắn sự kiện `paste` kèm File → lên thanh đính kèm | ui-new |
+| 117 | Kéo-thả ảnh vào khung chat | `drop-overlay` hiện khi rê file vào | tay |
+| 118 | Gõ `@` → gợi ý đường dẫn file của phiên | `/api/files?sid=&q=`, chọn thì điền vào ô nhập | ui-new |
+| 119 | `@` giữa email không kích hoạt gợi ý | gõ `a@b` → 0 gợi ý | ui-new |
+| 120 | Esc đóng gợi ý `@`, gõ `@` mới lại mở | Esc rồi gõ tiếp → gợi ý hiện lại | ui-new |
 
 ---
 
@@ -169,7 +176,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 47 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 54 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục

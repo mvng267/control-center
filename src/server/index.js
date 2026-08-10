@@ -325,6 +325,40 @@ function sessionCwd(sid) {
   return cwd;
 }
 
+/* ---- danh sách file trong thư mục dự án, phục vụ gợi ý "@" ----
+   Quét cây thư mục mỗi lần gõ một chữ thì repo vài chục nghìn file sẽ treo cả server,
+   nên nhớ tạm 30 giây. Bỏ qua nhóm thư mục sinh tự động (node_modules, .git, build…):
+   chúng chiếm phần lớn số file mà không bao giờ là thứ muốn nhắc tới.
+   Chặn trần 4000 file để repo khổng lồ không nuốt hết RAM. */
+const BO_QUA = new Set(['node_modules', '.git', '.next', 'dist', 'build', 'out',
+  'coverage', '.cache', '.venv', '__pycache__', 'vendor', '.turbo']);
+const QUET_TRAN = 4000;
+const quetCache = new Map(); // root -> { at, files }
+
+function quetFile(root) {
+  const cu = quetCache.get(root);
+  if (cu && Date.now() - cu.at < 30000) return cu.files;
+  const files = [];
+  const di = (dir, sau) => {
+    if (files.length >= QUET_TRAN || sau > 6) return;
+    let ds;
+    try { ds = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ds) {
+      if (files.length >= QUET_TRAN) return;
+      if (e.name.startsWith('.') && e.name !== '.env.example') continue;
+      if (e.isDirectory()) {
+        if (!BO_QUA.has(e.name)) di(path.join(dir, e.name), sau + 1);
+      } else if (e.isFile()) {
+        files.push(path.relative(root, path.join(dir, e.name)));
+      }
+    }
+  };
+  di(root, 0);
+  files.sort();
+  quetCache.set(root, { at: Date.now(), files });
+  return files;
+}
+
 function findSessionFile(sid) {
   let dirs = [];
   try { dirs = fs.readdirSync(PROJECTS_DIR); } catch { return null; }
@@ -1519,6 +1553,33 @@ const server = http.createServer(async (req, res) => {
     try { fs.writeFileSync(dest, buf); } catch (e) { return json(res, 500, { error: 'không lưu được ảnh' }); }
     pruneUploads();
     return json(res, 200, { ok: true, path: dest, name, bytes: buf.length });
+  }
+
+  /* ---- gợi ý đường dẫn file cho "@" trong ô chat ----
+     Trên terminal, gõ @ rồi vài chữ là Claude CLI gợi ý file trong thư mục dự án.
+     Dashboard không có gì tương đương nên phải tự gõ tay cả đường dẫn dài.
+
+     Chỉ đọc TÊN file, không đọc nội dung. Gốc tìm kiếm là cwd của chính phiên đó
+     (sessionCwd) — không cho client truyền thư mục tuỳ ý, nếu không thì ai có token
+     cũng liệt kê được toàn bộ đĩa. */
+  if (p === '/api/files' && req.method === 'GET') {
+    const sid = String(url.searchParams.get('sid') || '');
+    const q = String(url.searchParams.get('q') || '').trim().toLowerCase().slice(0, 120);
+    const root = sid ? sessionCwd(sid) : null;
+    if (!root) return json(res, 200, { ok: true, root: null, files: [] });
+    let ds;
+    try { ds = quetFile(root); } catch { return json(res, 200, { ok: true, root, files: [] }); }
+    // Tên file khớp trước, rồi mới tới khớp ở giữa đường dẫn — gõ "chat" phải ra
+    // chat-view.tsx trước components/cli/chat-toolbar.tsx.
+    const dau = [], giua = [];
+    for (const f of ds) {
+      if (dau.length >= 20) break;
+      if (!q) { dau.push(f); continue; }
+      const ten = f.slice(f.lastIndexOf('/') + 1).toLowerCase();
+      if (ten.startsWith(q)) dau.push(f);
+      else if (giua.length < 20 && f.toLowerCase().includes(q)) giua.push(f);
+    }
+    return json(res, 200, { ok: true, root, files: dau.concat(giua).slice(0, 20) });
   }
 
   // ---- duyệt kế hoạch: chạy tiếp lượt đang chờ, lần này CHO PHÉP sửa file ----

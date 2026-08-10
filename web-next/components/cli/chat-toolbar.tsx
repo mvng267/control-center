@@ -41,6 +41,22 @@ function shrink(file: File): Promise<string> {
   });
 }
 
+/* Thu nhỏ -> tải lên -> trả về thẻ đính kèm. Dùng chung cho CẢ BA đường vào ảnh:
+   bấm nút, dán từ clipboard, kéo-thả. Trước logic này nằm trong AttachButton nên chỉ
+   nút mới dùng được. Trả null khi hỏng (đã báo toast tại chỗ). */
+export async function taiAnhLen(f: File): Promise<Attachment | null> {
+  if (!f.type.startsWith('image/')) { toast.error('Chỉ gửi được ảnh'); return null; }
+  try {
+    const data = await shrink(f);
+    const r = await api<{ ok: boolean; path: string; error?: string }>('/api/upload', {
+      method: 'POST', body: JSON.stringify({ data }),
+    });
+    if (!r.ok) { toast.error('Gửi ảnh lỗi: ' + (r.error || '?')); return null; }
+    navigator.vibrate?.(10);
+    return { path: r.path, name: f.name || 'ảnh', thumb: data };
+  } catch { toast.error('Không đọc được ảnh'); return null; }
+}
+
 /* Nút đính kèm ảnh — tách riêng để đặt CẠNH ô nhắn tin (soạn tin ở đâu thì nút ở đó),
    thay vì nằm chung với nhóm nút quản lý phiên trên header. */
 export function AttachButton({ onAttach }: { onAttach: (a: Attachment) => void }) {
@@ -51,18 +67,10 @@ export function AttachButton({ onAttach }: { onAttach: (a: Attachment) => void }
     const f = e.target.files?.[0];
     e.target.value = '';   // reset để chọn lại đúng ảnh đó vẫn kích hoạt
     if (!f) return;
-    if (!f.type.startsWith('image/')) return toast.error('Chỉ gửi được ảnh');
     setBusy(true);
-    try {
-      const data = await shrink(f);
-      const r = await api<{ ok: boolean; path: string; error?: string }>('/api/upload', {
-        method: 'POST', body: JSON.stringify({ data }),
-      });
-      if (!r.ok) return toast.error('Gửi ảnh lỗi: ' + (r.error || '?'));
-      onAttach({ path: r.path, name: f.name || 'ảnh', thumb: data });
-      navigator.vibrate?.(10);
-    } catch { toast.error('Không đọc được ảnh'); }
-    finally { setBusy(false); }
+    const a = await taiAnhLen(f);
+    if (a) onAttach(a);
+    setBusy(false);
   };
 
   return (
@@ -301,7 +309,8 @@ export function AttachBar({ items, onRemove }: { items: Attachment[]; onRemove: 
   return (
     <div className="mb-2 flex flex-wrap gap-2" data-testid="attach-bar">
       {items.map((a, i) => (
-        <div key={i} className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-card px-2 py-1.5">
+        <div key={i} data-testid="attach-item"
+          className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-card px-2 py-1.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={a.thumb} alt="" className="size-8 shrink-0 rounded-md object-cover" />
           <span className="truncate text-[12px]">{a.name}</span>
