@@ -74,8 +74,28 @@ function cleanFixture() {
     const ctx = await browser.newContext({ viewport: vp });
     const page = await ctx.newPage();
     const errors = [];
+    /* Ghi kèm URL của request hỏng. Trước đây chỉ lưu m.text(), mà Chrome in đúng một
+       câu "Failed to load resource: the server responded with a status of 404" KHÔNG
+       kèm địa chỉ — nên khi bài này đỏ (khoảng 1/5 lần chạy, chỉ dưới test-all) thì
+       không có cách nào biết cái gì 404. Bắt luôn ở tầng response cho biết đích danh. */
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+    /* Bỏ qua các request mà chính bộ test CỐ Ý gửi hỏng để kiểm server chặn:
+         /api/export/sid-khong-ton-tai -> 404
+         /api/perm với mode rác        -> 400
+       Không lọc ở đây thì chúng lọt vào bộ đếm và bài "console errors = 0" đỏ oan.
+       Chỉ bỏ qua ĐÚNG cặp (đường dẫn + mã) đã biết, không bỏ cả đường dẫn: /api/perm
+       mà trả 500 thì vẫn phải báo. */
+    const COI_NHU_OK = [
+      { rx: /\/api\/export\/sid-khong-ton-tai/, ma: 404 },   // kiểm sid lạ
+      { rx: /\/api\/perm$/, ma: 400 },                       // kiểm chặn mode rác
+      { rx: /\/api\/upload$/, ma: 400 },                     // kiểm chặn dữ liệu không phải ảnh
+    ];
+    page.on('response', r => {
+      if (r.status() < 400) return;
+      if (COI_NHU_OK.some(x => x.ma === r.status() && x.rx.test(r.url()))) return;
+      errors.push(`HTTP ${r.status()} ${r.url()}`);
+    });
     await page.goto(URL, { waitUntil: 'networkidle' });
     await page.waitForTimeout(3000);
 
@@ -324,8 +344,10 @@ function cleanFixture() {
     } else ok(label + ': export endpoint (skip — không có session)', true);
     const exp404 = await page.evaluate(() => fetch('/api/export/sid-khong-ton-tai').then(r => r.status));
     ok(label + ': export sid lạ -> 404', exp404 === 404, String(exp404));
-    // fetch 404 CHỦ Ý ở trên in console error "Failed to load resource ... 404" -> loại khỏi đếm cuối phiên
-    const i404 = errors.findIndex(x => x.includes('404'));
+    /* Listener response đã bỏ qua request 404 chủ ý này rồi. Nhưng Chrome VẪN in một
+       dòng console "Failed to load resource … 404" không kèm địa chỉ — không lọc được
+       ở nguồn vì không biết nó thuộc request nào, nên gỡ tại đây. */
+    const i404 = errors.findIndex(x => /404/.test(x) && !/^HTTP /.test(x));
     if (i404 >= 0) errors.splice(i404, 1);
 
     // nút export trong chat view Claude
@@ -673,8 +695,13 @@ function cleanFixture() {
       return { start, seen, bad };
     });
     // request 400 ở trên là CHỦ Ý (test chặn giá trị lạ) -> loại khỏi đếm console error cuối phiên
-    const i400 = errors.findIndex(x => x.includes('400'));
-    if (i400 >= 0) errors.splice(i400, 1);
+    /* Listener đã bỏ qua HTTP 400 của /api/perm và /api/upload — cả hai đều là request
+       CỐ Ý gửi hỏng. Còn lại là dòng console của Chrome, không kèm địa chỉ nên không
+       lọc được ở nguồn. Gỡ HẾT chứ không gỡ một: có hai request như vậy, gỡ một thì
+       bài luôn đỏ vì đúng một dòng thừa. */
+    for (let i = errors.length - 1; i >= 0; i--) {
+      if (/400/.test(errors[i]) && !/^HTTP /.test(errors[i])) errors.splice(i, 1);
+    }
     ok(label + ': công tắc quyền mặc định acceptEdits + xoay vòng 4 chế độ + chặn giá trị lạ',
       perm.start.cls.indexOf('p-accept') >= 0 && perm.start.label === 'Tự sửa file'
       && perm.seen.map(s => s.mode).join(',') === 'plan,default,bypassPermissions,acceptEdits'
@@ -1079,7 +1106,8 @@ function cleanFixture() {
 
     // screenshot
     await page.screenshot({ path: '/tmp/pwtest/shot-' + vp.width + '.png' });
-    ok(label + ': console errors cuối phiên = 0', errors.length === 0, errors.slice(0, 3).join(' ;; '));
+    ok(label + ': console errors cuối phiên = 0', errors.length === 0,
+      errors.length + ' lỗi: ' + errors.map(x => x.slice(0, 70)).join(' ;; '));
     await ctx.close();
   }
 
