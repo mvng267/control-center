@@ -15,7 +15,13 @@
 
 # next.js
 /.next/
-/out/
+# KHÔNG chặn /out/ — bản build tĩnh PHẢI được commit thì máy mới `git clone` về mới
+# chạy được ngay bằng `node src/server/index.js`, không cần npm install 590MB.
+# Dòng này do `next dev` tự sinh; .gitignore ở thư mục gốc ghi rõ chủ ý ngược lại,
+# và README cũng nói "out được commit" — nhưng thực tế git KHÔNG theo dõi file nào
+# trong đó (git ls-files web-next/out = 0). Tức là suốt thời gian qua repo thiếu hẳn
+# bản build. Nếu `next dev` thêm lại dòng này thì phải xoá lần nữa.
+# /out/
 
 # production
 /build
