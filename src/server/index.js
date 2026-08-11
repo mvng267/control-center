@@ -105,6 +105,37 @@ function parseSessionFile(file) {
        hết hạn đăng nhập), 7 mốc /compact — không thứ nào hiện ra trên dashboard, nên
        phiên tự dưng đứt đoạn hoặc im lặng hỏng mà không biết vì sao. */
 
+    /* Các dạng attachment KHÁC mà terminal có hiện còn dashboard thì không.
+       Đếm thật trên phiên 58MB: 3.239 hook lỗi, 121 file vừa sửa, 20 lệnh xếp hàng,
+       10 mốc thoát chế độ kế hoạch, 3 lần sang ngày mới. Terminal in hết; dashboard
+       trước đây chỉ nhận mỗi hook lỗi, phần còn lại rơi vào hư không. */
+    if (obj.type === 'attachment' && obj.attachment && !obj.attachment.hookName) {
+      const a = obj.attachment;
+      const ts = obj.timestamp || null;
+      const note = (kind, title, body) => msgs.push({
+        role: 'system', text: '', ts,
+        parts: [{ t: 'note', kind, title, body: body ? clampText(String(body).trim(), 600) : '' }],
+      });
+
+      // Sang ngày mới — terminal in một vạch ngăn ngày
+      if (a.type === 'date_change' && a.newDate) note('ngay', 'Sang ngày ' + a.newDate, '');
+      // Lệnh gõ trong lúc Claude đang chạy -> xếp hàng, chạy sau
+      else if (a.type === 'queued_command') {
+        const t = Array.isArray(a.prompt)
+          ? a.prompt.filter(x => x && x.type === 'text').map(x => x.text).join(' ')
+          : String(a.prompt || '');
+        note('hang-doi', 'Lệnh xếp hàng chờ tới lượt', t);
+      }
+      // Vào / ra chế độ kế hoạch
+      else if (a.type === 'plan_mode') note('ke-hoach', 'Bật chế độ lập kế hoạch', '');
+      else if (a.type === 'plan_mode_exit') note('ke-hoach', 'Thoát chế độ lập kế hoạch', '');
+      // File Vinh kéo vào / dán vào khung chat
+      else if (a.type === 'file' && a.filename) {
+        note('dinh-kem', 'Đính kèm ' + base(a.filename), '');
+      }
+      continue;
+    }
+
     // Hook chạy lỗi: giữ lại để hiện; hook chạy OK thì bỏ (nhiều nghìn dòng, chỉ gây nhiễu)
     if (obj.type === 'attachment' && obj.attachment && obj.attachment.hookName) {
       const a = obj.attachment;

@@ -60,7 +60,7 @@ export function SessionList({
   const tally = useMemo(() => {
     let run = 0, idle = 0;
     for (const s of sessions) (['RUNNING', 'ACTIVE'].includes(s.status) ? run++ : idle++);
-    return { run, idle, all: sessions.length };
+    return { run, idle };   // tổng đã có ở huy hiệu cạnh tiêu đề, không đếm lại
   }, [sessions]);
 
   const rows = useMemo(() => {
@@ -121,52 +121,48 @@ export function SessionList({
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6">
-        {/* Dải tóm tắt kiểu Atlas: một con số lớn bên trái, phần chia nhỏ + thanh tỉ lệ
-            bên phải. Bấm vào từng mảng để lọc luôn — đỡ phải mò trong bảng. */}
-        <div className="mb-3 flex flex-col gap-3 rounded-xl border border-border bg-card p-4 md:flex-row md:items-center md:gap-6"
+        {/* Tóm tắt gọn thành MỘT HÀNG. Bản cũ là một thẻ cao 4 dòng có số 100 cỡ lớn
+            và thanh tỉ lệ — đo trên iPhone 390px: nó cùng phần đầu trang đẩy lưới
+            xuống tới mức chỉ còn thấy ĐÚNG MỘT thẻ phiên. Con số đó đã có sẵn ở
+            huy hiệu cạnh tiêu đề, in to lần nữa là thừa. */}
+        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]"
           data-testid="cli-summary">
-          <div className="shrink-0">
-            <div className="text-[12px] uppercase tracking-wide text-muted-foreground">Tổng số phiên</div>
-            <div className="text-[26px] font-bold leading-tight tabular-nums">{tally.all}</div>
-          </div>
-          <div className="min-w-0 flex-1 md:border-l md:border-border md:pl-6">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px]">
-              <button onClick={() => { setStat(stat === 'run' ? '' : 'run'); setPage(0); }}
-                data-testid="sum-run" title="Chỉ hiện phiên đang chạy"
-                className="tap44 flex items-center gap-1.5 transition-opacity hover:opacity-75">
-                <span className="size-2 rounded-full bg-status-ok" />
-                Đang chạy: <b className="tabular-nums">{tally.run}</b>
-              </button>
-              <button onClick={() => { setStat(stat === 'idle' ? '' : 'idle'); setPage(0); }}
-                data-testid="sum-idle" title="Chỉ hiện phiên đã nghỉ"
-                className="tap44 flex items-center gap-1.5 transition-opacity hover:opacity-75">
-                <span className="size-2 rounded-full bg-muted-foreground/60" />
-                Đã nghỉ: <b className="tabular-nums">{tally.idle}</b>
-              </button>
-              {stat && (
-                <button onClick={() => { setStat(''); setPage(0); }} data-testid="sum-clear"
-                  className="text-muted-foreground underline-offset-2 hover:underline">bỏ lọc</button>
-              )}
-            </div>
-            <div className="mt-2 flex h-2 gap-[2px] overflow-hidden rounded-full bg-muted/40">
-              <span className="bg-status-ok transition-[width] duration-500"
-                style={{ width: (tally.all ? (tally.run / tally.all) * 100 : 0) + '%' }} />
-              <span className="flex-1 bg-muted-foreground/35" />
-            </div>
-          </div>
+          <button onClick={() => { setStat(stat === 'run' ? '' : 'run'); setPage(0); }}
+            data-testid="sum-run" title="Chỉ hiện phiên đang chạy"
+            data-active={stat === 'run'}
+            className={cn('tap44 flex items-center gap-1.5 rounded-lg px-2 py-1 transition-colors',
+              stat === 'run' ? 'bg-status-ok/15 text-status-ok' : 'hover:bg-accent/50')}>
+            <span className="size-2 rounded-full bg-status-ok" />
+            Đang chạy <b className="tabular-nums">{tally.run}</b>
+          </button>
+          <button onClick={() => { setStat(stat === 'idle' ? '' : 'idle'); setPage(0); }}
+            data-testid="sum-idle" title="Chỉ hiện phiên đã nghỉ"
+            data-active={stat === 'idle'}
+            className={cn('tap44 flex items-center gap-1.5 rounded-lg px-2 py-1 transition-colors',
+              stat === 'idle' ? 'bg-muted text-foreground' : 'hover:bg-accent/50')}>
+            <span className="size-2 rounded-full bg-muted-foreground/60" />
+            Đã nghỉ <b className="tabular-nums">{tally.idle}</b>
+          </button>
+          {stat && (
+            <button onClick={() => { setStat(''); setPage(0); }} data-testid="sum-clear"
+              className="tap44 px-1 text-muted-foreground underline-offset-2 hover:underline">bỏ lọc</button>
+          )}
         </div>
 
         <div className="overflow-hidden rounded-xl border border-border bg-card">
-          {/* thanh công cụ trên bảng */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
-            <div className="relative min-w-[160px] flex-1">
+          {/* Thanh công cụ — MỘT hàng, không cho xuống dòng.
+              Bản cũ dùng flex-wrap + min-w-[160px] nên trên iPhone 390px ô tìm và bộ
+              lọc dự án tách thành hai dòng, ăn 105px. Cộng cả phần đầu trang thì thẻ
+              phiên đầu tiên nằm ở 439px — quá nửa màn hình chỉ để tới được nó. */}
+          <div className="flex items-center gap-2 border-b border-border p-2.5">
+            <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} data-testid="search-box"
                 placeholder="Tìm phiên…" className="h-9 pl-8 text-[16px] md:text-[14px]" />
             </div>
             <select value={proj} onChange={(e) => { setProj(e.target.value); setPage(0); }} data-testid="project-filter"
-              className="h-9 shrink-0 rounded-lg border border-border bg-card px-2.5 text-[14px] outline-none">
-              <option value="">Tất cả dự án</option>
+              className="h-9 w-[104px] shrink-0 rounded-lg border border-border bg-card px-2 text-[13px] outline-none sm:w-auto sm:px-2.5 sm:text-[14px]">
+              <option value="">Mọi dự án</option>
               {projects.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
@@ -204,8 +200,12 @@ export function SessionList({
 
           {/* Thanh điều khiển của lưới — giữ lại hai thứ vốn nằm trong đầu bảng:
               ô chọn-tất-cả và nút sắp xếp. Bỏ bảng mà quên chúng là mất tính năng. */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-            <label className="flex cursor-pointer items-center gap-2 text-[12.5px] text-muted-foreground">
+          {/* MỘT hàng, cuộn ngang nếu chật — không cho xuống dòng.
+              Chữ "Sắp xếp" bỏ trên điện thoại: ba nút bên cạnh đã tự nói lên điều đó,
+              giữ lại chỉ tổ đẩy hàng thành hai dòng. */}
+          <div className="flex items-center gap-2 overflow-x-auto border-b border-border px-2.5 py-1.5"
+            style={{ scrollbarWidth: 'none' }}>
+            <label className="flex shrink-0 cursor-pointer items-center gap-2 text-[12.5px] text-muted-foreground">
               <input type="checkbox" data-testid="sel-all"
                 className="size-4 cursor-pointer accent-primary"
                 checked={view.length > 0 && view.every((s) => sel.has(s.sid))}
@@ -214,10 +214,10 @@ export function SessionList({
                   view.forEach((s) => (e.target.checked ? next.add(s.sid) : next.delete(s.sid)));
                   setSel(next);
                 }} />
-              Chọn cả trang
+              <span className="hidden sm:inline">Chọn cả trang</span>
             </label>
-            <div className="ml-auto flex items-center gap-1">
-              <span className="text-[12.5px] text-muted-foreground">Sắp xếp</span>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <span className="hidden text-[12.5px] text-muted-foreground sm:inline">Sắp xếp</span>
               {sapXep('mtimeMs', 'Mới nhất')}
               {sapXep('title', 'Tên')}
               {sapXep('msgs', 'Tin nhắn')}

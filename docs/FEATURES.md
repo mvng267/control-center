@@ -180,6 +180,14 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 130 | Ô chọn + menu ⋯ có ngay trên điện thoại | trước đây bản mobile thiếu hẳn | ui-new |
 | 131 | Sắp xếp chuyển từ tiêu đề cột sang thanh trên lưới | bấm `sort-title` → `data-active=true` | ui-new |
 | 132 | Thẻ báo "Đang chờ duyệt kế hoạch" | `card-plan` khi `choDuyet` | tay |
+| 133 | Khung chat dùng TRỌN bề ngang (bỏ kẹp 920px) | đo `chat-bubbles` > 920px trên 1440px | ui-new |
+| 134 | Dòng gợi ý phím dưới ô gõ như CLI in ra | `input-hint` — ẩn trên điện thoại | ui-new |
+| 135 | Công cụ phiên gom vào MỘT menu ⋯ có nhãn chữ | trước là 5 nút icon trần + 2 nút nữa = 7 ô xám | ui-new |
+| 136 | `Esc` trong ô gõ = dừng Claude (như terminal) | chặn `/api/kill`, bấm Esc lúc đang chạy | ui-new |
+| 137 | Hiện mốc đổi ngày / lệnh xếp hàng / chế độ kế hoạch | 3 dạng `note-line` mới từ `attachment` | ui-new |
+| 138 | Phần đầu trang gọn trên iPhone (133px → 60px) | đo `page-header`, ngưỡng ≤ 80px | ui-new |
+| 139 | Thẻ đầu tiên không bị đẩy quá nửa màn (439px → 288px) | đo `top` thẻ đầu, ngưỡng < 340px | ui-new |
+| 140 | Nhìn thấy ít nhất 3 thẻ cùng lúc trên iPhone | đếm thẻ nằm trọn trong khung nhìn | ui-new |
 
 ---
 
@@ -188,7 +196,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 62 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 72 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục

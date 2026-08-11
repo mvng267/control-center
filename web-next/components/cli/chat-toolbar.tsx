@@ -155,30 +155,24 @@ export function ChatToolbar({
 
   return (
     <>
-      {/* Màn rộng: bày hết ra cho bấm một chạm */}
-      <div className="hidden shrink-0 items-center gap-1 sm:flex">
-        {acts.map((a) => (
-          <Button key={a.id} variant="ghost" size="icon" className="tap44 size-8" title={a.label}
-            data-testid={a.id === 'model' ? 'model-chip' : a.id + '-btn'} onClick={a.run}>
-            <a.icon className={a.on ? 'size-4 text-tool-accent' : 'size-4'} />
-          </Button>
-        ))}
-      </div>
-
-      {/* Điện thoại: 5 nút bóp tên phiên còn ~54px, không biết đang ở phiên nào.
-          Gom vào menu ⋯ để tên phiên có chỗ thở. */}
+      {/* MỘT menu duy nhất cho mọi bề rộng.
+          Bản cũ bày cả 5 nút icon TRẦN trên desktop; cộng với nút quyền và effort là
+          7 hình vuông xám cạnh nhau, không nhãn — nhìn ảnh chụp không đoán nổi cái nào
+          làm gì, phải rê chuột từng cái đọc tooltip. Menu có chữ đọc được ngay, và
+          header còn chỗ cho tên phiên. */}
       <DropdownMenu>
         {/* Base UI dùng prop `render` chứ không có `asChild` như Radix */}
         <DropdownMenuTrigger
           render={
-            <Button variant="ghost" size="icon" className="tap44 size-8 shrink-0 sm:hidden"
-              title="Thêm" data-testid="chat-more">
+            <Button variant="ghost" size="icon" className="tap44 size-8 shrink-0"
+              title="Công cụ phiên" aria-label="Công cụ phiên" data-testid="chat-more">
               <MoreHorizontal className="size-4" />
             </Button>
           } />
         <DropdownMenuContent align="end" className="w-52">
           {acts.map((a) => (
-            <DropdownMenuItem key={a.id} onClick={a.run} data-testid={'m-' + a.id}>
+            <DropdownMenuItem key={a.id} onClick={a.run}
+              data-testid={a.id === 'model' ? 'model-chip' : 'm-' + a.id}>
               <a.icon className={a.on ? 'size-4 text-tool-accent' : 'size-4'} />
               {a.label}
             </DropdownMenuItem>

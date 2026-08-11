@@ -16,7 +16,6 @@ import { NoteLine, type NotePart } from './note-line';
 import { AskCard } from './ask-card';
 import { PlanCard } from './plan-card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -289,7 +288,10 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         if (!e.dataTransfer.types.includes('Files')) return;
         e.preventDefault(); setKeoVao(false); nhanAnh([...e.dataTransfer.files]);
       }}>
-      <div className="mx-auto flex w-full max-w-[920px] shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+      {/* Terminal dùng TRỌN bề ngang cửa sổ. Trước đây kẹp 920px giữa màn hình cho
+          "dễ đọc", nhưng nội dung ở đây phần lớn là log tool và đường dẫn dài — bó lại
+          thành ra xuống dòng liên tục, còn hai bên bỏ trống. */}
+      <div className="flex w-full shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
         <Button variant="ghost" size="icon" className="tap44 size-8" onClick={onBack}
           title="Quay lại danh sách" aria-label="Quay lại danh sách" data-testid="chat-back">
           <ArrowLeft className="size-4" />
@@ -327,9 +329,8 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         }}
         /* font-mono cho CẢ bản chép: terminal chỉ có một phông chữ đều, mọi cột thẳng
            hàng. Đây là thứ tạo cảm giác "đúng là CLI" rõ nhất, hơn cả ký tự ⏺ ⎿.
-           Căn giữa và chặn bề rộng 920px (~100 ký tự/dòng): màn 1440px mà để dòng chạy
-           hết chiều ngang thì mắt phải quét quá xa. */
-        className="mx-auto flex w-full min-h-0 max-w-[920px] flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-4 font-mono">
+           Full-width: terminal không kẹp nội dung vào giữa. */
+        className="flex w-full min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-4 font-mono">
         {groups.map((m, gi) => {
           const parts = m.parts?.length ? mergeTextParts(m.parts) : [{ t: 'text', text: m.content } as TextPart];
           const k = dayKey(m.ts);
@@ -454,7 +455,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[920px] shrink-0 border-t border-border px-3 py-3"
+      <div className="w-full shrink-0 border-t border-border px-3 py-3"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
         <SlashHint items={slash.items} active={slash.active} onPick={slash.pick} />
         <MentionHint items={mention.items} active={mention.active} onPick={mention.pick} />
@@ -484,6 +485,11 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             onKeyDown={(e) => {
               if (slash.onKeyDown(e)) return;     // ↑↓ chọn, Tab/Enter điền, Esc đóng
               if (mention.onKeyDown(e)) return;   // như trên, cho bảng gợi ý file "@"
+              /* Esc ngắt Claude, đúng như terminal. Đặt SAU hai bảng gợi ý: đang mở
+                 gợi ý thì Esc phải đóng bảng trước, không được dừng luôn cả lượt. */
+              if (e.key === 'Escape' && (h?.typing || h?.status === 'RUNNING')) {
+                e.preventDefault(); stop(); return;
+              }
               // ↑/↓ gọi lại tin cũ — CHỈ khi ô rỗng hoặc đang duyệt lịch sử, nếu không
               // sẽ cướp mất thao tác di chuyển con trỏ trong đoạn nhiều dòng.
               if ((e.key === 'ArrowUp' || e.key === 'ArrowDown')
@@ -502,11 +508,33 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             }}
             placeholder="Nhắn cho Claude…"
             className="max-h-[35dvh] min-h-11 resize-none border-0 bg-transparent px-0 py-2.5 font-mono text-[16px] shadow-none focus-visible:ring-0" />
-          <Button size="icon" className="size-11 shrink-0" onClick={() => send()} title="Gửi tin nhắn"
+          {/* Nút gửi: bo tròn nhỏ gọn nằm TRONG khung, không phải khối vuông 44px
+              chồm ra ngoài như trước. Mờ đi khi chưa có gì để gửi, thay vì biến mất —
+              biến mất thì khung nhảy giật mỗi lần gõ ký tự đầu. */}
+          <Button size="icon" onClick={() => send()} title="Gửi tin nhắn"
             aria-label="Gửi tin nhắn"
+            className={cn('tap44 size-8 shrink-0 rounded-lg transition-opacity',
+              !text.trim() && !att.length && 'opacity-40')}
             disabled={!text.trim() && !att.length} data-testid="chat-send">
-            <Send className="size-4" />
+            <Send className="size-3.5" />
           </Button>
+        </div>
+
+        {/* Dòng gợi ý phím dưới ô gõ — Claude CLI luôn in một dòng như vậy.
+            Ẩn trên điện thoại: không có bàn phím cứng thì nhắc phím tắt là vô nghĩa,
+            mà lại ăn mất một dòng trên màn hình vốn đã hẹp. */}
+        <div className="mt-1.5 hidden flex-wrap items-center gap-x-3 gap-y-1 px-1 font-mono text-[10.5px] text-muted-foreground/60 sm:flex"
+          data-testid="input-hint">
+          <span><b className="font-semibold text-muted-foreground">Enter</b> gửi</span>
+          <span><b className="font-semibold text-muted-foreground">Shift+Enter</b> xuống dòng</span>
+          <span><b className="font-semibold text-muted-foreground">/</b> lệnh</span>
+          <span><b className="font-semibold text-muted-foreground">@</b> file</span>
+          <span><b className="font-semibold text-muted-foreground">↑</b> tin cũ</span>
+          {(h?.typing || h?.status === 'RUNNING') && (
+            <span className="ml-auto text-status-error">
+              <b className="font-semibold">Esc</b> dừng Claude
+            </span>
+          )}
         </div>
       </div>
     </div>

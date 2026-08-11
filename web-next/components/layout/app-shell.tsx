@@ -181,19 +181,22 @@ export function PageHeader({
   title, count, desc, actions,
 }: { title: string; count?: number; desc?: string; actions?: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 px-4 pb-4 pt-4 md:flex-row md:items-start md:px-6"
+    /* Trên màn hẹp: tiêu đề và các nút NẰM CÙNG HÀNG, câu mô tả ẩn đi.
+       Đo trên iPhone 390px: bản cũ xếp dọc nên riêng phần đầu đã cao 133px, đẩy thẻ
+       phiên đầu tiên xuống 439px — quá nửa màn hình chỉ để tới được nội dung.
+       Từ md trở lên giữ nguyên bố cục cũ, màn rộng không thiếu chỗ. */
+    <div className="flex flex-row items-center gap-2 px-4 pb-3 pt-3 md:items-start md:gap-3 md:px-6 md:pb-4 md:pt-4"
       data-testid="page-header">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          {/* không truncate: màn hẹp cho tiêu đề xuống dòng còn hơn cắt cụt */}
-          <h1 className="text-[22px] font-bold leading-tight tracking-tight md:truncate md:text-[24px]">{title}</h1>
+          <h1 className="truncate text-[19px] font-bold leading-tight tracking-tight md:text-[24px]">{title}</h1>
           {count !== undefined && (
             <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-[12px] font-medium tabular-nums">
               {count}
             </span>
           )}
         </div>
-        {desc && <p className="mt-1 text-[14px] text-muted-foreground">{desc}</p>}
+        {desc && <p className="mt-1 hidden text-[14px] text-muted-foreground md:block">{desc}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>

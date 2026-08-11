@@ -602,6 +602,37 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       const sauCompact = await pg.locator('[data-testid=msg-wrap][data-role=assistant]').count();
       ok('moc /compact VAN cat luot (do la ranh gioi that)',
         sauCompact === 2, sauCompact + ' khoi "Claude" (dung phai 2)');
+
+      /* Các dạng CLI khac ma dashboard truoc day BO HET. Dem that tren phien 58MB:
+         121 file vua sua, 20 lenh xep hang, 10 moc ke hoach, 3 lan sang ngay moi. */
+      await pg.unroute('**/api/history/**');
+      await pg.route('**/api/history/**', async (r) => {
+        let res, j;
+        try { res = await r.fetch(); j = await res.json(); } catch { return; }
+        const t0 = Date.now();
+        const gio = (s) => new Date(t0 + s * 1000).toISOString();
+        j.messages = [
+          { role: 'system', content: '', ts: gio(0),
+            parts: [{ t: 'note', kind: 'ngay', title: 'Sang ngày 2026-08-11', body: '' }] },
+          { role: 'system', content: '', ts: gio(1),
+            parts: [{ t: 'note', kind: 'hang-doi', title: 'Lệnh xếp hàng chờ tới lượt', body: 'lam tiep di' }] },
+          { role: 'system', content: '', ts: gio(2),
+            parts: [{ t: 'note', kind: 'ke-hoach', title: 'Bật chế độ lập kế hoạch', body: '' }] },
+          { role: 'assistant', content: 'xong', ts: gio(3) },
+        ];
+        await r.fulfill({ response: res, json: j }).catch(() => {});
+      });
+      await pg.reload({ waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+      await pg.waitForTimeout(2500);
+
+      const kieu = await pg.$$eval('[data-testid=note-line]',
+        (ns) => ns.map((n) => n.dataset.kind));
+      ok('hien duoc cac dang CLI moi: doi ngay / lenh xep hang / moc ke hoach',
+        ['ngay', 'hang-doi', 'ke-hoach'].every((k) => kieu.includes(k)),
+        JSON.stringify(kieu));
       await dongSach(pg, cx);
     }
 
@@ -744,6 +775,74 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await cx.close();
     }
 
+    /* Khung chat dùng TRỌN bề ngang, không kẹp 920px giữa màn hình như trước.
+       Terminal không căn giữa nội dung; ở đây phần lớn là log tool và đường dẫn dài,
+       bó lại thành ra xuống dòng liên tục còn hai bên bỏ trống. */
+    {
+      const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const pg = await cx.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForSelector('[data-testid=session-row]:visible', { timeout: 20000 });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+      await pg.waitForTimeout(2000);
+
+      const bd = await pg.evaluate(() => {
+        const box = document.querySelector('[data-testid=chat-bubbles]');
+        const o = document.querySelector('[data-testid=chat-input]').closest('div');
+        return {
+          rongChat: Math.round(box.getBoundingClientRect().width),
+          rongMan: window.innerWidth,
+          rongO: Math.round(o.getBoundingClientRect().width),
+        };
+      });
+      // Trừ hao sidebar 256px + lề; cốt lõi là KHÔNG còn bị chặn ở 920px
+      ok('khung chat dung tron be ngang (khong ke.p 920px)',
+        bd.rongChat > 920, bd.rongChat + 'px / man ' + bd.rongMan + 'px');
+      ok('khung go cung dan het be ngang', bd.rongO > 920, bd.rongO + 'px');
+
+      ok('co dong goi y phim duoi o go (nhu CLI in ra)',
+        (await pg.locator('[data-testid=input-hint]').count()) === 1);
+
+      /* Thanh công cụ gom vào MỘT menu ⋯. Bản cũ bày 5 nút icon trần trên desktop;
+         cộng nút quyền và effort là 7 hình vuông xám không nhãn cạnh nhau. */
+      ok('cong cu phien gom vao mot menu ⋯',
+        (await pg.locator('[data-testid=chat-more]').count()) === 1);
+      await pg.locator('[data-testid=chat-more]').click();
+      await pg.waitForTimeout(600);
+      const soMuc = await pg.locator('[data-testid^=m-], [data-testid=model-chip]').count();
+      ok('menu ⋯ co du 5 muc CO NHAN CHU', soMuc === 5, soMuc + ' muc');
+      await pg.keyboard.press('Escape');
+      await pg.waitForTimeout(400);
+
+      /* Esc trong o go = dung Claude, dung nhu terminal.
+         Dung phien GIA dang chay + chan /api/kill: khong duoc dung phien that cua Vinh. */
+      let daKill = false;
+      await pg.route('**/api/kill/**', async (r) => {
+        daKill = true;
+        await r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }).catch(() => {});
+      });
+      await pg.route('**/api/history/**', async (r) => {
+        let res, j;
+        try { res = await r.fetch(); j = await res.json(); } catch { return; }
+        j.status = 'RUNNING'; j.typing = true;
+        await r.fulfill({ response: res, json: j }).catch(() => {});
+      });
+      await pg.reload({ waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-input]', { timeout: 20000 });
+      await pg.waitForTimeout(1500);
+
+      await pg.locator('[data-testid=chat-input]').click();
+      await pg.keyboard.press('Escape');
+      await pg.waitForTimeout(1200);
+      ok('Esc trong o go -> DUNG Claude (nhu terminal)', daKill, 'da goi /api/kill=' + daKill);
+
+      await dongSach(pg, cx);
+    }
+
     /* Danh sách phiên kiểu THẺ — thay cho bảng 6 cột.
        Kiểm ở 390px vì đó là chỗ lỗi thật đã xảy ra: ô lưới mặc định min-width:auto,
        nên câu cuối dài đẩy thẻ phình lên 455px trong khung 356px, chữ bị cắt mất
@@ -775,6 +874,28 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         d ? d.tran + ' the tran, trang tran=' + d.tranTrang : '-');
       ok('the co hien cau cuoi (dang do viec gi)',
         !!d && d.coCauCuoi > 0, d ? d.coCauCuoi + '/' + d.so + ' the co cau cuoi' : '-');
+
+      /* Phan dau trang khong duoc an het cho cua noi dung.
+         Do that truoc khi sua: header 133px, the dau tien nam o 439px tren man 844px
+         -> qua NUA man hinh chi de toi duoc phien dau. Sau khi gom hang: 60px / 288px.
+         Chot nguong long hon so do that de con cho thay doi nho. */
+      const cao = await pg.evaluate(() => {
+        const the = [...document.querySelectorAll('[data-testid=session-row]')];
+        return {
+          header: Math.round(document.querySelector('[data-testid=page-header]').getBoundingClientRect().height),
+          top: Math.round(the[0].getBoundingClientRect().top),
+          nhinThay: the.filter((c) => {
+            const r = c.getBoundingClientRect();
+            return r.top >= 0 && r.bottom <= window.innerHeight;
+          }).length,
+        };
+      });
+      ok('phan dau trang gon tren iPhone (truoc 133px)',
+        cao.header <= 80, cao.header + 'px');
+      ok('the phien dau tien khong bi day qua nua man hinh',
+        cao.top < 340, 'top=' + cao.top + 'px (truoc 439px, man 844px)');
+      ok('nhin thay it nhat 3 the cung luc',
+        cao.nhinThay >= 3, cao.nhinThay + ' the trong khung nhin');
 
       // Ô chọn và menu ⋯ trước chỉ có ở bảng desktop; bản mobile cũ thiếu hẳn.
       ok('the co O CHON va menu ⋯ ngay tren dien thoai',

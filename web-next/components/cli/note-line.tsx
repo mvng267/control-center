@@ -13,26 +13,32 @@ import { cn } from '@/lib/utils';
 
 export interface NotePart {
   t: 'note';
-  kind: 'hook-error' | 'compact' | 'api-error';
+  kind: 'hook-error' | 'compact' | 'api-error' | 'ngay' | 'hang-doi' | 'ke-hoach' | 'dinh-kem';
   title: string;
   body: string;
 }
 
-const TONE = {
+const TONE: Record<string, string> = {
   'hook-error': 'text-amber-500',
   'api-error': 'text-status-error',
+  'hang-doi': 'text-muted-foreground',
+  'ke-hoach': 'text-primary',
+  'dinh-kem': 'text-tool-accent',
   compact: 'text-muted-foreground',
-} as const;
+  ngay: 'text-muted-foreground',
+};
+
+// Vẽ thành dải phân cách ngang giữa dòng: đây là MỐC của phiên, không phải sự cố
+const LA_MOC = new Set(['compact', 'ngay', 'ke-hoach']);
 
 export function NoteLine({ part }: { part: NotePart }) {
   const [open, setOpen] = useState(false);
   const tone = TONE[part.kind] || TONE.compact;
 
-  // Mốc /compact là ranh giới của phiên -> vẽ thành dải phân cách như CLI
-  if (part.kind === 'compact') {
+  if (LA_MOC.has(part.kind)) {
     return (
-      <div className="my-1.5 flex items-center gap-2 text-[11.5px] text-muted-foreground/70"
-        data-testid="note-line" data-kind="compact">
+      <div className={cn('my-1.5 flex items-center gap-2 text-[11.5px]', tone)}
+        data-testid="note-line" data-kind={part.kind}>
         <span className="h-px flex-1 bg-border" />
         <span className="shrink-0">{part.title}</span>
         <span className="h-px flex-1 bg-border" />
