@@ -38,7 +38,7 @@ Playwright (giao diện mới); `tay` nếu phải kiểm thủ công trên máy
 | 18 | Nút Copy trong khối code | Mở tool card → bấm Copy | e2e |
 | 19 | Window trượt (phiên >30 tin) | Phiên dài, gửi tin mới → vẫn nhận được | e2e |
 | 20 | `/clear` không kéo lại tin cũ | `/clear` → gửi tin mới → chỉ thấy tin mới | e2e |
-| 21 | Banner lỗi khi chạy hỏng | Mở phiên có thư mục gốc đã xoá → gửi tin | tay |
+| 21 | Banner lỗi khi chạy hỏng | gửi vào sid không tồn tại → phải hiện banner | ui-new |
 | 22 | Dừng giữa chừng (nút ⏹ / Esc / `/stop`) | Khi đang chạy, bấm Dừng | e2e |
 | 23 | **Duyệt kế hoạch** | Bật "Duyệt trước" → giao task → bấm ✓ Duyệt | tay |
 | 24 | **Gửi ảnh** từ điện thoại | Bấm 📎 → chọn ảnh → gửi | e2e |
@@ -129,7 +129,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 79 | Badge % đổi màu theo NGHĨA (thẻ Lỗi tăng = đỏ) | Xem thẻ Lỗi ở tab AGY | pw |
 | 80 | Không còn nút chết | `node scripts/dead-buttons.js` | pw |
 | 81 | Thẻ tool mở ra KHÔNG tự đóng khi poll | mở thẻ, đợi 10s, `data-open` vẫn true | pw |
-| 82 | Chat kiểu CLI: avatar + nhãn vai + tool thụt lề | đếm `msg-avatar`, `msg-role`; tool L > bong bóng L | pw |
+| 82 | ~~Chat có avatar + nhãn vai~~ → đã BỎ, thay bằng kiểu terminal (mục 121-125) | — | — |
 | 83 | Thẻ "Suy nghĩ" gập được, không đổ hết ra màn | `think-card` mặc định `data-open=false` | pw |
 | 84 | So sánh 2 phiên (lệnh ⌘K mở thật, không toast lạc đề) | ⌘K → ui:compare → `compare-view` | pw |
 | 85 | Tóm tắt phiên qua /api/summary | menu ⋯ → Tóm tắt → `summary-dialog` | pw |
@@ -172,7 +172,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 122 | Ký tự `⏺` cho lượt/tool, `⎿` cho kết quả | đếm trên nội dung khung chat | ui-new |
 | 123 | KHÔNG còn avatar tròn / nhãn vai | terminal không có, đếm phải = 0 | ui-new |
 | 124 | Câu chữ không nằm trong bong bóng có nền | borderRadius = 0, nền trong suốt | ui-new |
-| 125 | Ô nhập có dấu nhắc `>` và khung viền như CLI | nhìn bằng mắt | tay |
+| 125 | Ô nhập có dấu nhắc `>` và khung viền như CLI | `prompt-sign` đổi theo chế độ | ui-new |
 | 126 | Danh sách phiên là **lưới thẻ**, 1/2/3 cột theo bề rộng | `session-grid` có thẻ | ui-new |
 | 127 | Thẻ KHÔNG tràn khỏi lưới trên iPhone 390px | đo `right` của thẻ vs lưới (lỗi thật: 455px trong 356px) | ui-new |
 | 128 | Thẻ hiện câu cuối — biết phiên đang dở việc gì | `card-last` có nội dung | ui-new |
