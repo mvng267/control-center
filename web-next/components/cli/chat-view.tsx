@@ -11,6 +11,7 @@ import { EffortSwitch } from './effort-switch';
 import { TodoBar } from './todo-bar';
 import { SlashHint, useSlash } from './slash-hint';
 import { MentionHint, useMention } from './mention-hint';
+import { ModeHint, docChe } from './mode-hint';
 import { ThinkCard } from './think-card';
 import { NoteLine, type NotePart } from './note-line';
 import { AskCard } from './ask-card';
@@ -31,6 +32,7 @@ interface History {
   messages: Msg[]; total: number; start: number; typing: boolean; status: string;
   title: string; error: string | null; awaiting: boolean; model: string | null;
   usage: Usage | null;
+  nhap?: string;   // chữ đang chảy ra của lượt hiện tại (bản nháp từ stdout)
 }
 
 const GROUP_GAP_MS = 120000;
@@ -225,7 +227,9 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   useEffect(() => {
     const el = boxRef.current;
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
-  }, [groups.length, h?.typing]);
+    // Bám theo cả ĐỘ DÀI bản nháp: chữ chảy ra làm khung cao dần mà số lượt không
+    // đổi, chỉ nghe groups.length thì con chữ mới trôi khỏi tầm nhìn.
+  }, [groups.length, h?.typing, h?.nhap?.length]);
 
   /* Nhận tham số để bảng chọn (AskCard) gửi thẳng lựa chọn mà không phải chờ state
      `text` cập nhật xong — setText rồi gọi send() ngay thì send vẫn đọc giá trị cũ. */
@@ -417,6 +421,21 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             </div>
           );
         })}
+
+        {/* CHỮ ĐANG CHẢY RA của lượt hiện tại.
+            .jsonl chỉ được ghi khi lượt XONG, nên trước đây màn hình đứng im hàng chục
+            giây (đo thật: có lượt gần 5 giây, có lượt lâu hơn nhiều) rồi bung ra một
+            cục. Giờ đọc thẳng stdout của tiến trình nên chữ hiện dần như terminal.
+            Con trỏ nhấp nháy ở cuối, đúng kiểu terminal đang gõ. */}
+        {!!h?.nhap && (
+          <div data-testid="dang-go" className="flex w-full gap-2">
+            <span aria-hidden className="shrink-0 select-none text-tool-accent">⏺</span>
+            <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+              {h.nhap}
+              <span className="ml-[1px] inline-block h-[13px] w-[7px] translate-y-[2px] animate-pulse bg-foreground/70" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Nút dừng dựa vào STATUS, không phải `typing`. `typing = procs.has(sid)` chỉ
@@ -459,16 +478,25 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
         <SlashHint items={slash.items} active={slash.active} onPick={slash.pick} />
         <MentionHint items={mention.items} active={mention.active} onPick={mention.pick} />
+        <ModeHint che={docChe(text)} />
         <AttachBar items={att} onRemove={(i) => setAtt((xs) => xs.filter((_, k) => k !== i))} />
         {/* Khung viền quanh ô gõ — Claude CLI vẽ hẳn một hộp bo góc quanh dòng nhập.
             Viền chuyển sang màu chính khi đang gõ để biết con trỏ đang ở đây. */}
         <div className={cn('flex items-center gap-2 rounded-[10px] border px-2 transition-colors',
-          text.trim() ? 'border-primary/50' : 'border-border')}>
+          docChe(text) === 'bash' ? 'border-tool-accent/60'
+            : docChe(text) === 'nho' ? 'border-primary/60'
+            : text.trim() ? 'border-primary/50' : 'border-border')}>
           {/* Nút ảnh nằm CẠNH ô nhắn tin, không phải trên header: đính ảnh là một
               phần của việc soạn tin, để tít trên cùng thì tay phải với. */}
           <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])} />
-          {/* Dấu nhắc ">" trước ô gõ, đúng như dòng nhập của Claude CLI. */}
-          <span aria-hidden className="shrink-0 select-none font-mono text-[15px] text-primary">&gt;</span>
+          {/* Dấu nhắc trước ô gõ, đúng như dòng nhập của Claude CLI — và ĐỔI theo chế
+              độ: "!" chạy bash, "#" ghi nhớ, còn lại là ">" nhắn cho Claude. */}
+          <span aria-hidden data-testid="prompt-sign"
+            className={cn('shrink-0 select-none font-mono text-[15px]',
+              docChe(text) === 'bash' ? 'text-tool-accent'
+                : docChe(text) === 'nho' ? 'text-primary' : 'text-primary')}>
+            {docChe(text) === 'bash' ? '!' : docChe(text) === 'nho' ? '#' : '>'}
+          </span>
           {/* Textarea: dán đoạn dài / viết nhiều dòng vẫn đọc được.
               Enter gửi, Shift+Enter xuống dòng. */}
           <Textarea value={text} data-testid="chat-input"
@@ -529,6 +557,8 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           <span><b className="font-semibold text-muted-foreground">Shift+Enter</b> xuống dòng</span>
           <span><b className="font-semibold text-muted-foreground">/</b> lệnh</span>
           <span><b className="font-semibold text-muted-foreground">@</b> file</span>
+          <span><b className="font-semibold text-muted-foreground">!</b> bash</span>
+          <span><b className="font-semibold text-muted-foreground">#</b> ghi nhớ</span>
           <span><b className="font-semibold text-muted-foreground">↑</b> tin cũ</span>
           {(h?.typing || h?.status === 'RUNNING') && (
             <span className="ml-auto text-status-error">

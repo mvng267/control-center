@@ -188,6 +188,11 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 138 | Phần đầu trang gọn trên iPhone (133px → 60px) | đo `page-header`, ngưỡng ≤ 80px | ui-new |
 | 139 | Thẻ đầu tiên không bị đẩy quá nửa màn (439px → 288px) | đo `top` thẻ đầu, ngưỡng < 340px | ui-new |
 | 140 | Nhìn thấy ít nhất 3 thẻ cùng lúc trên iPhone | đếm thẻ nằm trọn trong khung nhìn | ui-new |
+| 141 | `!lệnh` chạy thẳng bash, không tốn lượt Claude | gõ `!ls` → dải báo chế độ, dấu nhắc đổi thành `!` | ui-new |
+| 142 | `#ghi` cất vào bộ nhớ cho phiên sau | gõ `#…` → dải báo, dấu nhắc đổi thành `#` | ui-new |
+| 143 | Gõ mỗi `!` (chưa có lệnh) chưa tính là chế độ | không hiện dải báo | ui-new |
+| 144 | **Chữ hiện dần** khi Claude đang trả lời | `dang-go` có nội dung lúc `typing` | ui-new |
+| 145 | Gửi vào phiên không tồn tại → hiện banner lỗi | trước đây im lặng vì `/api/history` trả về sớm | ui-new |
 
 ---
 
@@ -196,7 +201,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 72 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 82 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục

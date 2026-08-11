@@ -501,7 +501,32 @@ function spawnClaude(args, sid, meta) {
     proc.stderr.on('error', () => {});
   }
   if (proc.stdout) {
-    proc.stdout.on('data', d => { outBuf = (outBuf + d.toString()).slice(-2000); });
+    /* Chữ Claude đang trả về, hiện NGAY thay vì đợi cả lượt xong.
+       .jsonl chỉ được ghi KHI LƯỢT XONG, nên trước đây màn hình đứng im rồi bung ra
+       một cục. Đo thật: `claude -p` thường xả stdout ĐÚNG MỘT LẦN lúc kết thúc
+       (5747ms/1 lần) — nên đọc stdout trần là vô ích. Phải có `--output-format
+       stream-json --include-partial-messages` mới nhận được từng đoạn: đo lại thấy
+       chữ tới rải rác từ 5209ms qua 13 lần.
+       Gom `delta.text` của các `stream_event`; phần còn lại là siêu dữ liệu, bỏ. */
+    let du = '';
+    proc.stdout.on('data', d => {
+      /* Giữ 2000 ký tự ĐẦU, không phải cuối. Ở chế độ stream-json mỗi sự kiện là một
+         khối JSON dài, nên cửa sổ trượt-về-cuối đẩy trôi mất câu báo lỗi nằm ở đầu —
+         đo thật: gửi vào sid không tồn tại thì banner lỗi biến mất hoàn toàn, tin
+         nhắn rơi vào hư không đúng như bệnh cũ. */
+      if (outBuf.length < 2000) outBuf = (outBuf + d.toString()).slice(0, 2000);
+      const e = procs.get(sid);
+      if (!e || !meta || !meta.stream) return;
+      du += d.toString();
+      const dong = du.split('\n');
+      du = dong.pop() || '';                  // dòng cuối có thể còn dở
+      for (const L of dong) {
+        if (!L.trim()) continue;
+        let o; try { o = JSON.parse(L); } catch { continue; }
+        const t = o.type === 'stream_event' && o.event && o.event.delta && o.event.delta.text;
+        if (t) e.nhap = (String(e.nhap || '') + t).slice(-8000);
+      }
+    });
     proc.stdout.on('error', () => {});
   }
   proc.on('error', e => {
@@ -1528,10 +1553,15 @@ const server = http.createServer(async (req, res) => {
     const msg = (body.message || '').trim();
     if (!msg) return json(res, 400, { error: 'message required' });
     if (procs.has(sid)) return json(res, 409, { error: 'session is busy' });
-    const cargs = ['-p', msg, '--resume', sid].concat(permArgs(), effortArgs());
+    /* stream-json + partial: để chữ hiện DẦN như terminal thay vì bung một cục khi
+       xong. Chỉ bật ở đường NHẮN TIN — các đường khác (task mới, lệnh một phát) đọc
+       stdout dạng chữ thường, đổi sang JSON là vỡ hết chỗ đọc kết quả. */
+    const cargs = ['-p', msg, '--resume', sid,
+      '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
+    ].concat(permArgs(), effortArgs());
     const mdl = modelFor(sid);              // model riêng phiên > model toàn cục
     if (mdl) cargs.push('--model', mdl);
-    spawnClaude(cargs, sid, { task: msg });
+    spawnClaude(cargs, sid, { task: msg, stream: true });
     return json(res, 200, { ok: true, sid });
   }
 
@@ -1551,7 +1581,17 @@ const server = http.createServer(async (req, res) => {
     const file = findSessionFile(sid);
     // user đang xem chat -> đánh dấu đã đọc (chỉ set cho session THẬT, sid rác không phình Map)
     if (file || typing) lastSeen.set(sid, Date.now());
-    if (!file) return json(res, 200, { sid, messages: [], total: 0, start: 0, typing, status: statusOf(sid, 0) });
+    if (!file) {
+      /* Chưa có .jsonl nào cho sid này. Vẫn PHẢI trả lỗi lần chạy gần nhất: đây đúng
+         là trường hợp `--resume` trượt (thư mục gốc bị xoá/đổi tên, hoặc sid sai) —
+         nhánh cũ trả về rỗng nên banner lỗi không bao giờ hiện, tin nhắn rơi vào hư
+         không mà màn hình im như không có chuyện gì. */
+      const se0 = spawnErrors.get(sid);
+      return json(res, 200, {
+        sid, messages: [], total: 0, start: 0, typing, status: statusOf(sid, 0),
+        error: se0 && Date.now() - se0.at < 120000 ? se0.msg : null,
+      });
+    }
     let mt = 0;
     try { mt = fs.statSync(file).mtimeMs; } catch {}
     const messages = getHistory(sid) || [];
@@ -1581,6 +1621,11 @@ const server = http.createServer(async (req, res) => {
       awaiting: !!(parsed && parsed.planFile && !typing),
       usage: parsed ? parsed.usage : null, // token đã dùng (thay cho /cost)
       model: loadModels()[sid] || null,    // model riêng phiên (null = theo model toàn cục)
+      /* Bản nháp đang chảy ra từ stdout của lượt hiện tại.
+         .jsonl chỉ được ghi KHI LƯỢT XONG, nên nếu chỉ đọc file thì màn hình đứng im
+         hàng chục giây rồi bung ra một cục. Có cái này thì chữ hiện dần như terminal.
+         Chỉ gửi khi đang chạy; xong lượt là bản thật từ .jsonl thay chỗ. */
+      nhap: typing ? String((procs.get(sid) || {}).nhap || '').trim() : '',
     });
   }
 

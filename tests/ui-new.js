@@ -805,6 +805,40 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       ok('co dong goi y phim duoi o go (nhu CLI in ra)',
         (await pg.locator('[data-testid=input-hint]').count()) === 1);
 
+      /* "!" chay bash, "#" ghi nho — hai che do cua Claude CLI.
+         Da thu THAT truoc khi lam: ca hai chay qua `claude -p`, dung duong dashboard
+         dang dung. Gui "!echo NOI_TU_DASHBOARD" qua dashboard tra ve dung chuoi do. */
+      const o = pg.locator('[data-testid=chat-input]');
+      await o.click();
+      await o.fill('!ls -la');
+      await pg.waitForTimeout(400);
+      ok('go "!" -> bao che do chay bash',
+        (await pg.locator('[data-testid=mode-hint]').getAttribute('data-che')) === 'bash',
+        'data-che=' + await pg.locator('[data-testid=mode-hint]').getAttribute('data-che'));
+      ok('dau nhac doi thanh "!"',
+        (await pg.locator('[data-testid=prompt-sign]').innerText()).trim() === '!');
+
+      await o.fill('#du an nay dung Node thuan');
+      await pg.waitForTimeout(400);
+      ok('go "#" -> bao che do ghi nho',
+        (await pg.locator('[data-testid=mode-hint]').getAttribute('data-che')) === 'nho');
+      ok('dau nhac doi thanh "#"',
+        (await pg.locator('[data-testid=prompt-sign]').innerText()).trim() === '#');
+
+      // Chu thuong thi KHONG duoc bao che do nao
+      await o.fill('chao Claude');
+      await pg.waitForTimeout(400);
+      ok('cau thuong khong bao che do nao',
+        (await pg.locator('[data-testid=mode-hint]').count()) === 0
+        && (await pg.locator('[data-testid=prompt-sign]').innerText()).trim() === '>');
+
+      // Go moi dau "!" (chua co lenh) thi chua tinh la che do
+      await o.fill('!');
+      await pg.waitForTimeout(400);
+      ok('go moi dau "!" chua tinh la che do',
+        (await pg.locator('[data-testid=mode-hint]').count()) === 0);
+      await o.fill('');
+
       /* Thanh công cụ gom vào MỘT menu ⋯. Bản cũ bày 5 nút icon trần trên desktop;
          cộng nút quyền và effort là 7 hình vuông xám không nhãn cạnh nhau. */
       ok('cong cu phien gom vao mot menu ⋯',
@@ -839,6 +873,52 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.keyboard.press('Escape');
       await pg.waitForTimeout(1200);
       ok('Esc trong o go -> DUNG Claude (nhu terminal)', daKill, 'da goi /api/kill=' + daKill);
+
+      /* Chu hien DAN thay vi bung mot cuc khi xong.
+         .jsonl chi duoc ghi KHI LUOT XONG. Do that: `claude -p` tran xa stdout DUNG
+         MOT LAN luc ket thuc (5747ms/1 lan) -> doc stdout tran la vo ich. Phai co
+         --output-format stream-json --include-partial-messages moi nhan tung doan
+         (do lai: chu toi rai rac tu 5209ms qua 13 lan). Server gom delta.text va
+         gan vao truong `nhap` cua /api/history. */
+      await pg.unroute('**/api/history/**');
+      await pg.route('**/api/history/**', async (r) => {
+        let res, j;
+        try { res = await r.fetch(); j = await res.json(); } catch { return; }
+        j.typing = true; j.status = 'RUNNING';
+        j.nhap = 'Dang go do dang tu ban nhap...';
+        await r.fulfill({ response: res, json: j }).catch(() => {});
+      });
+      await pg.reload({ waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+      await pg.waitForTimeout(2500);
+      const goDo = await pg.locator('[data-testid=dang-go]').count();
+      const chuGoDo = goDo ? await pg.locator('[data-testid=dang-go]').innerText() : '';
+      ok('chu dang chay hien DAN trong khung chat',
+        goDo === 1 && chuGoDo.includes('ban nhap'), goDo + ' khoi | ' + JSON.stringify(chuGoDo.slice(0, 50)));
+
+      /* Gui vao phien KHONG TON TAI phai bao loi ro rang.
+         Loi CO SAN tu truoc: /api/history tra ve som khi chua co .jsonl nao, nen
+         banner loi khong bao gio hien — tin nhan roi vao hu khong ma man hinh im
+         nhu khong co chuyen gi. Bat duoc khi doi sang stream-json. */
+      await pg.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {});
+      const bao = await pg.evaluate(async () => {
+        const sid = '00000000-1111-4222-8333-44444444beef';
+        await fetch('/api/chat/' + sid, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: 'thu' }),
+        });
+        for (let i = 0; i < 25; i++) {
+          await new Promise((s) => setTimeout(s, 700));
+          const h = await (await fetch('/api/history/' + sid)).json();
+          if (h.error) return h.error;
+          if (!h.typing && i > 5) return '(khong co loi nao)';
+        }
+        return '(het gio)';
+      });
+      ok('gui vao phien khong ton tai -> hien banner loi, khong im lang',
+        /không tìm thấy phiên này/.test(bao), JSON.stringify(String(bao).slice(0, 90)));
 
       await dongSach(pg, cx);
     }
