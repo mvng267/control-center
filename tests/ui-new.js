@@ -775,6 +775,75 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await cx.close();
     }
 
+    /* Thẻ KẾ HOẠCH (ExitPlanMode) vẽ kiểu terminal, không phải thẻ bo góc nền tím.
+       Kế hoạch thật rất dài — đo hai mẫu trong phiên 58MB: 15.371 và 6.754 ký tự —
+       nên phải GẬP mặc định, và tiêu đề "# ..." hiện ngay lúc gập để biết kế hoạch
+       về cái gì mà không cần mở. */
+    {
+      const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const pg = await cx.newPage();
+      const KE = '# Sửa khung chat cho giống CLI\n\n## Bối cảnh\n\n'
+        + 'x'.repeat(1200) + '\n\n## Các bước\n\n1. Một\n2. Hai\n';
+      await pg.route('**/api/history/**', async (r) => {
+        let res, j;
+        try { res = await r.fetch(); j = await res.json(); } catch { return; }
+        j.awaiting = true; j.typing = false;
+        j.messages = [{
+          role: 'assistant', content: '', ts: new Date().toISOString(),
+          parts: [{
+            t: 'tool', name: 'ExitPlanMode', id: 't-ke', disp: 'ExitPlanMode',
+            summary: '', input: '', status: 'ok', result: '', images: [],
+            ke: KE, keFile: process.env.HOME + '/.claude/plans/thu-nghiem.md',
+          }],
+        }];
+        await r.fulfill({ response: res, json: j }).catch(() => {});
+      });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForSelector('[data-testid=session-row]:visible', { timeout: 20000 });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+      await pg.waitForTimeout(2500);
+
+      ok('ke hoach hien thanh the rieng, khong phai JSON tho',
+        (await pg.locator('[data-testid=plan-card]').count()) === 1);
+
+      const gap = await pg.locator('[data-testid=plan-card]').getAttribute('data-open');
+      ok('ke hoach DAI thi gap lai mac dinh', gap === 'false', 'data-open=' + gap);
+
+      const chu = await pg.locator('[data-testid=plan-card]').innerText();
+      ok('luc gap van hien TIEU DE ke hoach',
+        /Sửa khung chat cho giống CLI/.test(chu), chu.slice(0, 70).replace(/\n/g, ' '));
+
+      // vẽ kiểu terminal: có ⏺ và ⌐, KHÔNG có khung bo góc nền màu
+      ok('the ke hoach ve kieu terminal (co ⏺ va ⌐)',
+        chu.includes('⏺') && chu.includes('⌐'), JSON.stringify(chu.slice(0, 40)));
+
+      await pg.locator('[data-testid=plan-toggle]').click();
+      await pg.waitForTimeout(500);
+      ok('bam vao thi MO ra doc duoc',
+        (await pg.locator('[data-testid=plan-card]').getAttribute('data-open')) === 'true');
+
+      ok('co nut Duyet va nut mo ban .md',
+        (await pg.locator('[data-testid=plan-approve]').count()) === 1
+        && (await pg.locator('[data-testid=plan-file]').count()) === 1);
+
+      /* /api/plan chỉ được đọc trong ~/.claude/plans. Kiểm bằng đường dẫn đã resolve
+         chứ không phải chuỗi thô — nếu không thì `../../.ssh/id_rsa` lọt qua và
+         dashboard thành công cụ đọc trộm cả đĩa. */
+      const chan = await pg.evaluate(async () => {
+        const thu = async (p) => (await fetch('/api/plan?path=' + encodeURIComponent(p))).status;
+        return {
+          ssh: await thu('/Users/mvng/.ssh/id_rsa'),
+          cheo: await thu('/Users/mvng/.claude/plans/../../.zshrc'),
+        };
+      });
+      ok('/api/plan chan doc file ngoai thu muc ke hoach',
+        chan.ssh === 400 && chan.cheo === 400, JSON.stringify(chan));
+
+      await dongSach(pg, cx);
+    }
+
     /* Tab Docker: thống kê tài nguyên + khối PostgreSQL.
        Máy này KHÔNG có psql (đã kiểm `which psql`), nên server đi qua `docker exec`
        vào chính container. Cả hai đều PHỤ THUỘC MÔI TRƯỜNG (Docker Desktop bật/tắt,

@@ -390,7 +390,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                     </div>
                   ) : p.t === 'tool' && p.ke ? (
                     <div key={p.id || i} className="my-1">
-                      <PlanCard ke={p.ke} daDuyet={!h?.awaiting} onDuyet={approve}
+                      <PlanCard ke={p.ke} keFile={p.keFile} daDuyet={!h?.awaiting} onDuyet={approve}
                         onSua={() => document.querySelector<HTMLTextAreaElement>('[data-testid=chat-input]')?.focus()} />
                     </div>
                   ) : p.t === 'tool' ? (

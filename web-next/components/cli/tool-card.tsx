@@ -31,6 +31,8 @@ export interface ToolPart {
   // AskUserQuestion / ExitPlanMode — client vẽ thẻ riêng thay vì đổ JSON thô
   hoi?: { hoi: string; nhan: string; nhieu: boolean; chon: { nhan: string; mo: string }[] }[];
   ke?: string;
+  /** đường dẫn bản .md của kế hoạch, lấy từ planFilePath của chính tool */
+  keFile?: string;
 }
 
 /* Màu của dấu ⏺. Terminal dùng trắng cho bình thường, đỏ khi lỗi. Giữ một chút màu

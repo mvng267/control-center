@@ -149,6 +149,15 @@ function extractKeHoach(input) {
   return t ? clampText(t, 20000) : '';
 }
 
+/* Đường dẫn file kế hoạch — ExitPlanMode LUÔN kèm `planFilePath` (kiểm trên 2 mẫu
+   thật trong phiên 58MB: trường có sẵn, kế hoạch dài 15.371 và 6.754 ký tự).
+   Trước đây server dò đường dẫn bằng regex trên CÂU VĂN của Claude, tức chỉ đúng khi
+   Claude tình cờ nhắc tới nó — lấy thẳng từ tool thì chắc chắn hơn hẳn. */
+function extractFileKeHoach(input) {
+  const p = String((input && input.planFilePath) || '').trim();
+  return /\.claude\/plans\/[^/]+\.md$/.test(p) ? p : '';
+}
+
 function buildInputDetail(name, input) {
   if (input == null || typeof input !== 'object') return '';
   let s;
@@ -251,7 +260,7 @@ function mdForMessage(msg) {
 
 module.exports = {
   extractText, clampText, base, toolDisplayName, summarizeToolInput, extractTodos,
-  extractHoi, extractKeHoach,
+  extractHoi, extractKeHoach, extractFileKeHoach,
   buildInputDetail, toolResultPreview, findToolImage, flattenParts, mdForMessage,
   TOOL_SUMMARY_CAP, TOOL_INPUT_CAP, TOOL_RESULT_CAP, THINK_CAP, TOOL_ST_LABEL,
 };

@@ -60,7 +60,7 @@ web-next/          GIAO DIỆN CHÍNH — Next.js + shadcn/ui, kiểu Atlas
   app/ components/ lib/
   out/             bản build tĩnh (được commit)
 web/legacy/        giao diện cũ — đường lui, bật bằng NEW_UI=0
-tests/             ui-new (91, giao diện mới), e2e (147, bản cũ), push (19),
+tests/             ui-new (98, giao diện mới), e2e (147, bản cũ), push (19),
                    push-browser, keyboard, safearea
 scripts/           test-all, verify, dead-buttons, make-icons, bench, check-procs
 docs/
@@ -90,7 +90,7 @@ npm run test:all   # chạy TẤT CẢ — tự bật server ở cổng riêng c
 
 npm run verify     # cú pháp server lẫn client JS
 npm run buttons    # tìm nút bấm không ra gì
-npm run test:ui    # GIAO DIỆN MỚI: 91 mục (cần server đang chạy ở 7799)
+npm run test:ui    # GIAO DIỆN MỚI: 98 mục (cần server đang chạy ở 7799)
 npm test           # bản cũ: 147 assertion — PHẢI chạy với NEW_UI=0
 npm run test:push  # Web Push (VAPID + RFC 8291)
 ```

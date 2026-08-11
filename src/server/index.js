@@ -73,7 +73,7 @@ const cache = new Map();
 // Helper biến tool_use/tool_result thành dữ liệu có cấu trúc -> src/server/tools.js
 const {
   extractText, clampText, base, toolDisplayName, summarizeToolInput, extractTodos,
-  extractHoi, extractKeHoach,
+  extractHoi, extractKeHoach, extractFileKeHoach,
   buildInputDetail, toolResultPreview, findToolImage, flattenParts, mdForMessage,
   TOOL_SUMMARY_CAP, TOOL_INPUT_CAP, TOOL_RESULT_CAP, THINK_CAP, TOOL_ST_LABEL,
 } = require('./tools');
@@ -211,7 +211,10 @@ function parseSessionFile(file) {
              hiện ra JSON THÔ với dấu ngoặc thoát chồng chất — không đọc nổi.
              Tách dữ liệu có cấu trúc để client vẽ đúng như CLI. */
           if (b.name === 'AskUserQuestion') part.hoi = extractHoi(b.input);
-          if (b.name === 'ExitPlanMode') part.ke = extractKeHoach(b.input);
+          if (b.name === 'ExitPlanMode') {
+            part.ke = extractKeHoach(b.input);
+            part.keFile = extractFileKeHoach(b.input);
+          }
           parts.push(part);
           if (b.id) toolIndex.set(b.id, part);
         } else if (b.type === 'tool_result') {
@@ -2063,6 +2066,26 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, out: r.out.trim().slice(-2000) });
     }
     return json(res, 404, { error: 'not found' });
+  }
+
+  /* ---- Đọc file kế hoạch ~/.claude/plans/*.md ----
+     Kế hoạch thật rất dài (đo hai mẫu: 15.371 và 6.754 ký tự) nên đọc trong khung
+     chat rất mệt; mở bản .md đầy đủ dễ hơn nhiều.
+
+     Chỉ cho đọc ĐÚNG trong ~/.claude/plans và đúng đuôi .md. Kiểm bằng đường dẫn đã
+     resolve chứ không phải chuỗi thô — nếu không thì `../../.ssh/id_rsa` lọt qua và
+     dashboard thành công cụ đọc trộm cả đĩa. */
+  if (p === '/api/plan' && req.method === 'GET') {
+    const THU_MUC = path.join(os.homedir(), '.claude', 'plans');
+    const xin = path.resolve(String(url.searchParams.get('path') || ''));
+    if (!xin.startsWith(THU_MUC + path.sep) || !xin.endsWith('.md')) {
+      return json(res, 400, { error: 'chỉ đọc được file kế hoạch' });
+    }
+    let noi;
+    try { noi = fs.readFileSync(xin, 'utf8'); }
+    catch { return json(res, 404, { error: 'không thấy file kế hoạch' }); }
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end(noi);
   }
 
   /* ---- Postgres: xem sức khoẻ CSDL chạy trong Docker ----
