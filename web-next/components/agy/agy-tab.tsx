@@ -117,7 +117,9 @@ export function AgyTab() {
               </span>
             )}
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {/* 2 cột trên điện thoại. Một cột thì ba thẻ này chiếm gần trọn màn 844px
+              chỉ để hiện ba con số — phải cuộn mới thấy biểu đồ bên dưới. */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
             <StatCard title="Request" sub="request 24h" icon={ArrowLeftRight} value={shortNum(usage.reqs)}
               spark={usage.hours.map((h) => h.n)} tone="primary" dot="primary" testid="agy-reqs" />
             <StatCard title="Lỗi" sub="lỗi" icon={TriangleAlert} value={usage.errs ? shortNum(usage.errs) : '0'}
@@ -128,6 +130,18 @@ export function AgyTab() {
               deltaLabel={usage.avgMs ? `trễ TB ${(usage.avgMs / 1000).toFixed(1)}s` : undefined}
               tone="primary" testid="agy-tokens" />
           </div>
+
+          {/* KHÔNG có request nào trong 24h: nói thẳng ra.
+              Trước đây chỉ hiện ba số 0 trần cạnh nhau, không phân biệt được
+              "proxy chết" với "proxy chạy nhưng chưa ai gọi" — hai chuyện khác hẳn.
+              Đo trên máy: bản ghi mới nhất cách 29 giờ, tức 24h rỗng là ĐÚNG. */}
+          {!usage.reqs && (
+            <p className="mt-3 rounded-[10px] border border-border bg-muted/40 px-2.5 py-2 text-[12px] leading-relaxed text-muted-foreground"
+              data-testid="agy-khong-luu-luong">
+              Chưa có request nào trong 24 giờ qua — không phải lỗi. Xem biểu đồ
+              “Request theo ngày” bên dưới để biết lần cuối proxy được gọi.
+            </p>
+          )}
 
           {errPct >= 20 && usage.codes[0] && (
             <p className="mt-3 rounded-[10px] border border-status-error/25 bg-status-error/[0.08] px-2.5 py-2 text-[12px] leading-relaxed text-status-error">

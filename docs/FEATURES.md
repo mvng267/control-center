@@ -193,6 +193,9 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 143 | Gõ mỗi `!` (chưa có lệnh) chưa tính là chế độ | không hiện dải báo | ui-new |
 | 144 | **Chữ hiện dần** khi Claude đang trả lời | `dang-go` có nội dung lúc `typing` | ui-new |
 | 145 | Gửi vào phiên không tồn tại → hiện banner lỗi | trước đây im lặng vì `/api/history` trả về sớm | ui-new |
+| 146 | **Biểu đồ hạn mức còn lại** theo ngày, 2 đường | `agy-quota-history` — endpoint có sẵn mà chưa ai gọi | ui-new |
+| 147 | Thẻ số AGY xếp 2 cột trên iPhone | trước `grid-cols-1`, mỗi thẻ ~250px nuốt cả màn | ui-new |
+| 148 | 24h không có request → nói rõ lý do | `agy-khong-luu-luong`, không để ba số 0 trần | ui-new |
 
 ---
 
@@ -201,7 +204,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 82 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 85 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục

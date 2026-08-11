@@ -206,7 +206,15 @@ function cleanFixture() {
         hoursLen: r.usage && r.usage.hours ? r.usage.hours.length : -1,
       };
     });
-    if (usage.apiOk) {
+    if (usage.apiOk && usage.hoursLen === 0) {
+      /* agy chạy nhưng KHÔNG có request nào trong 24h — chuyện bình thường, đã xác
+         minh bằng SQL trên state.db: bản ghi mới nhất cách 29 giờ, trong khi 7 ngày
+         trước đó có 8.797 request. Bài cũ đòi models > 0 nên đỏ theo LƯU LƯỢNG chứ
+         không theo code: cứ để máy nghỉ một ngày là e2e đỏ, mất công đi tìm bug
+         không tồn tại. Giờ chỉ đòi khối vẫn hiện và số liệu ở dạng hợp lệ. */
+      ok(label + ': agy lưu lượng 24h — 24h rỗng thì vẫn hiện khối, không vỡ',
+        !usage.hidden && /^[\d.]+[kMB]?$/.test(usage.reqs), JSON.stringify(usage));
+    } else if (usage.apiOk) {
       // 1 cột + 1 nhãn cho mỗi giờ có dữ liệu; không có sqlite3 CLI thì khối này phải ẩn hẳn
       ok(label + ': agy lưu lượng 24h (số liệu thật, biểu đồ giờ, model, mã lỗi)',
         !usage.hidden && /^[\d.]+[kMB]?$/.test(usage.reqs)

@@ -775,6 +775,73 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await cx.close();
     }
 
+    /* Tab AGY: biểu đồ hạn mức + thẻ số gọn trên điện thoại.
+       /api/agy/quota-history có ở server TỪ LÂU mà không giao diện nào gọi — quét cả
+       web-next tìm chuỗi đó ra 0 kết quả, nên dữ liệu (7 điểm, gemini 90-94%)
+       chưa từng hiện ra. */
+    {
+      const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const pg = await cx.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.locator('[data-testid=nav-agy]:visible').first().click();
+      await pg.waitForTimeout(4000);
+
+      const coKhoi = await pg.locator('[data-testid=agy-quota-history]').count();
+      ok('tab AGY co bieu do HAN MUC con lai', coKhoi === 1, coKhoi + ' khoi');
+      if (coKhoi) {
+        await pg.locator('[data-testid=agy-quota-history]').scrollIntoViewIfNeeded();
+        await pg.waitForTimeout(1500);
+        const d = await pg.evaluate(() => {
+          const c = document.querySelector('[data-testid=agy-quota-history]');
+          return { duong: c.querySelectorAll('.recharts-area').length, chu: c.innerText || '' };
+        });
+        // hai đường vì Gemini và bên thứ ba cạn theo nhịp khác nhau
+        ok('bieu do han muc ve DU HAI duong + co chu giai mau',
+          d.duong === 2 && /Gemini/.test(d.chu) && /thứ ba/.test(d.chu),
+          d.duong + ' duong');
+      }
+      await cx.close();
+    }
+
+    /* Thẻ số AGY phải GỌN trên iPhone. Bản cũ dùng grid-cols-1 nên ba thẻ xếp dọc,
+       mỗi thẻ ~250px, nuốt gần trọn màn 844px chỉ để hiện ba số 0. */
+    {
+      const mp = await browser.newContext({
+        viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+      });
+      const pg = await mp.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.locator('[data-testid=tabbar-agy]:visible').first().click();
+      await pg.waitForTimeout(3500);
+
+      const the = await pg.evaluate(() => {
+        const ids = ['agy-reqs', 'agy-errs', 'agy-tokens'];
+        const r = ids.map((i) => {
+          const e = document.querySelector(`[data-testid=${i}]`);
+          return e ? Math.round(e.getBoundingClientRect().height) : -1;
+        });
+        const a = document.querySelector('[data-testid=agy-reqs]');
+        const b = document.querySelector('[data-testid=agy-errs]');
+        return {
+          cao: r,
+          // 2 cột: thẻ 1 và 2 phải CÙNG hàng (chênh lệch top nhỏ)
+          cungHang: !!(a && b)
+            && Math.abs(a.getBoundingClientRect().top - b.getBoundingClientRect().top) < 8,
+        };
+      });
+      ok('the so AGY xep 2 cot tren iPhone (khong phai 1 cot)',
+        the.cungHang, 'cao=' + JSON.stringify(the.cao));
+      ok('the so AGY gon lai duoi 170px moi the',
+        the.cao.every((h) => h > 0 && h < 170), JSON.stringify(the.cao));
+
+      // 24h rỗng phải NÓI RÕ, không để ba số 0 trần
+      const coBao = await pg.locator('[data-testid=agy-khong-luu-luong]').count();
+      const reqs = await pg.locator('[data-testid=agy-reqs-value]').innerText().catch(() => '?');
+      ok('24h khong co request -> noi ro ly do, khong de ba so 0 tran',
+        reqs.trim() !== '0' || coBao === 1, 'reqs=' + reqs.trim() + ' bao=' + coBao);
+      await mp.close();
+    }
+
     /* Khung chat dùng TRỌN bề ngang, không kẹp 920px giữa màn hình như trước.
        Terminal không căn giữa nội dung; ở đây phần lớn là log tool và đường dẫn dài,
        bó lại thành ra xuống dòng liên tục còn hai bên bỏ trống. */

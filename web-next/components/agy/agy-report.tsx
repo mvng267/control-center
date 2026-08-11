@@ -188,6 +188,12 @@ export function AgyReport() {
         </div>
       </Card>
 
+      {/* HẠN MỨC CÒN LẠI theo ngày — /api/agy/quota-history có sẵn ở server từ lâu
+          nhưng KHÔNG giao diện nào gọi tới, nên dữ liệu này chưa từng hiện ra.
+          Đây là thứ đáng nhìn nhất khi pool sắp cạn: trung bình % còn lại mỗi ngày,
+          tách Gemini và bên thứ ba vì hai nhóm cạn theo nhịp khác nhau. */}
+      <QuotaHistory range={range} />
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="gap-0 p-4">
           <div className="mb-1 text-[13px] font-semibold">Model dùng nhiều nhất</div>
@@ -213,5 +219,113 @@ export function AgyReport() {
           rows={u.byAccount.map((a) => ({ label: a.email, value: a.requests }))} />
       </Card>
     </div>
+  );
+}
+
+/* ---- Hạn mức còn lại theo ngày ----
+   Server đã có /api/agy/quota-history từ lâu mà KHÔNG giao diện nào gọi — kiểm bằng
+   cách quét toàn bộ web-next tìm chuỗi '/api/agy/quota-history': 0 kết quả. Dữ liệu
+   thật có sẵn (7 điểm, gemini 90-94%, third 29-87%), chỉ thiếu chỗ vẽ.
+
+   Vẽ HAI đường vì Gemini và bên thứ ba cạn theo nhịp khác hẳn nhau: gộp trung bình
+   lại thì một nhóm sắp hết vẫn bị nhóm kia kéo lên nhìn như còn nhiều. */
+interface DiemQuota { bucket: string; gemini: number; third: number; n: number }
+
+function QuotaHistory({ range }: { range: Range }) {
+  const [diem, setDiem] = useState<DiemQuota[] | null>(null);
+  const [hong, setHong] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    setDiem(null); setHong('');
+    api<{ ok: boolean; series?: DiemQuota[]; error?: string }>(
+      '/api/agy/quota-history?range=' + range)
+      .then((x) => {
+        if (!alive) return;
+        if (!x.ok) { setHong(x.error || 'agy chưa hỗ trợ mục này'); return; }
+        setDiem(x.series || []);
+      })
+      .catch(() => { if (alive) setHong('không gọi được'); });
+    return () => { alive = false; };
+  }, [range]);
+
+  if (hong) {
+    return (
+      <Card className="gap-0 p-4" data-testid="agy-quota-history">
+        <div className="mb-1 text-[13px] font-semibold">Hạn mức còn lại</div>
+        <p className="text-[12px] text-muted-foreground">Không lấy được: {hong}</p>
+      </Card>
+    );
+  }
+  if (!diem) {
+    return (
+      <Card className="gap-0 p-4" data-testid="agy-quota-history">
+        <div className="mb-1 text-[13px] font-semibold">Hạn mức còn lại</div>
+        <p className="py-6 text-center text-[12.5px] text-muted-foreground">Đang tải…</p>
+      </Card>
+    );
+  }
+
+  // Ngày gần nhất — để nói thẳng con số thay vì bắt người đọc dò trên đường cong
+  const cuoi = diem[diem.length - 1];
+
+  return (
+    <Card className="gap-0 p-4" data-testid="agy-quota-history">
+      <div className="mb-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-[13px] font-semibold">Hạn mức còn lại</span>
+        {cuoi && (
+          <span className="text-[11.5px] text-muted-foreground">
+            mới nhất — Gemini <b className="tabular-nums text-foreground">{cuoi.gemini}%</b>,
+            bên thứ ba <b className="tabular-nums text-foreground">{cuoi.third}%</b>
+          </span>
+        )}
+      </div>
+      <div className="mb-2 text-[12px] text-muted-foreground">
+        Trung bình % còn lại mỗi ngày · càng thấp càng sắp cạn
+      </div>
+      {/* Chú giải màu: hai đường mà không có chú giải thì nhìn ảnh không biết đường
+          nào là nhóm nào — phải rê chuột lên tooltip mới đoán ra. */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <i className="h-[3px] w-4 rounded-full bg-primary" /> Gemini
+        </span>
+        <span className="flex items-center gap-1.5">
+          <i className="h-[3px] w-4 rounded-full bg-tool-accent" /> Bên thứ ba
+        </span>
+      </div>
+
+      {!diem.length ? (
+        <p className="py-6 text-center text-[12.5px] text-muted-foreground">Chưa có dữ liệu</p>
+      ) : (
+        <div className="h-[200px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={diem} margin={{ top: 14, right: 8, bottom: 4, left: 8 }}>
+              <defs>
+                <linearGradient id="qhGem" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
+                </linearGradient>
+                <linearGradient id="qhThird" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--tool-accent)" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="var(--tool-accent)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="4 8" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                axisLine={false} tickLine={false} minTickGap={24}
+                tickFormatter={(v: string) => v.slice(5)} />
+              <Tooltip contentStyle={{
+                background: 'var(--card)', border: '1px solid var(--border)',
+                borderRadius: 10, fontSize: 12, color: 'var(--foreground)',
+              }} formatter={(v) => (v === undefined || v === null ? '—' : v + '%')} />
+              <Area type="monotone" dataKey="gemini" name="Gemini" stroke="var(--primary)"
+                strokeWidth={1.8} fill="url(#qhGem)" isAnimationActive={false} />
+              <Area type="monotone" dataKey="third" name="Bên thứ ba" stroke="var(--tool-accent)"
+                strokeWidth={1.8} fill="url(#qhThird)" isAnimationActive={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </Card>
   );
 }

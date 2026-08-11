@@ -80,10 +80,13 @@ export function StatCard({
   const gid = 'sp-' + (testid || title).replace(/[^a-z0-9]/gi, '');
 
   return (
-    <Card className="gap-0 overflow-hidden p-4 pb-0" data-testid={testid}>
+    /* Trên màn hẹp thu gọn đệm và bỏ sparkline: đo trên iPhone 390px, bốn thẻ AGY
+       xếp dọc chiếm ~250px MỖI thẻ, nuốt trọn màn hình chỉ để hiện ba số 0.
+       Từ sm trở lên giữ nguyên bố cục Atlas. */
+    <Card className="gap-0 overflow-hidden p-3 pb-0 sm:p-4 sm:pb-0" data-testid={testid}>
       <div className="flex items-center gap-2">
         {Icon && (
-          <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-[10px]',
+          <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-[10px] sm:size-8',
             tone === 'error' ? 'bg-status-error/12' : tone === 'ok' ? 'bg-status-ok/12'
               : tone === 'warn' ? 'bg-status-run/12' : 'bg-primary/12')}>
             <Icon className={cn('size-4', TEXT[tone])} />
@@ -106,21 +109,25 @@ export function StatCard({
         )}
       </div>
 
-      <div className="mt-3 truncate text-[12px] font-medium tracking-wide text-muted-foreground">
+      <div className="mt-2 truncate text-[11.5px] font-medium tracking-wide text-muted-foreground sm:mt-3 sm:text-[12px]">
         {(sub || title).toUpperCase()}
       </div>
-      <div className={cn('mt-1 text-[24px] font-bold leading-none tracking-tight', TEXT[tone])}
+      <div className={cn('mt-1 text-[20px] font-bold leading-none tracking-tight sm:text-[24px]', TEXT[tone])}
         data-testid={testid ? testid + '-value' : undefined}>
         {value}
       </div>
       {deltaLabel && (
-        <div className="mt-1.5 truncate text-[12px] text-muted-foreground">{deltaLabel}</div>
+        <div className="mt-1 truncate text-[11.5px] text-muted-foreground sm:mt-1.5 sm:text-[12px]">{deltaLabel}</div>
       )}
 
-      {/* Sparkline chạm mép dưới thẻ như Atlas — nên Card để pb-0 và -mx-4 ở đây */}
-      <div className={cn('-mx-4 mt-3', !spark && 'h-0')}>
+      {/* Sparkline chạm mép dưới thẻ như Atlas — nên Card để pb-0 và -mx-4 ở đây.
+          Ẩn trên điện thoại: ở bề rộng đó nó chỉ là một vệt mờ, không đọc ra xu hướng,
+          mà lại ăn thêm 34px mỗi thẻ. */}
+      <div className={cn('-mx-3 mt-3 hidden sm:-mx-4 sm:block', !spark && 'h-0 sm:h-0')}>
         {spark && <Spark data={spark} tone={tone} id={gid} />}
       </div>
+      {/* pb bù lại cho phần sparkline bị ẩn, để thẻ không bị hụt đáy trên mobile */}
+      <div className={cn('h-3 sm:hidden', !spark && 'h-3')} />
     </Card>
   );
 }
