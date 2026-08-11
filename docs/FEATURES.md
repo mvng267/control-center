@@ -196,6 +196,13 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 146 | **Biểu đồ hạn mức còn lại** theo ngày, 2 đường | `agy-quota-history` — endpoint có sẵn mà chưa ai gọi | ui-new |
 | 147 | Thẻ số AGY xếp 2 cột trên iPhone | trước `grid-cols-1`, mỗi thẻ ~250px nuốt cả màn | ui-new |
 | 148 | 24h không có request → nói rõ lý do | `agy-khong-luu-luong`, không để ba số 0 trần | ui-new |
+| 149 | Docker: hiện **CPU/RAM** từng container đang chạy | `docker stats --no-stream` gộp vào `ps` | ui-new |
+| 150 | **PostgreSQL**: phiên bản, uptime, số kết nối | `pg-panel` — qua `docker exec`, máy không có psql | ui-new |
+| 151 | Postgres: danh sách database + dung lượng | `pg-db` — chọn để xem bảng bên trong | ui-new |
+| 152 | Postgres: bảng lớn nhất theo **dung lượng** | không xếp theo số dòng: bảng 0 dòng vẫn nặng vì index | ui-new |
+| 153 | Postgres: truy vấn đang chạy (pid, thời gian, SQL) | `pg-truyvan` — chỗ nhìn đầu tiên khi CSDL ì | tay |
+| 154 | Postgres tắt → nói rõ lý do, không để khối trắng | `pg-tat` | ui-new |
+| 155 | Postgres: chặn tên database có ký tự lạ | `?db=a;DROP TABLE x` → 400 | ui-new |
 
 ---
 
@@ -204,7 +211,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 85 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 91 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục

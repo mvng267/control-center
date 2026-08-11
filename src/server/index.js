@@ -868,6 +868,8 @@ let agyTask = null; // { name, proc, startedAt } — build/test/typecheck đang 
 const agyLast = {}; // name -> { ok, code, at, ms } kết quả lần chạy cuối
 let agyStatusCache = { at: 0, data: null };
 let dockerCache = { at: 0, data: null };   // docker ps chậm ~200ms, client poll 3s // cache 3s — client poll 3s, probe HTTP không dồn dập
+// Tên container Postgres — tìm bằng `docker ps` nên nhớ tạm 10s, khỏi gọi mỗi nhịp
+let pgCache = { at: 0, ten: '' };
 
 function agyPipe(proc, tag) {
   proc.stdout.on('data', d => agyLogPush(tag, d));
@@ -2008,15 +2010,25 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/docker/ps' && req.method === 'GET') {
       const now = Date.now();
       if (dockerCache.at > now - 3000 && dockerCache.data) return json(res, 200, dockerCache.data);
-      const [ps, df] = await Promise.all([
+      /* Thêm `docker stats`: trước đây chỉ biết container CÒN SỐNG hay không, chứ
+         không biết cái nào đang ngốn CPU/RAM — mà đó mới là thứ cần thấy khi máy ì.
+         --no-stream bắt buộc: thiếu nó thì lệnh chạy mãi và treo request. */
+      const [ps, df, st] = await Promise.all([
         run(['ps', '-a', '--format', '{{json .}}']),
         run(['system', 'df', '--format', '{{json .}}']),
+        run(['stats', '--no-stream', '--format', '{{json .}}'], 20000),
       ]);
       if (ps.err) {
         return json(res, 200, { ok: false, error: /not found|ENOENT/i.test(ps.err.message)
           ? 'Máy chưa cài Docker' : 'Docker không phản hồi (Docker Desktop đang tắt?)' });
       }
-      const data = { ok: true, containers: lines(ps.out), df: lines(df.out) };
+      // gộp stats vào từng container theo TÊN; container đã dừng thì không có dòng stats
+      const theoTen = new Map(lines(st.out).map((x) => [x.Name, x]));
+      const containers = lines(ps.out).map((c) => {
+        const s = theoTen.get(c.Names);
+        return s ? { ...c, cpu: s.CPUPerc, ram: s.MemUsage, ramPct: s.MemPerc } : c;
+      });
+      const data = { ok: true, containers, df: lines(df.out) };
       dockerCache = { at: now, data };
       return json(res, 200, data);
     }
@@ -2050,6 +2062,110 @@ const server = http.createServer(async (req, res) => {
       if (r.err) return json(res, 200, { ok: false, error: (r.errOut || r.err.message).slice(0, 300) });
       return json(res, 200, { ok: true, out: r.out.trim().slice(-2000) });
     }
+    return json(res, 404, { error: 'not found' });
+  }
+
+  /* ---- Postgres: xem sức khoẻ CSDL chạy trong Docker ----
+     Máy này KHÔNG có psql (đã kiểm: `which psql` rỗng, không có gói homebrew nào),
+     nên đi qua `docker exec` vào chính container — dự án zero-dependency, không thêm
+     driver pg.
+
+     Hai điều bắt buộc:
+     1. SQL đi qua BIẾN MÔI TRƯỜNG (-e Q=...), không nối vào chuỗi lệnh. Nối chuỗi thì
+        mọi dấu nháy trong SQL phải tự thoát, sai một cái là cú pháp vỡ hoặc tệ hơn.
+     2. Bảng truy vấn CỨNG, client chỉ gửi TÊN. Không nhận SQL tự do — mở cửa cho
+        DROP TABLE thì mất dữ liệu thật, mà đây là dashboard bấm trên điện thoại.
+     User CSDL đọc từ $POSTGRES_USER của chính container, không đoán 'postgres'
+     (container ở máy này dùng user 'autodub' — đoán bừa là lỗi ngay). */
+  if (p.startsWith('/api/pg/')) {
+    const runDocker = (args, timeout = 15000) => new Promise((resolve) => {
+      execFile('docker', args, { maxBuffer: 4 * 1024 * 1024, timeout, env: process.env },
+        (err, out, errOut) => resolve({ err, out: String(out || ''), errOut: String(errOut || '') }));
+    });
+
+    // Tìm container Postgres đang CHẠY. Nhớ tạm 10s để không gọi docker mỗi nhịp poll.
+    async function timContainerPg() {
+      const now = Date.now();
+      if (pgCache.ten && now - pgCache.at < 10000) return pgCache.ten;
+      const r = await runDocker(['ps', '--filter', 'ancestor=postgres', '--format', '{{.Names}}']);
+      let ten = String(r.out || '').split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
+      if (!ten) {
+        // ancestor chỉ khớp image tên đúng 'postgres'; postgres:16-alpine thì phải soi tên
+        const r2 = await runDocker(['ps', '--format', '{{.Names}}\t{{.Image}}']);
+        const d = String(r2.out || '').split('\n').filter(Boolean)
+          .map(l => l.split('\t')).find(([, img]) => /postgres/i.test(img || ''));
+        ten = d ? d[0].trim() : '';
+      }
+      pgCache = { at: now, ten };
+      return ten;
+    }
+
+    async function hoiPg(sql, db) {
+      const ten = await timContainerPg();
+      if (!ten) return { ok: false, error: 'Không thấy container Postgres nào đang chạy' };
+      const args = ['exec', '-e', 'Q=' + sql, ten, 'sh', '-c',
+        db ? 'psql -U "$POSTGRES_USER" -d ' + db + ' -tA -c "$Q"'
+          : 'psql -U "$POSTGRES_USER" -tA -c "$Q"'];
+      const r = await runDocker(args);
+      if (r.err || /^ERROR/m.test(r.errOut)) {
+        return { ok: false, error: (r.errOut || r.err.message || '').split('\n')[0].slice(0, 200) };
+      }
+      return { ok: true, dong: r.out.split('\n').filter(Boolean).map(l => l.split('|')) };
+    }
+
+    if (p === '/api/pg/status' && req.method === 'GET') {
+      const ten = await timContainerPg();
+      if (!ten) return json(res, 200, { ok: false, error: 'Không thấy container Postgres nào đang chạy' });
+
+      const [ban, dbs, ket] = await Promise.all([
+        hoiPg("SELECT current_setting('server_version') || '|' "
+          + "|| date_trunc('second', now() - pg_postmaster_start_time())::text;"),
+        hoiPg('SELECT datname || \'|\' || pg_database_size(datname) FROM pg_database '
+          + 'WHERE NOT datistemplate ORDER BY pg_database_size(datname) DESC;'),
+        hoiPg("SELECT coalesce(state,'không rõ') || '|' || count(*) FROM pg_stat_activity GROUP BY state;"),
+      ]);
+      if (!ban.ok) return json(res, 200, { ok: false, error: ban.error, container: ten });
+
+      const [ver, uptime] = (ban.dong[0] || ['', '']);
+      return json(res, 200, {
+        ok: true,
+        container: ten,
+        version: ver || '',
+        uptime: uptime || '',
+        dbs: (dbs.ok ? dbs.dong : []).map(([ten2, bytes]) => ({ ten: ten2, bytes: +bytes || 0 })),
+        ketNoi: (ket.ok ? ket.dong : []).map(([trangThai, n]) => ({ trangThai, n: +n || 0 })),
+      });
+    }
+
+    if (p === '/api/pg/tables' && req.method === 'GET') {
+      // tên db do client chọn TỪ danh sách server trả về -> vẫn phải kiểm dạng
+      const db = String(url.searchParams.get('db') || '');
+      if (db && !/^[A-Za-z_][A-Za-z0-9_$]{0,62}$/.test(db)) {
+        return json(res, 400, { error: 'tên database không hợp lệ' });
+      }
+      const r = await hoiPg("SELECT relname || '|' || n_live_tup || '|' "
+        + '|| pg_total_relation_size(relid) FROM pg_stat_user_tables '
+        + 'ORDER BY pg_total_relation_size(relid) DESC LIMIT 30;', db);
+      if (!r.ok) return json(res, 200, { ok: false, error: r.error });
+      return json(res, 200, {
+        ok: true,
+        bang: r.dong.map(([ten, dong, bytes]) => ({ ten, dong: +dong || 0, bytes: +bytes || 0 })),
+      });
+    }
+
+    if (p === '/api/pg/activity' && req.method === 'GET') {
+      const r = await hoiPg("SELECT pid || '|' || coalesce(state,'?') || '|' "
+        + "|| date_trunc('second', now() - query_start)::text || '|' "
+        + "|| replace(left(coalesce(query,''), 90), '|', ' ') "
+        + "FROM pg_stat_activity WHERE state <> 'idle' AND pid <> pg_backend_pid() "
+        + 'ORDER BY query_start LIMIT 20;');
+      if (!r.ok) return json(res, 200, { ok: false, error: r.error });
+      return json(res, 200, {
+        ok: true,
+        truyVan: r.dong.map(([pid, trangThai, lau, sql]) => ({ pid, trangThai, lau, sql })),
+      });
+    }
+
     return json(res, 404, { error: 'not found' });
   }
 

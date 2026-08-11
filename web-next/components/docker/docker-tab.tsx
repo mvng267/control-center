@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { PostgresPanel } from './postgres-panel';
 
 /* Quản lý Docker: xem trạng thái, bật/tắt/khởi động lại, đọc log, dọn build cache.
    KHÔNG có xoá container/image/volume — volume postgres/neo4j của webapp nằm trong
@@ -20,6 +21,8 @@ import { toast } from 'sonner';
 
 interface Ct {
   ID: string; Names: string; Image: string; Status: string; State: string;
+  // chỉ có ở container ĐANG CHẠY — `docker stats` không liệt kê cái đã dừng
+  cpu?: string; ram?: string; ramPct?: string;
   Ports: string; RunningFor: string;
 }
 interface Df { Type: string; TotalCount: string; Active: string; Size: string; Reclaimable: string }
@@ -147,6 +150,16 @@ export function DockerTab() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-medium">{c.Names}</span>
                   <span className="block truncate font-mono text-[11px] text-muted-foreground">{c.Image}</span>
+                  {/* CPU/RAM thật từ `docker stats`. Trước đây chỉ biết container CÒN
+                      SỐNG hay không — mà khi máy ì thì thứ cần biết là cái nào đang
+                      ngốn tài nguyên. Container đã dừng không có số nên không hiện. */}
+                  {c.cpu && (
+                    <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 text-[11px] text-muted-foreground"
+                      data-testid="dk-taiNguyen">
+                      <span className="tabular-nums">CPU {c.cpu}</span>
+                      <span className="tabular-nums">RAM {String(c.ram || '').split(' / ')[0]}</span>
+                    </span>
+                  )}
                 </span>
                 <Badge variant="outline" className="shrink-0 text-[10.5px]">
                   {chay ? c.RunningFor || 'đang chạy' : 'đã dừng'}
@@ -188,6 +201,10 @@ export function DockerTab() {
             );
           })}
         </Card>
+
+        {/* Postgres nằm TRONG tab Docker vì CSDL chạy bằng container — tách ra tab
+            riêng thì phải nhảy qua lại giữa hai chỗ mỗi lần bật/tắt nó. */}
+        <PostgresPanel />
       </div>
 
       {log && (

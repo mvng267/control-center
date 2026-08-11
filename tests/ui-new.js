@@ -775,6 +775,70 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await cx.close();
     }
 
+    /* Tab Docker: thống kê tài nguyên + khối PostgreSQL.
+       Máy này KHÔNG có psql (đã kiểm `which psql`), nên server đi qua `docker exec`
+       vào chính container. Cả hai đều PHỤ THUỘC MÔI TRƯỜNG (Docker Desktop bật/tắt,
+       có container Postgres hay không) nên chỉ khẳng định khi thật sự có dữ liệu —
+       không thì báo bỏ qua, đừng đỏ vì máy chưa bật Docker. */
+    {
+      const cx = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
+      const pg = await cx.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.locator('[data-testid=nav-docker]:visible').first().click();
+      await pg.waitForTimeout(5000);
+
+      const dk = await pg.evaluate(async () => {
+        const r = await fetch('/api/docker/ps').then((x) => x.json()).catch(() => ({}));
+        const chay = (r.containers || []).filter((c) => c.State === 'running');
+        return {
+          dockerOk: !!r.ok,
+          soChay: chay.length,
+          coCpu: chay.filter((c) => c.cpu).length,
+          hienTaiNguyen: document.querySelectorAll('[data-testid=dk-taiNguyen]').length,
+        };
+      });
+
+      if (!dk.dockerOk) {
+        ok('Docker: hien CPU/RAM cho container dang chay', true, 'bo qua: Docker dang tat');
+      } else if (!dk.soChay) {
+        ok('Docker: hien CPU/RAM cho container dang chay', true, 'bo qua: khong container nao chay');
+      } else {
+        ok('Docker: server tra CPU/RAM cho container dang chay',
+          dk.coCpu === dk.soChay, dk.coCpu + '/' + dk.soChay + ' container co so lieu');
+        ok('Docker: giao dien HIEN CPU/RAM',
+          dk.hienTaiNguyen === dk.soChay, dk.hienTaiNguyen + ' dong co so lieu');
+      }
+
+      // Khối Postgres phải LUÔN có mặt — kể cả khi CSDL tắt, để báo lý do
+      ok('tab Docker co khoi PostgreSQL',
+        (await pg.locator('[data-testid=pg-panel]').count()) === 1);
+
+      const pgSt = await pg.evaluate(() => fetch('/api/pg/status').then((x) => x.json()).catch(() => ({})));
+      if (!pgSt.ok) {
+        // Postgres tắt -> khối vẫn phải có mặt và NÓI RÕ lý do, không để trắng
+        const coBao = await pg.locator('[data-testid=pg-tat]').count();
+        ok('Postgres tat -> hien ly do, khong de trong', coBao === 1,
+          (pgSt.error || 'khong ro').slice(0, 60));
+        ok('Postgres: hien phien ban + so ket noi', true, 'bo qua: Postgres dang tat');
+        ok('Postgres: liet ke database co that', true, 'bo qua: Postgres dang tat');
+        ok('Postgres: chan ten database co ky tu la (chong tiem SQL)', true, 'bo qua: Postgres dang tat');
+      } else {
+        const noi = await pg.locator('[data-testid=pg-panel]').innerText();
+        ok('Postgres: hien phien ban + so ket noi',
+          /\d+\.\d+/.test(noi) && /kết nối/.test(noi), noi.slice(0, 60).replace(/\n/g, ' '));
+        ok('Postgres: liet ke database co that',
+          (pgSt.dbs || []).length > 0 && (await pg.locator('[data-testid=pg-db]').count()) === 1,
+          (pgSt.dbs || []).length + ' database');
+
+        // Chặn tiêm SQL qua tên database — client chỉ được chọn từ danh sách server trả
+        const chan = await pg.evaluate(() => fetch('/api/pg/tables?db=a;DROP TABLE x')
+          .then((r) => r.status).catch(() => 0));
+        ok('Postgres: chan ten database co ky tu la (chong tiem SQL)',
+          chan === 400, 'HTTP ' + chan);
+      }
+      await cx.close();
+    }
+
     /* Tab AGY: biểu đồ hạn mức + thẻ số gọn trên điện thoại.
        /api/agy/quota-history có ở server TỪ LÂU mà không giao diện nào gọi — quét cả
        web-next tìm chuỗi đó ra 0 kết quả, nên dữ liệu (7 điểm, gemini 90-94%)
