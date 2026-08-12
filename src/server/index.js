@@ -1605,23 +1605,49 @@ function passMatch(code) {
   return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
-// Phiên đã mở khoá: token ngẫu nhiên -> hạn dùng. Giữ trong RAM, restart là khoá lại.
+/* ---- phiên đã mở khoá ----
+   Cookie TỰ CHỨNG MINH: "<hạn dùng>.<chữ ký HMAC>" — server chỉ cần kiểm chữ ký,
+   không phải nhớ gì.
+
+   Trước đây giữ danh sách token trong một Map ở RAM, nên MỖI LẦN restart server là
+   mọi thiết bị bị đá ra: cookie cũ không còn trong Map -> /stream trả 423 -> iPhone
+   hiện "mất kết nối" và danh sách phiên TRỐNG TRƠN. Gặp thật đúng lúc triển khai bản
+   mới, và sẽ gặp lại sau mỗi lần cập nhật hoặc máy khởi động lại.
+
+   Bí mật ký nằm chung file mã khoá (đã 0600). Đổi/gỡ mã khoá thì sinh bí mật mới,
+   nên mọi phiên cũ mất hiệu lực ngay — đúng thứ cần khi đổi mã. */
 const UNLOCK_TTL = 12 * 3600e3;
-const unlocked = new Map();
+
+function biMatKy() {
+  const st = docPass();
+  if (!st) return '';
+  if (!st.sess) {
+    // File mã khoá tạo từ bản cũ chưa có trường này -> bổ sung, giữ nguyên mã đã đặt
+    st.sess = crypto.randomBytes(32).toString('hex');
+    savePass(st);
+  }
+  return st.sess;
+}
+
+function kyUnlock(hetHan, khoa) {
+  return crypto.createHmac('sha256', khoa).update(String(hetHan)).digest('base64url');
+}
+
 function unlockOk(req) {
   if (!docPass()) return true;                 // chưa đặt mã thì không khoá gì
-  const raw = String(req.headers.cookie || '');
-  const m = raw.match(/(?:^|;\s*)dashUnlock=([\w-]+)/);
+  const m = String(req.headers.cookie || '').match(/(?:^|;\s*)dashUnlock=([\w.-]+)/);
   if (!m) return false;
-  const exp = unlocked.get(m[1]);
-  if (!exp) return false;
-  if (exp < Date.now()) { unlocked.delete(m[1]); return false; }
-  return true;
+  const [hetHan, chuKy] = String(m[1]).split('.');
+  if (!hetHan || !chuKy) return false;
+  if (!(+hetHan > Date.now())) return false;   // hết hạn (NaN cũng rơi vào đây)
+  const mong = kyUnlock(hetHan, biMatKy());
+  const a = Buffer.from(chuKy), b = Buffer.from(mong);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+
 function newUnlock() {
-  const t = crypto.randomBytes(18).toString('base64url');
-  unlocked.set(t, Date.now() + UNLOCK_TTL);
-  return t;
+  const hetHan = Date.now() + UNLOCK_TTL;
+  return hetHan + '.' + kyUnlock(hetHan, biMatKy());
 }
 // Đếm nhập sai theo IP; sai càng nhiều chờ càng lâu (2^n giây, tối đa 5 phút)
 const passFail = new Map();
@@ -1709,7 +1735,11 @@ const server = http.createServer(async (req, res) => {
       }
       if (!/^\d{4,12}$/.test(code)) return json(res, 400, { error: 'mã phải là 4–12 chữ số' });
       const salt = crypto.randomBytes(16).toString('hex');
-      if (!savePass({ salt, hash: hashPass(code, salt), at: Date.now() })) {
+      /* sess = bí mật ký cookie mở khoá. Sinh MỚI mỗi lần đổi mã -> mọi phiên đang
+         mở trên thiết bị khác mất hiệu lực ngay. Đây là hành vi đúng: đổi mã khoá
+         thì thiết bị cũ phải nhập lại. */
+      const sess = crypto.randomBytes(32).toString('hex');
+      if (!savePass({ salt, hash: hashPass(code, salt), sess, at: Date.now() })) {
         return json(res, 500, { error: 'không ghi được file' });
       }
       const t = newUnlock();            // đặt xong thì mở khoá luôn, khỏi nhập lại ngay
@@ -1733,8 +1763,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/api/passcode/lock' && req.method === 'POST') {
-      const m2 = String(req.headers.cookie || '').match(/(?:^|;\s*)dashUnlock=([\w-]+)/);
-      if (m2) unlocked.delete(m2[1]);
+      /* Cookie giờ TỰ CHỨNG MINH bằng chữ ký nên server không giữ danh sách để mà
+         xoá — khoá lại = xoá cookie ở trình duyệt. Muốn đá TẤT CẢ thiết bị thì đổi
+         mã khoá (sinh bí mật ký mới), đó mới là thao tác đúng cho việc đó. */
       res.setHeader('Set-Cookie', 'dashUnlock=; Path=/; Max-Age=0; SameSite=Strict');
       return json(res, 200, { ok: true });
     }

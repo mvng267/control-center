@@ -156,6 +156,32 @@ process.on('SIGINT', () => process.exit(130));
     sseKhong.status === 423, 'HTTP ' + sseKhong.status);
   sseKhong.body.cancel().catch(() => {});
 
+  /* ---- cookie mở khoá phải SỐNG QUA restart ----
+     Lỗi thật đã gặp: danh sách token mở khoá giữ trong một Map ở RAM, nên mỗi lần
+     restart server là mọi thiết bị bị đá ra — cookie cũ không còn trong Map, /stream
+     trả 423, iPhone hiện "mất kết nối" và danh sách phiên TRỐNG TRƠN. Gặp đúng lúc
+     triển khai bản mới, và sẽ gặp lại sau mỗi lần cập nhật hay máy khởi động lại.
+     Sửa bằng cookie tự chứng minh (hạn dùng + chữ ký HMAC), bí mật ký lưu trong
+     file mã khoá. */
+  tatServer();
+  await cho(600);
+  const token3 = await batServer();
+  const sseSauRestart = await fetch(URL + '/stream?t=' + token3, { headers: { Cookie: cookie } });
+  ok('cookie mở khoá CŨ vẫn dùng được sau khi restart server',
+    sseSauRestart.status === 200, 'HTTP ' + sseSauRestart.status);
+  sseSauRestart.body.cancel().catch(() => {});
+
+  /* Đổi mã khoá thì phải đá hết thiết bị cũ — sinh bí mật ký mới. */
+  await api('/api/passcode/set', {
+    method: 'POST',
+    headers: { 'X-Dash-Token': token3, 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ code: '456456', old: '123123' }),
+  });
+  const sseSauDoiMa = await fetch(URL + '/stream?t=' + token3, { headers: { Cookie: cookie } });
+  ok('đổi mã khoá thì cookie cũ MẤT hiệu lực', sseSauDoiMa.status === 423,
+    'HTTP ' + sseSauDoiMa.status);
+  sseSauDoiMa.body.cancel().catch(() => {});
+
   tatServer();
   const fails = results.filter((r) => !r.pass);
   console.log('\n==== MÁY MỚI: ' + (results.length - fails.length) + '/' + results.length + ' PASS ====');
