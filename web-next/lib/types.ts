@@ -2,20 +2,38 @@
 
 export type Status = 'RUNNING' | 'ACTIVE' | 'IDLE';
 
+/* Dự án của một phiên, dựng từ trường cwd trong chính file .jsonl.
+   Trước đây tên dự án được SUY từ tên thư mục ~/.claude/projects nên ra "agy/proxy",
+   "dalianperfume/com" (mất chữ volvo), "plastic/". */
+export interface DuAn {
+  ten: string;        // tên thư mục thật: "agy-proxy"
+  khoa: string;       // cwd đã chuẩn hoá — khoá gom nhóm và lọc, KHÔNG hiện ra
+  duongDan: string;   // đã rút gọn: "~/Desktop/project/agy-proxy"
+  repo: string;       // "mvng267/agy-proxy", rỗng nếu không phải repo git
+  nhanh: string;      // "main"
+  conTonTai: boolean; // thư mục còn trên đĩa không (xoá rồi thì --resume trượt)
+  laNhap: boolean;    // phiên nháp trong /tmp/claude-*
+}
+
 export interface Session {
   sid: string;
+  // Vẫn là CHUỖI (= duAn.ten) cho giao diện cũ web/legacy đọc làm khoá gom nhóm.
   project: string;
+  duAn?: DuAn;
   title: string;
   msgs: number;
   unread: number;
   mtimeMs: number;
   status: Status;
   model?: string | null;
+  effort?: string;     // mức nghĩ của lượt gần nhất: 'high' | 'medium' | …
   /* Thẻ phiên: đủ thông tin để xem lướt là biết phiên nào đáng mở.
      Đều do parseSessionFile tính sẵn, không tốn thêm lần đọc file nào. */
   vaiCuoi?: string;    // ai nói câu cuối: 'user' | 'assistant'
   tinCuoi?: string;    // trích câu cuối (đã cắt gọn)
   tok?: number;        // token cả phiên (vào + ra)
+  tokDoc?: number;     // token đọc từ cache
+  tokGhi?: number;     // token ghi vào cache
   luot?: number;       // số lượt hỏi-đáp
   choDuyet?: boolean;  // đang dừng chờ duyệt kế hoạch
 }

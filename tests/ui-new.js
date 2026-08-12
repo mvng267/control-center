@@ -948,10 +948,17 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
 
       const oChat = await pg.evaluate(() => {
         const box = document.querySelector('[data-testid=chat-bubbles]');
+        /* Thanh viec-dang-lam chiem 53px va CHI hien o phien dang co todo — nen
+           chieu cao bong bong doi theo PHIEN NAO tinh co dung dau danh sach
+           (do that: 636px voi todo-bar, 688px khong co). Cong lai phan do de bai
+           nay do dung thu no muon: viec an header + tab bar co chay khong. */
+        const tb = document.querySelector('[data-testid=todo-bar]');
+        const buTodo = tb?.offsetParent ? Math.round(tb.getBoundingClientRect().height) : 0;
         return {
           header: !!document.querySelector('[data-testid=app-header]')?.offsetParent,
           tabbar: !!document.querySelector('[data-testid=tabbar]')?.offsetParent,
-          caoChat: Math.round(box.getBoundingClientRect().height),
+          caoChat: Math.round(box.getBoundingClientRect().height) + buTodo,
+          buTodo,
         };
       });
       ok('trong CHAT tren iPhone: an header va thanh tab',
@@ -968,12 +975,12 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         dongTT.hien && dongTT.chu.length > 0,
         JSON.stringify(dongTT.chu.replace(/\n/g, ' · ').slice(0, 50)));
       /* 656px là số đo TRƯỚC khi ẩn header+tab bar; sau khi ẩn phải cao hơn.
-         Ngưỡng 665 chứ không phải 700: khung chat còn chia chỗ cho thanh việc-đang-làm
-         và banner lỗi, phiên nào đang có chúng thì thấp hơn — đo được 667px ở một
-         phiên có thanh todo. Đặt sát quá thì bài đỏ theo NỘI DUNG phiên, không phải
-         theo việc ẩn có chạy hay không (điều đó đã có bài riêng ngay trên). */
+         caoChat ĐÃ cộng lại phần thanh việc-đang-làm chiếm (xem trên), nếu không bài
+         này đỏ NGẪU NHIÊN theo phiên nào tình cờ đứng đầu danh sách: phiên có todo
+         cho 636px, phiên không có cho 688px. Đã đo 6 lần liên tiếp để xác định. */
       ok('an xong thi khung chat cao hon (truoc 656px)',
-        oChat.caoChat > 665, oChat.caoChat + 'px / man 844px');
+        oChat.caoChat > 665, oChat.caoChat + 'px / man 844px'
+        + (oChat.buTodo ? ' (bù ' + oChat.buTodo + 'px thanh todo)' : ''));
 
       // Vẫn phải quay lại được danh sách — nếu không thì ẩn tab bar là cụt đường
       await pg.locator('[data-testid=chat-back]').click();
@@ -1520,23 +1527,33 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       /* VUNG CHAM cua o chon phai du 44px. O vuong chi 16x16 — do that: ngon tay lech
          18px la TRUOT, ma truot thi roi vao the va MO NHAM PHIEN chu khong phai khong
          an gi. Bao ve bang <label> boc ngoai, khong phong to o vuong (giu bo cuc).
-         Do VUNG CHAM (label) chu khong do o vuong: do o vuong thi luon bao 16px. */
+         Do VUNG CHAM (label) chu khong do o vuong: do o vuong thi luon bao 16px.
+
+         Tren iPhone o chon gio AN cho toi khi cham giu mot the (hang "Chon ca trang"
+         da bo han vi chi con mot o vuong tro troi khong ai hieu). Nen phai bat che do
+         chon TRUOC khi do — do luc dang an thi ra 0x0, bao loi gia. */
+      await pg.evaluate(() => {
+        const el = document.querySelector('[data-testid=session-row]');
+        if (el) el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true }));
+      });
+      await pg.waitForTimeout(800);
       const cham = await pg.evaluate(() => {
         const do1 = (id) => {
           const c = document.querySelector(`[data-testid=${id}]`);
-          if (!c) return null;
+          if (!c || !c.offsetParent) return null;   // dang an -> khong do
           const lb = c.closest('label') || c;
           const r = lb.getBoundingClientRect();
           return { w: Math.round(r.width), h: Math.round(r.height) };
         };
         return { row: do1('sel-row'), all: do1('sel-all') };
       });
-      ok('o chon tung the co vung cham >= 40px',
+      ok('o chon tung the co vung cham >= 40px (sau khi cham giu)',
         !!cham.row && cham.row.w >= 40 && cham.row.h >= 40,
         JSON.stringify(cham.row));
-      ok('o chon-ca-trang co vung cham >= 40px',
-        !!cham.all && cham.all.w >= 40 && cham.all.h >= 40,
-        JSON.stringify(cham.all));
+      // "Chon ca trang" CO CHU DINH khong co tren iPhone: hang do an 45px ma chu bi an,
+      // chi con mot o vuong tro troi. Desktop van co (kiem o phan G).
+      ok('iPhone khong con hang "Chon ca trang" (da thay bang cham giu)',
+        cham.all === null, JSON.stringify(cham.all));
 
       // Ô chọn và menu ⋯ trước chỉ có ở bảng desktop; bản mobile cũ thiếu hẳn.
       ok('the co O CHON va menu ⋯ ngay tren dien thoai',
@@ -1632,6 +1649,151 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       ok('huỷ việc nền (trước đây KHÔNG có cách dừng, phải restart server)',
         sauXoa === truoc, `${sauTao} -> ${sauXoa}`);
     }
+    await ctx.close();
+  }
+
+  /* ---------- G. Danh sách phiên: tên dự án, gom nhóm, nhóm Nháp ----------
+     Trước đợt này KHÔNG bài nào phủ trường project, bộ lọc hay phân trang — nên
+     bốn lỗi dưới đây sống suốt mà không ai biết. Mỗi bài bọc đúng một lỗi đã đo. */
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const page = await ctx.newPage();
+    await page.goto(URL, { waitUntil: 'networkidle' });
+    await page.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+    await page.waitForTimeout(2500);
+
+    /* Lỗi phân trang: dòng "1 – 10 / 133" dùng hằng PAGE thay vì biến perPage, nên
+       chọn 50 dòng/trang thì lưới hiện 50 thẻ mà chữ vẫn nói "1 – 10". */
+    await page.selectOption('[data-testid=per-page]', '50');
+    await page.waitForTimeout(600);
+    const info = await page.locator('[data-testid=pagination-info]').textContent();
+    const soThe = await page.locator('[data-testid=session-row]').count();
+    ok('phân trang nói đúng số (trước: chọn 50 vẫn nói "1 – 10")',
+      /^1 – 50 \//.test(info || '') && soThe === 50, `"${info}" / ${soThe} thẻ`);
+
+    // Mặc định KHÔNG hiện phiên nháp, và có nút mở nói rõ giấu bao nhiêu
+    const nutNhap = await page.locator('[data-testid=mo-nhap]').textContent().catch(() => '');
+    const soNhap = +((nutNhap || '').match(/(\d+)/)?.[1] || 0);
+    ok('phiên nháp gập sẵn, nói rõ đang giấu bao nhiêu', soNhap > 0, nutNhap?.trim());
+
+    // Mở nhóm Nháp -> tổng ở phân trang phải TĂNG đúng bằng số đã báo.
+    // Ẩn mà vẫn đếm thì người dùng đếm tay ra số khác — đúng loại lỗi đang đi sửa.
+    const tong = (t) => +((t || '').match(/\/\s*(\d+)/)?.[1] || 0);
+    const truocMo = tong(info);
+    await page.click('[data-testid=mo-nhap]');
+    await page.waitForTimeout(600);
+    const sauMo = tong(await page.locator('[data-testid=pagination-info]').textContent());
+    ok('mở nhóm Nháp: tổng tăng đúng bằng số đã báo',
+      sauMo === truocMo + soNhap, `${truocMo} + ${soNhap} = ${sauMo}`);
+    await page.click('[data-testid=an-nhap]');
+    await page.waitForTimeout(500);
+
+    /* Ô tìm trước đây chỉ quét sid + project + title. Gõ chữ đang HIỆN NGAY trên
+       thẻ (câu cuối) lại ra 0 kết quả. */
+    // Quét vài thẻ, không chỉ thẻ đầu: câu cuối của một thẻ có thể toàn từ ngắn.
+    // Bỏ dấu câu bám quanh từ, nếu không "(ENOTFOUND)" bị loại vì có ngoặc.
+    const cacCau = await page.locator('[data-testid=card-last]').allTextContents().catch(() => []);
+    const tu = cacCau.slice(0, 12)
+      .flatMap((c) => c.replace(/^\s*(Vinh|Claude):\s*/, '').split(/\s+/))
+      .map((w) => w.replace(/^[^\wÀ-ỹ]+|[^\wÀ-ỹ]+$/g, ''))
+      .find((w) => w.length >= 6 && /^[\wÀ-ỹ]+$/.test(w));
+    if (!tu) console.log('SKIP | tìm theo câu cuối (không có từ đủ dài để thử)');
+    else {
+      await page.fill('[data-testid=search-box]', tu);
+      await page.waitForTimeout(700);
+      const n = await page.locator('[data-testid=session-row]').count();
+      ok('tìm được theo nội dung câu cuối (trước: ra 0 kết quả)', n > 0, `"${tu}" -> ${n} thẻ`);
+      await page.fill('[data-testid=search-box]', '');
+      await page.waitForTimeout(500);
+    }
+
+    // Nút sắp xếp theo dự án: SortKey đã khai báo 'project' nhưng KHÔNG có nút nào bấm được
+    const coNut = await page.locator('[data-testid=sort-project]').count();
+    ok('có nút sắp xếp theo dự án (trước: khai báo rồi mà không bấm được)', coNut === 1);
+
+    // Bấm vào -> gom nhóm theo dự án, đầu nhóm hiện repo hoặc đường dẫn
+    await page.click('[data-testid=sort-project]');
+    await page.waitForTimeout(700);
+    const g = await page.evaluate(() => ({
+      nhom: document.querySelectorAll('[data-testid=nhom-du-an]').length,
+      ten: [...document.querySelectorAll('[data-testid=nhom-ten]')].map((e) => e.textContent),
+      repo: [...document.querySelectorAll('[data-testid=nhom-repo]')].map((e) => e.textContent),
+    }));
+    ok('gom nhóm theo dự án', g.nhom > 1, g.nhom + ' nhóm');
+    ok('đầu nhóm nào cũng cho biết dự án nằm ở đâu (repo hoặc đường dẫn)',
+      g.repo.length === g.nhom && g.repo.every((r) => (r || '').trim()),
+      g.repo.slice(0, 3).join(' | '));
+    ok('có nhóm hiện repo GitHub', g.repo.some((r) => /^[^/\s]+\/[^/\s]+ · /.test(r || '')),
+      g.repo.find((r) => /·/.test(r || '')) || '(không có)');
+
+    /* Tên dự án phải là tên thư mục thật. Chặn tái phát cả ba kiểu sai:
+       "agy/proxy" (tách tên có gạch ngang), "6debb715b13d/scratchpad" (rò UUID),
+       "plastic/" (chuỗi rác). */
+    ok('không tên dự án nào chứa "/" (chặn "agy/proxy")',
+      g.ten.every((t) => !(t || '').includes('/')),
+      g.ten.filter((t) => (t || '').includes('/')).join(', '));
+    ok('không tên dự án nào là chuỗi hex dài (chặn rò UUID)',
+      g.ten.every((t) => !/^[0-9a-f]{8,}$/i.test(t || '')),
+      g.ten.filter((t) => /^[0-9a-f]{8,}$/i.test(t || '')).join(', '));
+
+    // Lọc dùng khoa (cwd), KHÔNG dùng chuỗi hiển thị: hai dự án có thể trùng basename
+    // ("web" là con của agy-proxy), lọc theo tên sẽ trộn lẫn chúng.
+    const opts = await page.$$eval('[data-testid=project-filter] option',
+      (es) => es.map((e) => e.value).filter(Boolean));
+    ok('bộ lọc dự án dùng đường dẫn làm khoá (không trộn dự án trùng tên)',
+      opts.length > 0 && opts.every((v) => v.startsWith('/')),
+      opts.slice(0, 2).join(' | '));
+
+    /* Tab Thống kê gom donut theo cùng trường project nên sai theo đúng một kiểu:
+       lát "6debb715b13d/scratchpad", "cmdtest" (thư mục nháp do test sinh),
+       và "Van thong plastic" bị tách thành hai lát. */
+    await page.click('text=Thống kê');
+    await page.waitForTimeout(1800);
+    const nhan = await page.$$eval('.recharts-legend-item-text, .recharts-cartesian-axis-tick-value',
+      (es) => es.map((e) => e.textContent || ''));
+    ok('donut/bar: không nhãn nào chứa "/" hay chuỗi UUID',
+      nhan.every((t) => !t.includes('/') && !/[0-9a-f]{8,}/i.test(t)),
+      nhan.filter((t) => t.includes('/') || /[0-9a-f]{8,}/i.test(t)).join(', '));
+    ok('donut/bar: không còn lát nào là phiên nháp',
+      !nhan.some((t) => /cmdtest|permtest|scratchpad/i.test(t)),
+      nhan.filter((t) => /cmdtest|permtest|scratchpad/i.test(t)).join(', '));
+
+    await ctx.close();
+  }
+
+  /* ---------- H. iPhone: hàng "Chọn cả trang" đã bỏ, chạm giữ để chọn ---------- */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    });
+    const page = await ctx.newPage();
+    await page.goto(URL, { waitUntil: 'networkidle' });
+    await page.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+    await page.waitForTimeout(2500);
+
+    /* Hàng "Chọn cả trang" ăn 45px trên iPhone nhưng chữ bị ẩn, nên chỉ còn MỘT Ô
+       VUÔNG TRƠ TRỌI không ai hiểu để làm gì. Giờ ẩn hẳn; ô chọn trên thẻ cũng ẩn. */
+    const hien = await page.evaluate(() => {
+      const e = document.querySelector('[data-testid=sel-all]');
+      return { selAll: e ? !!e.offsetParent : false,
+        oChon: [...document.querySelectorAll('[data-testid=sel-row]')].filter((x) => !!x.offsetParent).length };
+    });
+    ok('iPhone: bỏ hàng "Chọn cả trang" (ô vuông trơ trọi không ai hiểu)', !hien.selAll);
+    ok('iPhone: ô chọn trên thẻ ẩn cho tới khi cần', hien.oChon === 0, hien.oChon + ' ô đang hiện');
+
+    /* Chạm giữ một thẻ -> vào chế độ chọn (như ứng dụng Ảnh).
+       KHÔNG dùng touchscreen.tap ở đây: chạm rồi nhả ngay là MỞ PHIÊN, thẻ biến mất
+       khỏi DOM và bài kiểm sập. Phải giữ touchstart 800ms mà không nhả. */
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-testid=session-row]');
+      const t = new TouchEvent('touchstart', { bubbles: true, cancelable: true });
+      el.dispatchEvent(t);
+    });
+    await page.waitForTimeout(800);
+    const sauGiu = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-testid=sel-row]')].filter((x) => !!x.offsetParent).length);
+    ok('iPhone: chạm giữ một thẻ thì hiện ô chọn', sauGiu > 0, sauGiu + ' ô hiện ra');
+
     await ctx.close();
   }
 

@@ -79,22 +79,102 @@ const {
 } = require('./tools');
 
 
+/* Lần đọc này có RẺ không? Dùng để biết có cần nhả event loop hay không (xem
+   listSessions). Rẻ = không đổi gì (trả cache luôn), hoặc chỉ ghi thêm vào đuôi
+   (chỉ đọc phần mới, thường vài KB). Đắt = phải parse lại cả file. */
+function docReTien(file) {
+  const c = cache.get(file);
+  if (!c) return false;
+  try {
+    const st = fs.statSync(file);
+    if (c.mtimeMs === st.mtimeMs && c.size === st.size) return true;
+    // dài ra + phần đầu còn nguyên -> chỉ đọc đuôi
+    return st.size > c.size && !!c.state && mocCuoi(file, c.size) === c.moc;
+  } catch { return false; }
+}
+
+/* ĐỌC THÊM PHẦN ĐUÔI, không parse lại cả file.
+   File .jsonl của Claude CLI chỉ GHI THÊM vào cuối. Trước đây mỗi lần mtime đổi là
+   parse lại từ đầu — đo thật: hai phiên đang chạy (89MB + 80MB) khiến 169MB bị parse
+   lại MỖI NHỊP SSE (2 giây), tốn ~700ms mỗi nhịp vĩnh viễn, và làm API nhẹ đợi theo.
+   Giờ chỉ đọc từ byte thứ `size cũ` trở đi.
+
+   Điều kiện an toàn: file phải DÀI RA và phần đầu không đổi. Kiểm bằng cách so
+   64 byte cuối của phần cũ — CLI ghi nối đuôi thì đoạn đó bất biến. Không khớp
+   (file bị ghi đè, /clear, CLI viết lại) -> parse lại toàn bộ như cũ. */
+const MOC_KIEM = 64;
+
+function docPhanThem(file, cu, st) {
+  if (!cu || st.size <= cu.size || !cu.state) return null;
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    // 1) phần đầu còn nguyên? so MOC_KIEM byte cuối của lần đọc trước
+    const off = Math.max(0, cu.size - MOC_KIEM);
+    const n = cu.size - off;
+    const moc = Buffer.alloc(n);
+    fs.readSync(fd, moc, 0, n, off);
+    if (moc.toString('latin1') !== cu.moc) { fs.closeSync(fd); return null; }
+    // 2) đọc đúng phần mới thêm
+    const them = Buffer.alloc(st.size - cu.size);
+    fs.readSync(fd, them, 0, them.length, cu.size);
+    fs.closeSync(fd);
+    return them.toString('utf8');
+  } catch { try { if (fd !== undefined) fs.closeSync(fd); } catch {} return null; }
+}
+
+function mocCuoi(file, size) {
+  if (!size) return '';
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const off = Math.max(0, size - MOC_KIEM);
+    const n = size - off;
+    const b = Buffer.alloc(n);
+    fs.readSync(fd, b, 0, n, off);
+    fs.closeSync(fd);
+    return b.toString('latin1');
+  } catch { try { if (fd !== undefined) fs.closeSync(fd); } catch {} return ''; }
+}
+
 function parseSessionFile(file) {
   let st;
   try { st = fs.statSync(file); } catch { cache.delete(file); return null; }
   const c = cache.get(file);
   if (c && c.mtimeMs === st.mtimeMs && c.size === st.size) return c.data;
 
-  const msgs = [];
-  // tool_use_id -> part object; ghép result vào call. Ghép trên TOÀN file trước khi
-  // slice window 30 -> call ở đầu window vẫn nhận được result nằm sau.
-  const toolIndex = new Map();
-  const usage = { inTok: 0, outTok: 0, cacheRead: 0, cacheWrite: 0, turns: 0 };
-  let aiTitle = '';   // Claude CLI tự sinh tiêu đề (dòng type=ai-title), lấy bản MỚI NHẤT
-  let firstUser = ''; // dự phòng khi session chưa có ai-title: câu đầu của user
+  /* Trạng thái tích luỹ. Tách ra khỏi thân hàm để lần đọc sau nối tiếp được:
+     toolIndex phải sống qua các lần đọc, nếu không tool_result nằm ở phần mới sẽ
+     không tìm thấy tool_use của nó ở phần cũ và thẻ tool đứng mãi ở "pending". */
+  const them = docPhanThem(file, c, st);
+  const S = them ? c.state : {
+    msgs: [],
+    // tool_use_id -> part object; ghép result vào call. Ghép trên TOÀN file trước khi
+    // slice window 30 -> call ở đầu window vẫn nhận được result nằm sau.
+    toolIndex: new Map(),
+    usage: { inTok: 0, outTok: 0, cacheRead: 0, cacheWrite: 0, turns: 0 },
+    aiTitle: '',   // Claude CLI tự sinh tiêu đề (dòng type=ai-title), lấy bản MỚI NHẤT
+    firstUser: '', // dự phòng khi session chưa có ai-title: câu đầu của user
+    model: '',     // model + mức nghĩ của lượt assistant mới nhất
+    effort: '',
+    du: '',        // dòng cuối bị cắt giữa chừng, ghép với phần đọc lần sau
+  };
+  const { msgs, toolIndex, usage } = S;
+  let { aiTitle, firstUser, model, effort } = S;
+
   let raw;
-  try { raw = fs.readFileSync(file, 'utf8'); } catch { return null; }
-  for (const line of raw.split('\n')) {
+  if (them !== null) {
+    raw = S.du + them;
+  } else {
+    try { raw = fs.readFileSync(file, 'utf8'); } catch { return null; }
+  }
+  /* Phần mới có thể kết thúc giữa một dòng đang được ghi dở. Giữ lại đoạn thừa cho
+     lần sau thay vì vứt (vứt là mất hẳn tin nhắn đó). Chỉ giữ khi file KHÔNG kết
+     thúc bằng xuống dòng — kết thúc bằng \n nghĩa là dòng cuối đã trọn vẹn. */
+  const dong = raw.split('\n');
+  S.du = raw.endsWith('\n') ? '' : (dong.pop() ?? '');
+
+  for (const line of dong) {
     if (!line.trim()) continue;
     let obj;
     try { obj = JSON.parse(line); } catch { continue; }
@@ -172,6 +252,11 @@ function parseSessionFile(file) {
     }
 
     if (obj.type !== 'user' && obj.type !== 'assistant') continue;
+    /* Model + mức nghĩ của phiên: mỗi dòng assistant ghi sẵn, lấy dòng MỚI NHẤT.
+       Đếm trên 8.000 dòng đầu phiên control: 2.734 dòng có message.model, 2.732 có
+       effort. Lưu ý effort nằm ở CẤP CAO NHẤT của dòng, không nằm trong message. */
+    if (obj.message && obj.message.model) model = obj.message.model;
+    if (obj.effort) effort = obj.effort;
     // token đã dùng: CLI ghi sẵn usage mỗi lượt assistant -> cộng dồn, khỏi gọi /cost
     const u = obj.message && obj.message.usage;
     if (u) {
@@ -263,10 +348,13 @@ function parseSessionFile(file) {
     ? (lastMsg.text.match(/[^\s`'"]*\.claude\/plans\/[^\s`'")]+\.md/) || [null])[0]
     : null;
   const data = {
-    msgs, mtimeMs: st.mtimeMs, title, planFile, usage,
+    msgs, mtimeMs: st.mtimeMs, title, planFile, usage, model, effort,
     tsMs: msgs.map(m => Date.parse(m.ts) || 0),
   };
-  cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, data });
+  // Ghi lại giá trị đã cập nhật trong vòng lặp để lần đọc thêm sau nối tiếp đúng.
+  S.aiTitle = aiTitle; S.firstUser = firstUser; S.model = model; S.effort = effort;
+  // moc = MOC_KIEM byte cuối file, dùng lần sau để chắc phần đầu chưa bị ghi đè.
+  cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, data, state: S, moc: mocCuoi(file, st.size) });
   return data;
 }
 
@@ -336,27 +424,128 @@ function sessionLabel(sid) {
    "No conversation found with session ID" và tin nhắn RƠI VÀO HƯ KHÔNG.
    Dashboard trước đây luôn spawn từ home -> mọi phiên không thuộc home đều không
    nhắn được. Mỗi dòng .jsonl có sẵn trường cwd -> đọc ra để spawn đúng chỗ. */
-const cwdCache = new Map(); // sid -> cwd (bất biến trong 1 phiên)
+const cwdCache = new Map(); // sid|file -> { duongDan, conTonTai } (bất biến trong 1 phiên)
+
+/* Đọc cwd thô + cho biết thư mục còn không.
+   Tách khỏi sessionCwd() vì hai bên cần hai thứ khác nhau: spawn cần "chỗ chạy được"
+   (thư mục xoá rồi thì phải rơi về home), còn danh sách cần "chỗ ĐÁNG LẼ chạy" để in
+   cảnh báo. Gộp làm một là mất đúng cái đường dẫn cần cảnh báo. */
+function docCwd(file) {
+  if (!file) return { duongDan: null, conTonTai: false };
+  if (cwdCache.has(file)) return cwdCache.get(file);
+  let r = { duongDan: null, conTonTai: false };
+  try {
+    // cwd nằm ngay dòng user đầu tiên — đọc 64KB đầu là đủ, khỏi nạp file 30MB
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(65536);
+    const n = fs.readSync(fd, buf, 0, 65536, 0);
+    fs.closeSync(fd);
+    const m = buf.toString('utf8', 0, n).match(/"cwd":"((?:[^"\\]|\\.)*)"/);
+    if (m) {
+      const p = JSON.parse('"' + m[1] + '"');
+      r = { duongDan: p, conTonTai: fs.existsSync(p) };
+    }
+  } catch {}
+  cwdCache.set(file, r);
+  return r;
+}
+
+// Giữ NGUYÊN ngữ nghĩa cũ: thư mục đã bị xoá -> null, spawnClaude rơi về home.
 function sessionCwd(sid) {
-  if (cwdCache.has(sid)) return cwdCache.get(sid);
-  const file = findSessionFile(sid);
-  let cwd = null;
-  if (file) {
-    try {
-      // cwd nằm ngay dòng user đầu tiên — đọc 64KB đầu là đủ, khỏi nạp file 30MB
-      const fd = fs.openSync(file, 'r');
-      const buf = Buffer.alloc(65536);
-      const n = fs.readSync(fd, buf, 0, 65536, 0);
-      fs.closeSync(fd);
-      const m = buf.toString('utf8', 0, n).match(/"cwd":"((?:[^"\\]|\\.)*)"/);
-      if (m) {
-        const p = JSON.parse('"' + m[1] + '"');
-        if (fs.existsSync(p)) cwd = p; // thư mục đã bị xoá -> để null, spawn ở home
-      }
-    } catch {}
-  }
-  cwdCache.set(sid, cwd);
-  return cwd;
+  const r = docCwd(findSessionFile(sid));
+  return r.conTonTai ? r.duongDan : null;
+}
+
+/* ---- thông tin dự án của một phiên ----
+   Trước đây tên dự án được SUY từ tên thư mục ~/.claude/projects (cắt 2 đoạn cuối nối
+   bằng "/"), cho ra "agy/proxy", "dalianperfume/com" (mất chữ volvo), "plastic/".
+   cwd là dữ liệu thật, có sẵn ở mọi phiên -> lấy thẳng. */
+
+// Thư mục nháp do chính Claude sinh ra cho phiên tạm. Kiểm TIỀN TỐ, không dùng
+// includes('scratchpad') — một dự án thật tên ~/project/scratchpad sẽ bị xếp nhầm.
+// Phải liệt kê cả /tmp và /private/tmp: macOS symlink /tmp -> /private/tmp nên cwd
+// ghi ra dạng nào cũng có. Không dùng os.tmpdir(): trên macOS nó trả /var/folders/...
+const TIEN_TO_NHAP = ['/private/tmp/claude-', '/tmp/claude-'];
+
+function laDuongDanNhap(p) {
+  return TIEN_TO_NHAP.some(t => p.startsWith(t));
+}
+
+function gonNha(p) {
+  const h = os.homedir();
+  return p === h ? '~' : p.startsWith(h + path.sep) ? '~' + p.slice(h.length) : p;
+}
+
+/* ---- repo GitHub + nhánh, chạy NỀN ----
+   Đo thật: đọc git 20 thư mục mất 370ms. listSessions() chạy đồng bộ trong tay xử lý
+   request, nên gọi git ở đó là chặn cả event loop mỗi chu kỳ SSE (2s/lần).
+   Vậy: listSessions CHỈ ĐỌC cache, không bao giờ chờ. Cache trống -> repo rỗng, giao
+   diện rơi về hiện đường dẫn; vài trăm ms sau có repo. Khoá theo cwd (20 thư mục),
+   không theo sid (133 phiên) — cùng một việc, làm 20 lần thay vì 133. */
+const gitCache = new Map(); // cwd -> { repo, nhanh }
+let dangDocGit = false;
+
+// git@github.com:mvng267/control-center.git | https://github.com/mvng267/control-center
+// -> mvng267/control-center
+function gonRepo(url) {
+  const m = String(url).trim().match(/[:/]([^/:]+\/[^/]+?)(?:\.git)?$/);
+  return m ? m[1] : '';
+}
+
+function chayGit(cwd, args) {
+  return new Promise(ok => {
+    // execFile không qua shell: đường dẫn có dấu cách ("amc video") vẫn an toàn.
+    // timeout phòng thư mục nằm trên ổ mạng bị treo.
+    execFile('git', ['-C', cwd, ...args], { timeout: 3000 }, (e, out) => ok(e ? '' : String(out).trim()));
+  });
+}
+
+async function docGitMotThuMuc(cwd) {
+  // BẪY ĐÃ ĐO: `git -C agy-proxy/web remote get-url origin` trả về repo của THƯ MỤC CHA
+  // (agy-proxy) vì web/ nằm trong cùng repo. Chỉ nhận khi gốc repo TRÙNG KHỚP cwd.
+  const goc = await chayGit(cwd, ['rev-parse', '--show-toplevel']);
+  if (!goc || path.resolve(goc) !== path.resolve(cwd)) return { repo: '', nhanh: '' };
+  const [url, nhanh] = await Promise.all([
+    chayGit(cwd, ['remote', 'get-url', 'origin']),
+    chayGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']),
+  ]);
+  return { repo: gonRepo(url), nhanh: nhanh === 'HEAD' ? '' : nhanh };
+}
+
+async function napGit(dsCwd) {
+  if (dangDocGit) return; // chống hai chu kỳ chồng nhau
+  dangDocGit = true;
+  try {
+    for (const cwd of dsCwd) {
+      // GHI CẢ KHI THẤT BẠI: thư mục không phải repo mà không ghi thì mỗi chu kỳ lại
+      // thử lại vô ích.
+      gitCache.set(cwd, await docGitMotThuMuc(cwd));
+    }
+  } finally { dangDocGit = false; }
+}
+
+const DU_AN_MOI = { ten: '(mới)', khoa: '(new)', duongDan: '', repo: '', nhanh: '', conTonTai: true, laNhap: false };
+
+function duAnCho(cwd) {
+  if (!cwd.duongDan) return { ...DU_AN_MOI, ten: '(không rõ)', khoa: '(unknown)' };
+  const p = cwd.duongDan;
+  /* Bỏ dấu cách/gạch chéo thừa ở CUỐI khi gom nhóm. Đã gặp thật:
+     ".../Van thong plastic" (repo mvng267/nhua-van-thong, 12 mục) và
+     ".../Van thong plastic " (rỗng hoàn toàn) là hai thư mục có thật trên đĩa —
+     macOS cho phép tên kết thúc bằng dấu cách — nhưng cùng MỘT dự án, chỉ là một lần
+     gõ nhầm. Không chuẩn hoá thì danh sách lọc có hai mục trùng tên y hệt nhau. */
+  const khoa = p.replace(/[\s/]+$/, '') || p;
+  // Tra git theo khoa (đã chuẩn hoá) -> bản gõ nhầm dùng chung repo với bản đúng.
+  const g = gitCache.get(khoa) || {};
+  return {
+    ten: path.basename(khoa) || khoa,
+    khoa,                          // gom theo cwd (đã chuẩn hoá): hai dự án có thể trùng basename
+    duongDan: gonNha(p),
+    repo: g.repo || '',
+    nhanh: g.nhanh || '',
+    conTonTai: cwd.conTonTai,
+    laNhap: laDuongDanNhap(p),
+  };
 }
 
 /* ---- danh sách file trong thư mục dự án, phục vụ gợi ý "@" ----
@@ -409,8 +598,18 @@ function statusOf(sid, mtimeMs) {
   return 'IDLE';
 }
 
-function listSessions() {
+/* BẤT ĐỒNG BỘ có chủ đích. parseSessionFile đọc + parse TOÀN BỘ file .jsonl; máy này
+   có 453MB, file lớn nhất 126MB. Lần quét lạnh mất ~2 giây, và vì trước đây hàm chạy
+   đồng bộ ngay trong tay xử lý request nên nó CHẶN CẢ EVENT LOOP: đo được
+   /api/passcode/status (API rỗng) mất 2.069ms mới trả lời.
+   Nhả nhịp sau mỗi phiên NẶNG (chưa có trong cache) để request khác chen vào được.
+   Phiên đã cache thì bỏ qua, không nhả — nếu không mỗi tick SSE tốn 133 lần setImmediate
+   vô ích. */
+const nhaNhip = () => new Promise(r => setImmediate(r));
+
+async function listSessions() {
   const out = [];
+  const canDocGit = new Set(); // thư mục chưa có trong gitCache -> để vòng nền đọc sau
   let dirs = [];
   try { dirs = fs.readdirSync(PROJECTS_DIR); } catch { return out; }
   for (const d of dirs) {
@@ -420,12 +619,19 @@ function listSessions() {
       if (!fs.statSync(dir).isDirectory()) continue;
       files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl'));
     } catch { continue; }
-    const project = d.replace(/^-/, '').split('-').slice(-2).join('/') || d;
     for (const f of files) {
       const full = path.join(dir, f);
       const sid = f.replace(/\.jsonl$/, '');
+      const re = docReTien(full);
       const parsed = parseSessionFile(full);
       if (!parsed) continue;
+      if (!re) await nhaNhip();
+      /* Tên dự án lấy từ cwd trong chính file, KHÔNG suy từ tên thư mục nữa.
+         Tên thư mục là cwd đã bị thay mọi ký tự đặc biệt bằng "-", nên không khôi phục
+         ngược được: "agy-proxy" và "agy/proxy" cho ra cùng một tên thư mục. */
+      const duAn = duAnCho(docCwd(full));
+      // Thư mục còn tồn tại mới đáng hỏi git; thư mục đã xoá hỏi cũng chỉ tốn 3s timeout.
+      if (duAn.conTonTai && !gitCache.has(duAn.khoa)) canDocGit.add(duAn.khoa);
       // lần đầu server thấy session -> coi như đã xem hết (không báo unread cũ)
       if (!lastSeen.has(sid)) lastSeen.set(sid, parsed.mtimeMs);
       const seen = lastSeen.get(sid);
@@ -453,7 +659,11 @@ function listSessions() {
       if (!cuoi && toolCuoi) cuoi = { role: 'assistant', text: 'đang chạy ' + toolCuoi };
       out.push({
         sid,
-        project,
+        // GIỮ project là CHUỖI: giao diện cũ (web/legacy) và tab Thống kê đọc nó làm
+        // khoá gom nhóm. Đổi sang object thì donut gom theo "[object Object]" — hỏng
+        // âm thầm, không ném lỗi, test không bắt được.
+        project: duAn.ten,
+        duAn,
         title: titleOf(sid, parsed.title),
         msgs: parsed.msgs.length,
         unread,
@@ -464,7 +674,14 @@ function listSessions() {
         tinCuoi: cuoi ? clampText(String(cuoi.text || '').replace(/\s+/g, ' '), 160) : '',
         // token của cả phiên (CLI ghi sẵn mỗi lượt) — biết phiên nào đang ngốn
         tok: (parsed.usage.inTok || 0) + (parsed.usage.outTok || 0),
+        // cacheRead/cacheWrite parseSessionFile đã cộng sẵn, trước giờ bị vứt đi
+        tokDoc: parsed.usage.cacheRead || 0,
+        tokGhi: parsed.usage.cacheWrite || 0,
         luot: parsed.usage.turns || 0,
+        // model + mức nghĩ lấy từ chính .jsonl (dòng assistant cuối), không phải từ
+        // dashboard-models.json — file đó chỉ có rác test, không ứng với phiên nào
+        model: parsed.model || '',
+        effort: parsed.effort || '',
         // đang dừng chờ duyệt kế hoạch: phải nhìn thấy NGAY ở danh sách
         choDuyet: !!parsed.planFile,
       });
@@ -473,11 +690,19 @@ function listSessions() {
   // sessions we spawned that have no jsonl yet
   for (const [sid, p] of procs) {
     if (!out.find(s => s.sid === sid)) {
-      out.push({ sid, project: p.project || '(new)', msgs: 0, unread: 0, mtimeMs: p.startedAt, status: 'RUNNING' });
+      // Hai chỗ gọi spawnClaude chỉ truyền { task, project }, KHÔNG có cwd -> không suy
+      // ra dự án được. Vẫn phải có duAn, nếu không giao diện vỡ khi đọc s.duAn.ten.
+      out.push({
+        sid, project: p.project || '(new)', duAn: { ...DU_AN_MOI },
+        msgs: 0, unread: 0, mtimeMs: p.startedAt, status: 'RUNNING',
+      });
     }
   }
   out.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return out.slice(0, 100);
+  // Đọc git ở NỀN, sau khi đã trả kết quả — không chặn request nào.
+  if (canDocGit.size) setTimeout(() => napGit([...canDocGit]), 0);
+  // KHÔNG cắt 100: máy có 133 phiên, 33 phiên biến mất mà không báo gì. Phân trang lo.
+  return out;
 }
 
 /* ---------------- spawning claude ---------------- */
@@ -1528,9 +1753,19 @@ const server = http.createServer(async (req, res) => {
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
     });
-    const send = () => {
-      // payload object: sessions + jobs đang chạy + model hiện tại
-      try { res.write(`data: ${JSON.stringify({ sessions: listSessions(), jobs: listJobs(), model: currentModel, perm: permMode, effort })}\n\n`); } catch {}
+    // listSessions giờ bất đồng bộ (nhả event loop giữa các phiên nặng). Cần cờ chống
+    // chồng nhịp: lần quét lạnh mất ~2s còn nhịp SSE là 2s, không chặn thì hai lượt
+    // quét chạy song song, mỗi lượt lại nhả nhịp cho lượt kia — càng chậm thêm.
+    let dangGui = false;
+    const send = async () => {
+      if (dangGui) return;
+      dangGui = true;
+      try {
+        const sessions = await listSessions();
+        // payload object: sessions + jobs đang chạy + model hiện tại
+        res.write(`data: ${JSON.stringify({ sessions, jobs: listJobs(), model: currentModel, perm: permMode, effort })}\n\n`);
+      } catch {}
+      finally { dangGui = false; }
     };
     send();
     const iv = setInterval(send, 2000);
@@ -2528,4 +2763,8 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`claude-dashboard listening on http://localhost:${PORT}`);
   console.log(`  mã truy cập: ${dashToken}`);
   console.log(`  mở nhanh trên máy khác: http://<ip>:${PORT}/?t=${dashToken}`);
+  /* Làm mới repo/nhánh mỗi 10 phút: người ta đổi nhánh khi đang làm việc, mà cache
+     không hết hạn thì đầu nhóm dự án hiện nhánh cũ mãi. unref() để tiến trình vẫn
+     thoát được bình thường (test khởi động server rồi kill). */
+  setInterval(() => { napGit([...gitCache.keys()]); }, 10 * 60 * 1000).unref();
 });

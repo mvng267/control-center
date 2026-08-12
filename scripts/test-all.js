@@ -98,6 +98,11 @@ function chay(nhan, file, env) {
        bao giờ bỏ qua được gì.) */
     ket.push(await chay('giao diện mới', 'tests/ui-new.js',
       { DASH_URL: `http://localhost:${CONG_MOI}/`, SKIP_CHAT: '1' }));
+    /* Tên dự án + hiệu năng danh sách — kiểm ở mức server, không cần trình duyệt.
+       Chạy SAU cùng vì một bài đo "API nhẹ không bị /stream chặn" cần server đã ấm
+       để phản ánh đúng đời thật; chạy trên server vừa dựng thì lúc nào cũng xanh. */
+    ket.push(await chay('tên dự án + hiệu năng', 'tests/du-an.js',
+      { DASH_URL: `http://localhost:${CONG_MOI}/` }));
   } finally {
     donDep();
   }

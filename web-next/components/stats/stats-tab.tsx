@@ -20,12 +20,20 @@ const tooltipStyle = {
   borderRadius: 10, fontSize: 12, color: 'var(--foreground)',
 };
 
-export function StatsTab({ sessions }: { sessions: Session[] }) {
+export function StatsTab({ sessions: tatCa }: { sessions: Session[] }) {
+  /* LOẠI PHIÊN NHÁP khỏi mọi biểu đồ. Đo trên máy này: 28/133 phiên nằm trong thư mục
+     tạm /tmp/claude-* do test sinh ra — trước đây chúng chiếm tới 27/100 lát donut,
+     đẩy cả "cmdtest" và "permtest" lên làm dự án lớn. Biểu đồ phải nói về công việc
+     thật, không phải về rác test. */
+  const sessions = useMemo(() => tatCa.filter((s) => !s.duAn?.laNhap), [tatCa]);
+
   const d = useMemo(() => {
     const byProj: Record<string, { sessions: number; msgs: number }> = {};
     let active = 0, idle = 0, totalMsgs = 0;
     for (const s of sessions) {
-      const pr = (byProj[s.project] ||= { sessions: 0, msgs: 0 });
+      // duAn.ten là tên thư mục thật; s.project giờ cũng bằng nó nhưng ưu tiên duAn
+      // để nếu sau này gỡ trường project đi thì chỗ này không vỡ.
+      const pr = (byProj[s.duAn?.ten || s.project] ||= { sessions: 0, msgs: 0 });
       pr.sessions++;
       pr.msgs += s.msgs;
       totalMsgs += s.msgs;
@@ -205,7 +213,7 @@ export function StatsTab({ sessions }: { sessions: Session[] }) {
                   }`} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px]">{s.title || s.sid.slice(0, 8)}</span>
-                    <span className="block truncate text-[11.5px] text-muted-foreground">{s.project}</span>
+                    <span className="block truncate text-[11.5px] text-muted-foreground">{s.duAn?.ten || s.project}</span>
                   </span>
                   <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">{s.msgs} tin</span>
                 </div>
