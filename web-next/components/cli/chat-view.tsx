@@ -39,7 +39,9 @@ interface DuAnChat {
 }
 interface History {
   messages: Msg[]; total: number; start: number; typing: boolean; status: string;
-  title: string; error: string | null; awaiting: boolean; model: string | null;
+  title: string; error: string | null; awaiting: boolean;
+  model: string | null;        // model ĐẶT RIÊNG cho phiên (null = theo model toàn cục)
+  modelDaChay?: string | null; // model THẬT của lượt gần nhất, đọc từ .jsonl
   usage: Usage | null;
   duAn?: DuAnChat;   // dự án của phiên: tên thư mục thật, repo, nhánh, còn tồn tại không
   effort?: string;   // mức nghĩ của lượt gần nhất
@@ -375,10 +377,14 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               thư mục đã xoá
             </span>
           )}
-          {!!h?.model && (
+          {/* Hiện model ĐÃ CHẠY THẬT (đọc từ .jsonl) — đúng cả với phiên chạy từ
+              terminal. `h.model` là model đặt riêng cho phiên, thường null, nên dùng
+              nó ở đây thì hầu như không bao giờ hiện được gì. Có đặt riêng thì ưu tiên,
+              vì đó là thứ lượt SAU sẽ chạy. */}
+          {!!(h?.model || h?.modelDaChay) && (
             <span className="shrink-0 text-tool-accent" data-testid="chat-model"
-              title={h.model + (h.effort ? ' · mức nghĩ ' + h.effort : '')}>
-              {gonModel(h.model)}{h.effort ? ' · ' + h.effort : ''}
+              title={(h.model || h.modelDaChay || '') + (h.effort ? ' · mức nghĩ ' + h.effort : '')}>
+              {gonModel(h.model || h.modelDaChay)}{h.effort ? ' · ' + h.effort : ''}
             </span>
           )}
           {/* Số lượt ẩn trên màn hẹp: ít quan trọng nhất trong hàng này, mà danh

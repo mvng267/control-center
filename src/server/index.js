@@ -31,6 +31,18 @@ let currentModel = null;
    Claude im lặng bỏ qua việc cần quyền rồi trả lời "bạn chưa cấp quyền", nhìn như
    đã làm mà thật ra không làm gì. acceptEdits = tự cho phép sửa file (lệnh nguy hiểm
    vẫn bị chặn). Ghi ra file để giữ nguyên lựa chọn sau khi restart dashboard. */
+/* ---- ghi file cấu hình ----
+   Ghi JSON có TẠO THƯ MỤC CHA trước. Trên máy chưa từng chạy Claude CLI thì ~/.claude
+   không tồn tại, nên mọi writeFileSync ném ENOENT — mà chỗ nào cũng bọc catch{} nên
+   hỏng IM LẶNG. Đã thử với HOME trống: đặt mã khoá trả về {"ok":true} mà không tạo
+   file nào (người dùng tưởng đã khoá, thật ra không), còn mã truy cập thì đổi mỗi lần
+   khởi động lại nên link ?t= đã lưu trên điện thoại chết theo.
+   KHÔNG bắt lỗi ở đây: để nó ném ra cho chỗ gọi báo thật. */
+function ghiJson(file, data, mode) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(data, null, 2), mode ? { mode } : undefined);
+}
+
 const PERM_FILE = path.join(os.homedir(), '.claude', 'dashboard-perm.json');
 // 'plan' = Claude trình bày kế hoạch rồi DỪNG chờ duyệt (không đụng file). Đây là cách
 // duyệt-trước-khi-làm khả thi duy nhất: CLI không có kênh uỷ quyền để dashboard bấm
@@ -60,7 +72,8 @@ function effortArgs() {
   return effort ? ['--effort', effort] : [];
 }
 function saveModes() {
-  try { fs.writeFileSync(PERM_FILE, JSON.stringify({ mode: permMode, effort }, null, 2)); } catch {}
+  try { ghiJson(PERM_FILE, { mode: permMode, effort }); return true; }
+  catch { return false; }   // chỗ gọi báo cho người dùng, đừng nuốt
 }
 // Loop/cron jobs: id -> { id, kind: 'loop'|'cron', spec, prompt, runs, lastSid, timer?, lastKey? }
 const jobs = new Map();
@@ -400,7 +413,7 @@ function loadTitles() {
 function setTitle(sid, name) {
   const t = loadTitles();
   if (name) t[sid] = name; else delete t[sid]; // xoá tên tự đặt -> quay về ai-title
-  try { fs.writeFileSync(TITLES_FILE, JSON.stringify(t, null, 2)); } catch { return false; }
+  try { ghiJson(TITLES_FILE, t); } catch { return false; }
   return true;
 }
 // Tiêu đề hiển thị: tên tự đặt > ai-title (Claude CLI) > câu đầu của user > rỗng
@@ -421,7 +434,7 @@ function loadModels() {
 function setSessionModel(sid, model) {
   const t = loadModels();
   if (model) t[sid] = model; else delete t[sid]; // xoá = quay về model toàn cục
-  try { fs.writeFileSync(MODELS_FILE, JSON.stringify(t, null, 2)); } catch { return false; }
+  try { ghiJson(MODELS_FILE, t); } catch { return false; }
   return true;
 }
 function modelFor(sid) { return loadModels()[sid] || currentModel || null; }
@@ -1399,7 +1412,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 }
 
 function savePushState() {
-  try { fs.writeFileSync(PUSH_STATE_FILE, JSON.stringify(pushState, null, 2)); } catch {}
+  try { ghiJson(PUSH_STATE_FILE, pushState); } catch {}
 }
 
 function removeSub(endpoint) {
@@ -1522,7 +1535,11 @@ if (!dashToken) {
 }
 if (!dashToken) {
   dashToken = crypto.randomBytes(18).toString('base64url');
-  try { fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token: dashToken }, null, 2), { mode: 0o600 }); } catch {}
+  /* Ghi hỏng ở đây là mã truy cập ĐỔI mỗi lần khởi động lại -> link ?t= đã lưu trên
+     điện thoại chết theo, phải mở terminal đọc log mới vào được. Báo ra màn hình chứ
+     đừng nuốt: chỉ có dòng này mới cho biết vì sao mã cứ đổi. */
+  try { ghiJson(TOKEN_FILE, { token: dashToken }, 0o600); }
+  catch (e) { console.error('  ! không lưu được mã truy cập (' + e.code + ') — mã sẽ đổi sau mỗi lần khởi động lại:', TOKEN_FILE); }
 }
 
 // Request từ chính máy này (loopback) khỏi cần token — curl/script local vẫn tiện dùng
@@ -1573,7 +1590,7 @@ function savePass(st) {
   passState = st;
   passAt = Date.now();   // vừa ghi -> đừng đọc đè trong 2s tới
   try {
-    if (st) fs.writeFileSync(PASS_FILE, JSON.stringify(st, null, 2), { mode: 0o600 });
+    if (st) ghiJson(PASS_FILE, st, 0o600);
     else fs.rmSync(PASS_FILE, { force: true });
     return true;
   } catch { return false; }
@@ -1884,10 +1901,15 @@ const server = http.createServer(async (req, res) => {
          mất sạch — chỉ còn mỗi cái tên. Cùng một dữ liệu, không tốn thêm lần đọc
          file nào (docCwd có cache riêng). */
       duAn: duAnCho(docCwd(file)),
-      /* model: ưu tiên bản đặt riêng cho phiên; không có thì lấy model THẬT đọc từ
-         .jsonl. Trước đây chỉ đọc dashboard-models.json — file đó gần như luôn rỗng
-         nên đầu trang không bao giờ hiện được model, kể cả khi .jsonl ghi rõ. */
-      model: loadModels()[sid] || (parsed && parsed.model) || null,
+      /* HAI trường model khác nghĩa, đừng gộp:
+         - `model`  = model ĐẶT RIÊNG cho phiên này (null = đang theo model toàn cục).
+                      Giao diện dùng nó để biết chip model có đang bị ghi đè không, và
+                      để xoá về mặc định. Gộp model-đã-chạy vào đây thì phiên chưa đặt
+                      gì cũng trả về một tên -> nhìn như bị dính model của phiên khác.
+         - `modelDaChay` = model THẬT đọc từ .jsonl (lượt assistant mới nhất). Đây là
+                      thứ đầu trang chat hiển thị, đúng cả với phiên chạy từ terminal. */
+      model: loadModels()[sid] || null,
+      modelDaChay: (parsed && parsed.model) || null,
       effort: parsed ? parsed.effort : '',
       /* Bản nháp đang chảy ra từ stdout của lượt hiện tại.
          .jsonl chỉ được ghi KHI LƯỢT XONG, nên nếu chỉ đọc file thì màn hình đứng im

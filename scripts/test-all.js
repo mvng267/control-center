@@ -103,6 +103,9 @@ function chay(nhan, file, env) {
        để phản ánh đúng đời thật; chạy trên server vừa dựng thì lúc nào cũng xanh. */
     ket.push(await chay('tên dự án + hiệu năng', 'tests/du-an.js',
       { DASH_URL: `http://localhost:${CONG_MOI}/` }));
+    /* Cài trên máy mới: bộ này TỰ dựng server riêng với HOME giả trống rỗng, nên
+       không dùng hai server ở trên và cũng không đụng ~/.claude thật. */
+    ket.push(await chay('cài trên máy mới', 'tests/may-moi.js', { PORT_TEST: '7869' }));
   } finally {
     donDep();
   }
