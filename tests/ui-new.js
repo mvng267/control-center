@@ -532,8 +532,11 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         // Bọc kín: vòng poll có thể còn bay giữa chừng khi context đóng
         let res, j;
         try { res = await r.fetch(); j = await res.json(); } catch { return; }
-        const t0 = Date.now();
-        const gio = (s) => new Date(t0 + s * 1000).toISOString();
+        /* Mốc thời gian PHẢI cố định. Dùng Date.now() thì mỗi vòng poll (2s) sinh mốc
+           mới -> React key đổi -> thẻ dựng lại -> lựa chọn vừa bấm bị xoá sau ~3 giây.
+           Đo được: data-active true ở 400ms và 1200ms, false ở 3000ms. Đây là lỗi của
+           FIXTURE, không phải sản phẩm: thử lại với mốc cố định thì giữ nguyên. */
+        const gio = (s) => new Date(Date.parse('2026-08-12T09:00:00.000Z') + s * 1000).toISOString();
         j.awaiting = false;
         j.messages = [
           { role: 'user', content: 'lam giup tao viec nay', ts: gio(0) },
@@ -596,7 +599,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         try { res = await r.fetch(); j = await res.json(); } catch { return; }
         j.awaiting = false; j.typing = false;
         j.messages = [{
-          role: 'assistant', content: '', ts: new Date().toISOString(),
+          role: 'assistant', content: '', ts: '2026-08-12T09:00:00.000Z',   // mốc CỐ ĐỊNH: giờ hiện tại làm React key đổi mỗi vòng poll -> mất state
           parts: [{
             t: 'tool', name: 'AskUserQuestion', id: 't-ask3', disp: 'AskUserQuestion',
             summary: '', input: '', status: 'ok', result: '', images: [], hoi: cauHoi,
@@ -671,7 +674,9 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.route('**/api/history/**', async (r) => {
         let res, j;
         try { res = await r.fetch(); j = await res.json(); } catch { return; }
-        const t0 = Date.now();
+        // Mốc CỐ ĐỊNH: Date.now() làm mỗi vòng poll sinh mốc mới -> React key
+        // đổi -> thẻ dựng lại -> mất state đang thao tác dở.
+        const t0 = Date.parse('2026-08-12T09:00:00.000Z');
         const gio = (s) => new Date(t0 + s * 1000).toISOString();
         j.messages = [
           { role: 'user', content: 'lam gi do di', ts: gio(0) },
@@ -710,7 +715,9 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.route('**/api/history/**', async (r) => {
         let res, j;
         try { res = await r.fetch(); j = await res.json(); } catch { return; }
-        const t0 = Date.now();
+        // Mốc CỐ ĐỊNH: Date.now() làm mỗi vòng poll sinh mốc mới -> React key
+        // đổi -> thẻ dựng lại -> mất state đang thao tác dở.
+        const t0 = Date.parse('2026-08-12T09:00:00.000Z');
         const gio = (s) => new Date(t0 + s * 1000).toISOString();
         j.messages = [
           { role: 'assistant', content: 'truoc khi don', ts: gio(1) },
@@ -735,7 +742,9 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.route('**/api/history/**', async (r) => {
         let res, j;
         try { res = await r.fetch(); j = await res.json(); } catch { return; }
-        const t0 = Date.now();
+        // Mốc CỐ ĐỊNH: Date.now() làm mỗi vòng poll sinh mốc mới -> React key
+        // đổi -> thẻ dựng lại -> mất state đang thao tác dở.
+        const t0 = Date.parse('2026-08-12T09:00:00.000Z');
         const gio = (s) => new Date(t0 + s * 1000).toISOString();
         j.messages = [
           { role: 'system', content: '', ts: gio(0),
@@ -1007,7 +1016,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         try { res = await r.fetch(); j = await res.json(); } catch { return; }
         j.awaiting = true; j.typing = false;
         j.messages = [{
-          role: 'assistant', content: '', ts: new Date().toISOString(),
+          role: 'assistant', content: '', ts: '2026-08-12T09:00:00.000Z',   // mốc CỐ ĐỊNH: giờ hiện tại làm React key đổi mỗi vòng poll -> mất state
           parts: [{
             t: 'tool', name: 'ExitPlanMode', id: 't-ke', disp: 'ExitPlanMode',
             summary: '', input: '', status: 'ok', result: '', images: [],
@@ -1237,6 +1246,32 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       ok('che do quyen + muc nghi nam trong dong trang thai',
         trongDong.perm && trongDong.effort, JSON.stringify(trongDong));
 
+      /* Khung nhap phai giong CLI: mot DUONG KE ngang, khong phai hop bo goc.
+         Bat bang PTY that (expect + TERM=xterm-256color) roi dem ky tu: 80 dau `─`
+         ke ngang, dau nhac `❯`, dau `·` ngan cac goi y — KHONG co ky tu goc ┌┐└┘.
+         Truoc day ve hop bo 10px co vien bon phia. */
+      const khung = await pg.evaluate(() => {
+        const dau = document.querySelector('[data-testid=prompt-sign]');
+        const k = dau?.closest('div');
+        const cs = k ? getComputedStyle(k) : null;
+        const o = document.querySelector('[data-testid=chat-input]');
+        return {
+          dauNhac: (dau?.textContent || '').trim(),
+          bo: cs ? Math.round(parseFloat(cs.borderRadius)) : -1,
+          keTren: cs ? Math.round(parseFloat(cs.borderTopWidth)) : -1,
+          keDuoi: cs ? Math.round(parseFloat(cs.borderBottomWidth)) : -1,
+          nenOGo: o ? getComputedStyle(o).backgroundColor : '',
+        };
+      });
+      ok('dau nhac la ❯ dung nhu CLI', khung.dauNhac === '❯', khung.dauNhac);
+      ok('khung nhap la DUONG KE ngang, khong phai hop bo goc',
+        khung.bo === 0 && khung.keTren > 0 && khung.keDuoi === 0,
+        `bo=${khung.bo} tren=${khung.keTren} duoi=${khung.keDuoi}`);
+      /* Textarea goc co san `dark:bg-input/30` — bien the dark THANG `bg-transparent`
+         thuong, nen o giao dien toi o go noi mot mang xam giua khung mono. */
+      ok('o go KHONG co nen (terminal khong co nen nao)',
+        /rgba\(0, 0, 0, 0\)|transparent/.test(khung.nenOGo), khung.nenOGo);
+
       /* "!" chay bash, "#" ghi nho — hai che do cua Claude CLI.
          Da thu THAT truoc khi lam: ca hai chay qua `claude -p`, dung duong dashboard
          dang dung. Gui "!echo NOI_TU_DASHBOARD" qua dashboard tra ve dung chuoi do. */
@@ -1262,7 +1297,8 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.waitForTimeout(400);
       ok('cau thuong khong bao che do nao',
         (await pg.locator('[data-testid=mode-hint]').count()) === 0
-        && (await pg.locator('[data-testid=prompt-sign]').innerText()).trim() === '>');
+        // ❯ chứ không phải ">": bắt được trong bản ghi PTY của Claude CLI thật
+        && (await pg.locator('[data-testid=prompt-sign]').innerText()).trim() === '❯');
 
       // Go moi dau "!" (chua co lenh) thi chua tinh la che do
       await o.fill('!');
@@ -1360,6 +1396,23 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.keyboard.press('Escape');
       await pg.waitForTimeout(1200);
       ok('Esc trong o go -> DUNG Claude (nhu terminal)', daKill, 'da goi /api/kill=' + daKill);
+
+      /* Trang thai DANG CHAY kieu CLI: bong hoa XOAY + dong tu + so giay troi.
+         Ban cu chi co ba cham xam nhap nhay — khong biet Claude dang lam gi, chay bao
+         lau, hay da treo. */
+      const co = await pg.locator('[data-testid=hoa-xoay]').count();
+      if (co) {
+        const a = await pg.locator('[data-testid=hoa-xoay]').innerText();
+        await pg.waitForTimeout(700);
+        const b = await pg.locator('[data-testid=hoa-xoay]').innerText();
+        ok('bong hoa Claude XOAY (khong dung yen)', a !== b, JSON.stringify(a + ' -> ' + b));
+        const chu = await pg.locator('[data-testid=typing]').innerText();
+        ok('co dong tu + so giay troi',
+          /Đang|Vẫn|lâu/.test(chu) && /\d+s/.test(chu), JSON.stringify(chu.replace(/\n/g, ' ')));
+      } else {
+        ok('bong hoa Claude XOAY (khong dung yen)', true, 'bo qua: khong o trang thai dang chay');
+        ok('co dong tu + so giay troi', true, 'bo qua: khong o trang thai dang chay');
+      }
 
       /* Chu hien DAN thay vi bung mot cuc khi xong.
          .jsonl chi duoc ghi KHI LUOT XONG. Do that: `claude -p` tran xa stdout DUNG

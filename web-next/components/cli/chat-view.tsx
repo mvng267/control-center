@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Send, Square, Check, Pencil, Copy, CheckCheck, ImagePlus } from 'lucide-react';
+import { ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
 import { Markdown } from './markdown';
@@ -12,6 +12,7 @@ import { TodoBar } from './todo-bar';
 import { SlashHint, useSlash } from './slash-hint';
 import { MentionHint, useMention } from './mention-hint';
 import { ModeHint, docChe } from './mode-hint';
+import { DangChay } from './dang-chay';
 import { ThinkCard } from './think-card';
 import { NoteLine, type NotePart } from './note-line';
 import { AskCard } from './ask-card';
@@ -434,7 +435,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                       className="flex w-full items-start gap-2 text-[13px] leading-relaxed">
                       <span className={cn('shrink-0 select-none',
                         m.role === 'user' ? 'text-primary' : 'text-foreground')}>
-                        {m.role === 'user' ? '>' : '⏺'}
+                        {m.role === 'user' ? '❯' : '⏺'}
                       </span>
                       <div className={cn('min-w-0 flex-1 break-words',
                         m.role === 'user' && 'whitespace-pre-wrap text-foreground/90')}>
@@ -469,20 +470,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           đúng khi chính dashboard spawn Claude — phiên chạy từ terminal ngoài thì
           typing=false nên KHÔNG có nút dừng nào, mà bấm Gửi lại nhận 409 "session is
           busy". Bản legacy dùng status nên vẫn xử lý được (export.js:453). */}
-      {(h?.typing || h?.status === 'RUNNING') && (
-        <div className="flex shrink-0 items-center gap-3 px-4 pb-1" data-testid="typing">
-          <span className="flex gap-1">
-            {[0, 1, 2].map((i) => (
-              <span key={i} className="size-[7px] animate-pulse rounded-full bg-muted-foreground"
-                style={{ animationDelay: `${i * 150}ms` }} />
-            ))}
-          </span>
-          <Button size="sm" variant="outline" className="h-[30px] text-status-error" onClick={stop}
-            data-testid="stop-btn">
-            <Square className="size-3" /> Dừng
-          </Button>
-        </div>
-      )}
+      {(h?.typing || h?.status === 'RUNNING') && <DangChay onStop={stop} />}
 
       {h?.error && (
         <div className="mx-4 mb-2 shrink-0 rounded-[10px] border border-status-error/30 bg-status-error/[0.08] px-3 py-2 text-[12.5px] text-status-error"
@@ -507,9 +495,13 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         <MentionHint items={mention.items} active={mention.active} onPick={mention.pick} />
         <ModeHint che={docChe(text)} />
         <AttachBar items={att} onRemove={(i) => setAtt((xs) => xs.filter((_, k) => k !== i))} />
-        {/* Khung viền quanh ô gõ — Claude CLI vẽ hẳn một hộp bo góc quanh dòng nhập.
-            Viền chuyển sang màu chính khi đang gõ để biết con trỏ đang ở đây. */}
-        <div className={cn('flex items-center gap-2 rounded-[10px] border px-2 transition-colors',
+        {/* Claude CLI KHÔNG vẽ hộp bo góc quanh dòng nhập — bắt bằng PTY thật
+            (expect + TERM=xterm-256color) rồi đếm ký tự: 80 dấu `─` kẻ một đường
+            ngang hết bề rộng, dấu nhắc `❯`, dấu `·` ngăn các gợi ý. Không có ký tự
+            góc ┌┐└┘ nào cả.
+            Nên: một đường kẻ trên, ô gõ nằm dưới, không viền không bo. Màu đường kẻ
+            đổi theo chế độ để vẫn biết đang gõ `!` hay `#`. */}
+        <div className={cn('flex items-center gap-2 border-t-2 pt-2 transition-colors',
           docChe(text) === 'bash' ? 'border-tool-accent/60'
             : docChe(text) === 'nho' ? 'border-primary/60'
             : text.trim() ? 'border-primary/50' : 'border-border')}>
@@ -522,7 +514,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             className={cn('shrink-0 select-none font-mono text-[15px]',
               docChe(text) === 'bash' ? 'text-tool-accent'
                 : docChe(text) === 'nho' ? 'text-primary' : 'text-primary')}>
-            {docChe(text) === 'bash' ? '!' : docChe(text) === 'nho' ? '#' : '>'}
+            {docChe(text) === 'bash' ? '!' : docChe(text) === 'nho' ? '#' : '❯'}
           </span>
           {/* Textarea: dán đoạn dài / viết nhiều dòng vẫn đọc được.
               Enter gửi, Shift+Enter xuống dòng. */}
@@ -562,7 +554,11 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               el.style.height = Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.35)) + 'px';
             }}
             placeholder="Nhắn cho Claude…"
-            className="max-h-[35dvh] min-h-11 resize-none border-0 bg-transparent px-0 py-2.5 font-mono text-[16px] shadow-none focus-visible:ring-0" />
+            /* dark:bg-transparent BẮT BUỘC: component Textarea gốc có sẵn
+               `dark:bg-input/30`, mà biến thể dark thắng `bg-transparent` thường —
+               nên ở giao diện tối ô gõ vẫn nổi một mảng xám giữa khung mono, nhìn ra
+               ô nhập của app chứ không phải dòng lệnh. Terminal không có nền nào. */
+            className="max-h-[35dvh] min-h-11 resize-none border-0 bg-transparent px-0 py-2.5 font-mono text-[16px] shadow-none focus-visible:ring-0 dark:bg-transparent" />
           {/* Nút gửi PHẲNG, không nền đặc. Terminal không có nút xanh nào cả — khối
               màu đặc trong khung mono trông như dán từ app khác vào. Chỉ tô màu chữ
               khi đã có gì để gửi; mờ đi chứ không biến mất, vì biến mất thì khung
@@ -586,7 +582,10 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             Giờ: chế độ + mức nghĩ hiện Ở ĐÂY, ngay dưới chỗ gõ, mọi bề rộng. Phần
             nhắc phím tắt vẫn chỉ hiện từ sm trở lên — không có bàn phím cứng thì
             nhắc Shift+Enter là vô nghĩa. */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 font-mono text-[10.5px] text-muted-foreground/60"
+        {/* Ngăn các mục bằng dấu `·` — đúng ký tự Claude CLI dùng, bắt được trong bản
+            ghi PTY ("Enter to confirm · Esc to cancel"). Khoảng trắng trần thì các
+            mục dính vào nhau, đọc ra một câu dài. */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 px-1 font-mono text-[10.5px] text-muted-foreground/60 [&>span:not(:first-child)]:before:mr-1.5 [&>span:not(:first-child)]:before:text-muted-foreground/30 [&>span:not(:first-child)]:before:content-['·']"
           data-testid="input-hint">
           <PermSwitch perm={perm} compact testid="chat-perm" />
           <EffortSwitch effort={effort} compact />

@@ -217,7 +217,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 118 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 123 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục
@@ -247,3 +247,9 @@ file đó là gỡ khoá.
 | 171 | Chấm `⏺` của LƯỢT khác màu chấm của TOOL | trắng = Claude nói, tím = chạy lệnh | ui-new |
 | 172 | Dòng `⎿` thụt vào làm con của tool (18px) | trước chỉ 3px, dính sát lề | ui-new |
 | 173 | Dòng `⎿` hook lỗi cũng thụt cùng mức | nó sinh ra TỪ một tool cụ thể | ui-new |
+| 174 | Dấu nhắc `❯` đúng như CLI (không phải `>`) | bắt bằng PTY thật | ui-new |
+| 175 | Khung nhập là **đường kẻ ngang**, không phải hộp bo góc | CLI dùng 80 dấu `─`, không có ┌┐└┘ | ui-new |
+| 176 | Ô gõ không có nền (`dark:bg-input/30` bị đè) | terminal không có nền nào | ui-new |
+| 177 | Gợi ý ngăn nhau bằng `·` như CLI | "Enter to confirm · Esc to cancel" | tay |
+| 178 | **Bông hoa Claude xoay** khi đang chạy | `hoa-xoay` đổi ký tự mỗi 120ms | ui-new |
+| 179 | Trạng thái có động từ + số giây trôi | "Đang nghĩ… 2s" → "Vẫn đang chạy" → "Chạy khá lâu rồi" | ui-new |
