@@ -15,7 +15,13 @@ export function useStream() {
 
   useEffect(() => {
     let stopped = false;
-    const es = new EventSource(streamUrl());
+    /* withCredentials BẮT BUỘC khi đã đặt mã khoá. EventSource mặc định KHÔNG gửi
+       cookie, mà cookie `dashUnlock` chính là thứ chứng minh đã mở khoá — thiếu nó
+       thì /stream bị chặn ở cổng mã khoá (423), SSE đứt ngay rồi thử lại vô hạn:
+       trên iPhone nhìn ra "mất kết nối" liên tục dù server vẫn chạy bình thường.
+       Không lộ ra khi chạy ở localhost vì loopback được miễn cả token lẫn mã khoá —
+       đúng loại lỗi chỉ hiện khi vào từ máy khác. */
+    const es = new EventSource(streamUrl(), { withCredentials: true });
     esRef.current = es;
 
     es.onmessage = (e) => {

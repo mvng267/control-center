@@ -131,6 +131,31 @@ process.on('SIGINT', () => process.exit(130));
   const khoa = await api('/api/jobs', { headers: { 'X-Dash-Token': token2 } });
   ok('mã khoá vẫn chặn API sau khi khởi động lại', khoa.status === 423, 'HTTP ' + khoa.status);
 
+  /* ---- SSE phải đi qua được cổng mã khoá bằng COOKIE ----
+     Lỗi thật đã gặp khi vào từ iPhone: EventSource mặc định KHÔNG gửi cookie, mà
+     cookie `dashUnlock` chính là thứ chứng minh đã mở khoá -> /stream trả 423, SSE
+     đứt rồi thử lại vô hạn, nhìn ra "mất kết nối" liên tục dù server vẫn chạy.
+     Sửa bằng `new EventSource(url, { withCredentials: true })`.
+     Không bài nào bắt được vì mọi test đều chạy qua localhost, mà loopback được
+     miễn cả token lẫn mã khoá — bộ này dùng 127.0.0.1 nên cũng vậy. Nên ở đây kiểm
+     đúng phần server: /stream CÓ cookie thì phải 200, KHÔNG cookie thì phải 423. */
+  const mo = await fetch(URL + '/api/passcode/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Dash-Token': token2 },
+    body: JSON.stringify({ code: '123123' }),
+  });
+  const cookie = (mo.headers.get('set-cookie') || '').split(';')[0];
+  ok('mở khoá trả về cookie dashUnlock', /^dashUnlock=\S+/.test(cookie), cookie.slice(0, 24) + '…');
+
+  const sseCo = await fetch(URL + '/stream?t=' + token2, { headers: { Cookie: cookie } });
+  ok('/stream đi qua được khi CÓ cookie mở khoá', sseCo.status === 200, 'HTTP ' + sseCo.status);
+  sseCo.body.cancel().catch(() => {});
+
+  const sseKhong = await fetch(URL + '/stream?t=' + token2);
+  ok('/stream bị chặn khi THIẾU cookie (lỗi mất kết nối trên iPhone)',
+    sseKhong.status === 423, 'HTTP ' + sseKhong.status);
+  sseKhong.body.cancel().catch(() => {});
+
   tatServer();
   const fails = results.filter((r) => !r.pass);
   console.log('\n==== MÁY MỚI: ' + (results.length - fails.length) + '/' + results.length + ' PASS ====');

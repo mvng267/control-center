@@ -1,6 +1,11 @@
 /* ================= SSE ================= */
-// EventSource KHÔNG gửi được custom header -> token phải đi qua query string
-es = new EventSource('/stream' + (dashToken ? '?t=' + encodeURIComponent(dashToken) : ''));
+/* EventSource KHÔNG gửi được custom header -> token phải đi qua query string.
+   withCredentials BẮT BUỘC khi đã đặt mã khoá: mặc định EventSource không gửi cookie,
+   mà cookie `dashUnlock` chính là thứ chứng minh đã mở khoá. Thiếu nó thì /stream bị
+   chặn (423), SSE đứt rồi thử lại vô hạn -> nhìn ra "mất kết nối" liên tục dù server
+   vẫn chạy. Chỉ lộ khi vào từ MÁY KHÁC, vì loopback được miễn cả token lẫn mã khoá. */
+es = new EventSource('/stream' + (dashToken ? '?t=' + encodeURIComponent(dashToken) : ''),
+  { withCredentials: true });
 es.onerror = () => {
   if (!dashToken) askToken();       // chưa có token thì hiện màn nhập mã
   setOffline(true);                 // SSE đứt = mất kết nối tới server
