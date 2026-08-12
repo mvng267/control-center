@@ -53,11 +53,20 @@ export function SessionCard({
 
       {/* hàng 1: chọn + tiêu đề + menu */}
       <div className="flex items-start gap-2">
-        <input type="checkbox" data-testid="sel-row"
-          className="mt-[3px] size-4 shrink-0 cursor-pointer accent-primary"
-          checked={chon}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => onChon(e.target.checked)} />
+        {/* Bọc <label> để nới VÙNG CHẠM lên 44px mà không phóng to ô vuông.
+            Đo trên iPhone: ô chỉ 16×16, ngón tay lệch 18px là trượt — mà trượt thì
+            rơi vào thẻ và MỞ NHẦM PHIÊN, chứ không phải không ăn gì.
+            -m-3 p-3 giữ bố cục y nguyên: phần nới ra chồng lên khoảng trống sẵn có. */}
+        {/* min-w/h 44px ÉP vùng chạm, không dựa vào đệm: thu ô vuông từ 16px xuống
+            14px làm vùng chạm tụt còn 34px, dưới ngưỡng ngón tay. -m-2.5 kéo phần
+            nới ra chồng lên khoảng trống sẵn có nên thẻ không cao thêm. */}
+        <label className="-m-2.5 flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center"
+          onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" data-testid="sel-row"
+            className="size-3.5 cursor-pointer accent-primary"
+            checked={chon}
+            onChange={(e) => onChon(e.target.checked)} />
+        </label>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">

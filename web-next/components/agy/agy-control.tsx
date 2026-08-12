@@ -141,7 +141,7 @@ export function AgyControl({ rotation, onDone }: { rotation?: string; onDone?: (
           <Input value={email} onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && kiemTra()}
             placeholder="email@example.com" data-testid="ctl-email"
-            className="h-8 flex-1 text-[16px] md:text-[12.5px]" />
+            className="h-11 flex-1 text-[16px] md:h-8 md:text-[12.5px]" />
           <Button variant="outline" size="sm" className="tap44 h-8 shrink-0 text-[12px]"
             disabled={!!busy || !email.trim()} onClick={kiemTra} data-testid="ctl-checklive">
             {busy === 'checklive' ? <Loader2 className="size-3.5 animate-spin" /> : <Stethoscope className="size-3.5" />}

@@ -76,7 +76,7 @@ export function AgyConfig() {
                 <Input value={draft[f.key] ?? ''} data-testid={'field-' + f.key}
                   onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
                   onKeyDown={(e) => e.key === 'Enter' && save(f)}
-                  className="h-8 flex-1 font-mono text-[16px] md:text-[12.5px]" />
+                  className="h-11 flex-1 font-mono text-[16px] md:h-8 md:text-[12.5px]" />
                 <Button size="icon" variant={changed ? 'default' : 'ghost'} className="tap44 size-8 shrink-0"
                   disabled={!changed || saving === f.key} onClick={() => save(f)}
                   data-testid={'save-' + f.key} title="Lưu">

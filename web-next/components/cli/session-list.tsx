@@ -158,10 +158,10 @@ export function SessionList({
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} data-testid="search-box"
-                placeholder="Tìm phiên…" className="h-9 pl-8 text-[16px] md:text-[14px]" />
+                placeholder="Tìm phiên…" className="h-11 pl-8 text-[16px] md:h-9 md:text-[14px]" />
             </div>
             <select value={proj} onChange={(e) => { setProj(e.target.value); setPage(0); }} data-testid="project-filter"
-              className="h-9 w-[104px] shrink-0 rounded-lg border border-border bg-card px-2 text-[13px] outline-none sm:w-auto sm:px-2.5 sm:text-[14px]">
+              className="h-11 w-[104px] shrink-0 rounded-lg border border-border bg-card px-2 text-[13px] outline-none sm:h-9 sm:w-auto sm:px-2.5 sm:text-[14px]">
               <option value="">Mọi dự án</option>
               {projects.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
@@ -205,7 +205,10 @@ export function SessionList({
               giữ lại chỉ tổ đẩy hàng thành hai dòng. */}
           <div className="flex items-center gap-2 overflow-x-auto border-b border-border px-2.5 py-1.5"
             style={{ scrollbarWidth: 'none' }}>
-            <label className="flex shrink-0 cursor-pointer items-center gap-2 text-[12.5px] text-muted-foreground">
+            {/* -my-1.5 py-1.5 px-2: nới vùng chạm cho ô 16px. Trên mobile chữ "Chọn
+                cả trang" bị ẩn nên label co lại đúng bằng ô vuông — không đủ để bấm
+                bằng ngón tay. Phần nới ra chồng lên đệm sẵn có nên hàng không cao thêm. */}
+            <label className="-my-1.5 flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center gap-2 px-2 text-[12.5px] text-muted-foreground sm:min-h-0 sm:min-w-0 sm:justify-start sm:px-0">
               <input type="checkbox" data-testid="sel-all"
                 className="size-4 cursor-pointer accent-primary"
                 checked={view.length > 0 && view.every((s) => sel.has(s.sid))}

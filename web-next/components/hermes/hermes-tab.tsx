@@ -117,7 +117,7 @@ export function HermesTab() {
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input value={q} onChange={(e) => setQ(e.target.value)} data-testid="hermes-search"
-                placeholder="Tìm hội thoại…" className="h-8 w-[180px] pl-8 text-[16px] md:text-[12.5px]" />
+                placeholder="Tìm hội thoại…" className="h-11 w-[180px] pl-8 text-[16px] md:h-8 md:text-[12.5px]" />
             </div>
             </>
           } />

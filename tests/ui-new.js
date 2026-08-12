@@ -1517,6 +1517,27 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       ok('nhin thay it nhat 3 the cung luc',
         cao.nhinThay >= 3, cao.nhinThay + ' the trong khung nhin');
 
+      /* VUNG CHAM cua o chon phai du 44px. O vuong chi 16x16 — do that: ngon tay lech
+         18px la TRUOT, ma truot thi roi vao the va MO NHAM PHIEN chu khong phai khong
+         an gi. Bao ve bang <label> boc ngoai, khong phong to o vuong (giu bo cuc).
+         Do VUNG CHAM (label) chu khong do o vuong: do o vuong thi luon bao 16px. */
+      const cham = await pg.evaluate(() => {
+        const do1 = (id) => {
+          const c = document.querySelector(`[data-testid=${id}]`);
+          if (!c) return null;
+          const lb = c.closest('label') || c;
+          const r = lb.getBoundingClientRect();
+          return { w: Math.round(r.width), h: Math.round(r.height) };
+        };
+        return { row: do1('sel-row'), all: do1('sel-all') };
+      });
+      ok('o chon tung the co vung cham >= 40px',
+        !!cham.row && cham.row.w >= 40 && cham.row.h >= 40,
+        JSON.stringify(cham.row));
+      ok('o chon-ca-trang co vung cham >= 40px',
+        !!cham.all && cham.all.w >= 40 && cham.all.h >= 40,
+        JSON.stringify(cham.all));
+
       // Ô chọn và menu ⋯ trước chỉ có ở bảng desktop; bản mobile cũ thiếu hẳn.
       ok('the co O CHON va menu ⋯ ngay tren dien thoai',
         (await pg.locator('[data-testid=sel-row]').count()) > 0

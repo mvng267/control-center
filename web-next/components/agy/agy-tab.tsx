@@ -236,7 +236,7 @@ export function AgyTab() {
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="tìm model…"
-              data-testid="model-search" className="h-8 w-[150px] pl-8 text-[16px] md:text-[12.5px]" />
+              data-testid="model-search" className="h-11 w-[150px] pl-8 text-[16px] md:h-8 md:text-[12.5px]" />
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
