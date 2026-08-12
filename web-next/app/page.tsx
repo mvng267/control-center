@@ -105,7 +105,11 @@ export default function Page() {
         </div>
       )}
 
+      {/* Đang mở khung chat trên điện thoại -> ẩn thanh tab dưới. Nó cao 58px, chiếm
+          chỗ vĩnh viễn trong khi đọc hội thoại; terminal thật dùng trọn màn hình.
+          Muốn đổi tab thì bấm mũi tên quay lại danh sách trước. */}
       <AppShell tab={tab} onTab={setTab} badges={{ cli: unread }}
+        anThanhTab={tab === 'cli' && !!openSid}
         onQuick={(q) => { setOpenSid(null); setQuick({ q, n: quick.n + 1 }); }}
         daDatMa={!!pass.st?.daDat}
         onLock={async () => {

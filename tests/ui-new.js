@@ -705,7 +705,11 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
           const r = await fetch('/api/files?sid=' + encodeURIComponent(sid) + '&q=');
           if (!ma) ma = r.status;
           const j = await r.json().catch(() => ({}));
-          if ((j.files || []).length) return { ma, sid, file: j.files[0], root: j.root };
+          /* Chọn file KHÔNG có dấu cách trong tên. Token "@" dừng ở khoảng trắng
+             (đúng như terminal), nên file kiểu "videoAMC 1.mp4" không gõ trọn được —
+             lấy trúng nó thì bài đỏ vì TÊN FILE chứ không phải vì code sai. */
+          const hop = (j.files || []).find((f) => !/\s/.test(f.slice(f.lastIndexOf('/') + 1)));
+          if (hop) return { ma, sid, file: hop, root: j.root };
         }
         return { ma };
       }, sids);
@@ -716,7 +720,14 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.waitForSelector('[data-testid=chat-input]', { timeout: 20000 });
       const thuc = chon ? chon.file : '';
       const ten = thuc.slice(thuc.lastIndexOf('/') + 1);
-      const gocTen = ten.slice(0, Math.max(3, ten.indexOf('.') > 0 ? ten.indexOf('.') : ten.length));
+      /* Cắt ở DẤU CÁCH đầu tiên nữa, không chỉ ở dấu chấm. Token "@" theo đúng cách
+         terminal hiểu: dừng lại khi gặp khoảng trắng. Gặp file tên "videoAMC 1.mp4"
+         mà gõ cả "@videoAMC 1" thì phần sau khoảng trắng không còn thuộc token, gợi ý
+         tắt — bài đỏ vì TÊN FILE chứ không phải vì code sai. */
+    const cach = ten.indexOf(' ');
+    const tenGon = cach > 0 ? ten.slice(0, cach) : ten;
+    const cham = tenGon.indexOf('.');
+    const gocTen = tenGon.slice(0, Math.max(3, cham > 0 ? cham : tenGon.length));
 
       if (!thuc) {
         /* Không phiên nào phân giải được thư mục. Nếu server trả 200 thì đúng là máy
@@ -772,6 +783,76 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.waitForTimeout(900);
       const emailGoiY = await pg.locator('[data-testid=mention-item]').count();
       ok('"@" giua email khong kich hoat goi y', emailGoiY === 0, emailGoiY + ' goi y');
+      await cx.close();
+    }
+
+    /* Trên ĐIỆN THOẠI, đang đọc chat thì ẩn cả header vỏ app lẫn thanh tab dưới.
+       Header 64px + thanh tab 58px = 122px, gần 1/7 màn hình 844px, mà cả hai chỉ
+       lặp lại thứ thanh đầu khung chat đã có. Terminal thật dùng trọn màn.
+       Trên DESKTOP giữ nguyên: màn rộng không thiếu chỗ, và breadcrumb ở header là
+       cách duy nhất biết đang ở tab nào. */
+    {
+      const mp = await browser.newContext({
+        viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+      });
+      const pg = await mp.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForSelector('[data-testid=session-row]:visible', { timeout: 20000 });
+      await pg.waitForTimeout(1500);
+
+      const oDs = await pg.evaluate(() => ({
+        header: !!document.querySelector('[data-testid=app-header]')?.offsetParent,
+        tabbar: !!document.querySelector('[data-testid=tabbar]')?.offsetParent,
+      }));
+      ok('o DANH SACH: van co header + thanh tab de chuyen tab',
+        oDs.header && oDs.tabbar, JSON.stringify(oDs));
+
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+      await pg.waitForTimeout(2000);
+
+      const oChat = await pg.evaluate(() => {
+        const box = document.querySelector('[data-testid=chat-bubbles]');
+        return {
+          header: !!document.querySelector('[data-testid=app-header]')?.offsetParent,
+          tabbar: !!document.querySelector('[data-testid=tabbar]')?.offsetParent,
+          caoChat: Math.round(box.getBoundingClientRect().height),
+        };
+      });
+      ok('trong CHAT tren iPhone: an header va thanh tab',
+        !oChat.header && !oChat.tabbar, JSON.stringify(oChat));
+      /* 656px là số đo TRƯỚC khi ẩn header+tab bar; sau khi ẩn phải cao hơn.
+         Ngưỡng 665 chứ không phải 700: khung chat còn chia chỗ cho thanh việc-đang-làm
+         và banner lỗi, phiên nào đang có chúng thì thấp hơn — đo được 667px ở một
+         phiên có thanh todo. Đặt sát quá thì bài đỏ theo NỘI DUNG phiên, không phải
+         theo việc ẩn có chạy hay không (điều đó đã có bài riêng ngay trên). */
+      ok('an xong thi khung chat cao hon (truoc 656px)',
+        oChat.caoChat > 665, oChat.caoChat + 'px / man 844px');
+
+      // Vẫn phải quay lại được danh sách — nếu không thì ẩn tab bar là cụt đường
+      await pg.locator('[data-testid=chat-back]').click();
+      await pg.waitForTimeout(1200);
+      const veLai = await pg.evaluate(() => ({
+        tabbar: !!document.querySelector('[data-testid=tabbar]')?.offsetParent,
+        coDs: !!document.querySelector('[data-testid=session-grid]'),
+      }));
+      ok('bam quay lai -> thanh tab hien lai, khong bi cut duong',
+        veLai.tabbar && veLai.coDs, JSON.stringify(veLai));
+      await mp.close();
+    }
+
+    /* Desktop KHÔNG được ẩn — header là chỗ duy nhất biết đang ở tab nào. */
+    {
+      const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const pg = await cx.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForSelector('[data-testid=session-row]:visible', { timeout: 20000 });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+      await pg.waitForTimeout(1500);
+      ok('desktop: VAN giu header khi dang chat',
+        !!(await pg.evaluate(() => !!document.querySelector('[data-testid=app-header]')?.offsetParent)));
       await cx.close();
     }
 

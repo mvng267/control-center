@@ -295,7 +295,11 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
       {/* Terminal dùng TRỌN bề ngang cửa sổ. Trước đây kẹp 920px giữa màn hình cho
           "dễ đọc", nhưng nội dung ở đây phần lớn là log tool và đường dẫn dài — bó lại
           thành ra xuống dòng liên tục, còn hai bên bỏ trống. */}
-      <div className="flex w-full shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+      {/* paddingTop bù safe-area: trên điện thoại header của vỏ app bị ẩn khi đang
+          chat, nên thanh này thành thứ trên cùng — thiếu bù thì nút quay lại chui
+          xuống dưới notch. Từ md trở lên header vẫn còn nên biến này bằng 0. */}
+      <div className="flex w-full shrink-0 items-center gap-2 border-b border-border px-4 py-2.5"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}>
         <Button variant="ghost" size="icon" className="tap44 size-8" onClick={onBack}
           title="Quay lại danh sách" aria-label="Quay lại danh sách" data-testid="chat-back">
           <ArrowLeft className="size-4" />

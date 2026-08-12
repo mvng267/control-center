@@ -421,7 +421,14 @@ function cleanFixture() {
 
     // mở card đầu -> có INPUT + RESULT; đóng lại -> hết .open
     await page.evaluate(() => document.querySelector('.tcard .tcard-head').click());
-    await page.waitForTimeout(350);
+    /* Chờ thẻ MỞ HẲN, không ngủ 350ms cố định. Thân thẻ giãn ra có hiệu ứng, đo trúng
+       lúc đang giãn thì bodyH còn ~0 và bài đỏ oan (bắt được khi chạy dồn nhiều lần).
+       Chờ chính điều kiện sắp khẳng định: có class .open VÀ thân đã cao thật. */
+    await page.waitForFunction(() => {
+      const c = document.querySelector('.tcard');
+      const b = c && c.querySelector('.tcard-body');
+      return !!c && c.classList.contains('open') && !!b && b.getBoundingClientRect().height > 20;
+    }, { timeout: 8000 }).catch(() => {});
     const opened = await page.evaluate(() => {
       const c = document.querySelector('.tcard');
       const errc = [...document.querySelectorAll('.tcard')].find(x => x.classList.contains('t-err'));
@@ -982,7 +989,15 @@ function cleanFixture() {
     const afterClear = await page.evaluate(() => document.getElementById('bubbles').querySelectorAll('.msgwrap').length);
     require('fs').appendFileSync(CLFILE, fixLine('user',
       [{ type: 'text', text: 'sau-khi-clear' }], '2026-08-08T05:00:00Z') + '\n');
-    await page.waitForTimeout(2600);
+    /* Chờ CÓ ĐIỀU KIỆN thay vì ngủ 2600ms cố định. Tin mới phải đi qua: ghi file ->
+       server thấy mtime đổi -> vòng poll của client kéo về. Mốc cố định lúc đạt lúc
+       không (bắt được 1/4 lần chạy: afterClearNew.n = 0 vì đo trúng lúc chưa kịp về).
+       Cùng loại lỗi đã sửa ở tests/ui-new.js. */
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('#bubbles .msgwrap')]
+        .some((w) => (w.textContent || '').includes('sau-khi-clear')),
+      { timeout: 15000 },
+    ).catch(() => {});
     const afterClearNew = await page.evaluate(() => {
       const box = document.getElementById('bubbles');
       const wraps = box.querySelectorAll('.msgwrap'); // .daydiv không phải message

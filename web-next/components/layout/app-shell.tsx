@@ -37,7 +37,7 @@ function ThemeToggle() {
 }
 
 export function AppShell({
-  tab, onTab, badges, crumb, children, onQuick, daDatMa, onLock,
+  tab, onTab, badges, crumb, children, onQuick, daDatMa, onLock, anThanhTab,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
@@ -47,6 +47,8 @@ export function AppShell({
   onQuick?: (q: string) => void;   // ý định lọc kèm theo lối tắt "Xem nhanh"
   daDatMa?: boolean;               // đã đặt mã khoá chưa
   onLock?: () => void;
+  /** ẩn thanh tab dưới (đang đọc chat trên điện thoại) */
+  anThanhTab?: boolean;
 }) {
   const active = TABS.find((t) => t.id === tab);
 
@@ -130,7 +132,14 @@ export function AppShell({
       {/* ---- CỘT PHẢI ---- */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* header: breadcrumb (desktop) / logo (mobile) */}
-        <header className="flex shrink-0 items-center gap-2 border-b border-border px-4 md:border-b-0"
+        {/* Đang chat trên điện thoại: ẩn luôn header này. Nó cao 64px và chỉ lặp lại
+            thứ thanh đầu khung chat đã có (tên phiên, nút quay lại, công cụ) — cộng
+            với thanh tab 58px là mất 122px, gần 1/7 màn hình.
+            Từ md trở lên giữ nguyên: màn rộng không thiếu chỗ, và breadcrumb ở đó
+            là cách duy nhất biết mình đang ở tab nào. */}
+        <header data-testid="app-header"
+          className={cn('shrink-0 items-center gap-2 border-b border-border px-4 md:border-b-0',
+            anThanhTab ? 'hidden md:flex' : 'flex')}
           style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(64px + env(safe-area-inset-top))' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icon-192.png" alt="" width={28} height={28} className="size-7 shrink-0 rounded-lg md:hidden" />
@@ -153,7 +162,9 @@ export function AppShell({
         {/* Tab bar mobile. Bàn phím bật (body.kb-open) thì ẨN hẳn: màn iPhone lúc đó chỉ
             còn ~300px, nhường chỗ cho tin nhắn và ô nhập. Legacy cũng chọn hy sinh tab
             bar — ô nhập quan trọng hơn. Xem lib/use-soft-keyboard.ts. */}
-        <nav className="flex shrink-0 items-stretch border-t border-border bg-sidebar md:hidden [body.kb-open_&]:hidden"
+        <nav data-testid="tabbar"
+          className={cn('flex shrink-0 items-stretch border-t border-border bg-sidebar md:hidden [body.kb-open_&]:hidden',
+            anThanhTab && 'hidden')}
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
           {TABS.map(({ id, short, icon: Icon }) => (
             <button key={id} onClick={() => onTab(id)} data-testid={`tabbar-${id}`} data-active={tab === id}

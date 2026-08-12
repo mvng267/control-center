@@ -203,6 +203,12 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 153 | Postgres: truy vấn đang chạy (pid, thời gian, SQL) | `pg-truyvan` — chỗ nhìn đầu tiên khi CSDL ì | tay |
 | 154 | Postgres tắt → nói rõ lý do, không để khối trắng | `pg-tat` | ui-new |
 | 155 | Postgres: chặn tên database có ký tự lạ | `?db=a;DROP TABLE x` → 400 | ui-new |
+| 156 | Kế hoạch vẽ kiểu terminal (⏺/⌐), gập mặc định | `plan-card` — kế hoạch thật 15.371 ký tự | ui-new |
+| 157 | Lúc gập vẫn hiện **tiêu đề** kế hoạch | dòng `# ...` đầu tiên | ui-new |
+| 158 | Mở được bản `.md` đầy đủ của kế hoạch | `plan-file` → `/api/plan` | ui-new |
+| 159 | `/api/plan` chặn đọc file ngoài `~/.claude/plans` | `~/.ssh/id_rsa` và `plans/../../.zshrc` → 400 | ui-new |
+| 160 | iPhone: đang chat thì **ẩn header + thanh tab** | khung chat 656px → 720px | ui-new |
+| 161 | Ẩn xong vẫn quay lại được danh sách | bấm mũi tên ← | ui-new |
 
 ---
 
@@ -211,7 +217,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 98 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 103 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục
