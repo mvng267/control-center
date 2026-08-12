@@ -217,7 +217,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 111 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 115 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục
@@ -241,3 +241,6 @@ file đó là gỡ khoá.
 | 165 | Lựa chọn KHÔNG mất khi poll 2s | React key bất biến qua cửa sổ trượt | ui-new |
 | 166 | Chế độ quyền + mức nghĩ nằm ở **dòng trạng thái** dưới ô gõ | đúng chỗ CLI in ra, không phải header | ui-new |
 | 167 | Dòng trạng thái HIỆN trên iPhone | trước bị `hidden sm:flex` ẩn hẳn ở 390px | ui-new |
+| 168 | **Xem mọi ảnh trong phiên** (ngoài cửa sổ 30 tin) | menu ⋯ → Ảnh trong phiên; phiên thật có 130 ảnh | ui-new |
+| 169 | Ảnh trong bảng tải THẬT, không phải ô rỗng | `naturalWidth > 0` | ui-new |
+| 170 | Ô ảnh và hàng lưới cao theo nội dung | ô 144px, hàng 144px — không bị chia đều 10.78px | ui-new |

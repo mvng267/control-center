@@ -199,6 +199,48 @@ function toolResultPreview(content) {
   return { text: clampText(text, TOOL_RESULT_CAP), images };
 }
 
+/* Liệt kê MỌI ảnh trong cả phiên, không giới hạn cửa sổ 30 tin.
+
+   Vì sao cần: /api/history chỉ trả 30 tin CUỐI để payload nhẹ (đo thật: 25KB mỗi
+   2 giây với phiên đang chạy). Ảnh cũ nằm ngoài cửa sổ đó nên không cách nào xem
+   lại — đếm trên phiên 58MB thật: 123 ảnh, chỉ 0 cái nằm trong 30 tin cuối.
+   Nới cửa sổ thì payload nhân lên mỗi nhịp poll, nên tách riêng: chỉ trả SIÊU DỮ
+   LIỆU (id tool + chỉ số + kích thước), ảnh thật vẫn tải lười qua /api/toolimg.
+
+   Chỉ đọc, chặn trần để phiên khổng lồ không nuốt hết RAM. */
+function listSessionImages(file, tran = 200) {
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  const out = [];
+  for (const line of raw.split('\n')) {
+    if (out.length >= tran) break;
+    // lọc nhanh: dòng không có chuỗi "image" thì khỏi parse JSON (file tới 58MB)
+    if (!line.trim() || line.indexOf('"image"') < 0) continue;
+    let obj;
+    try { obj = JSON.parse(line); } catch { continue; }
+    const c = (obj.message || obj).content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (!b || b.type !== 'tool_result' || !Array.isArray(b.content)) continue;
+      let n = 0;
+      for (const x of b.content) {
+        if (!x || x.type !== 'image') continue;
+        const src = x.source || {};
+        out.push({
+          id: b.tool_use_id || '',
+          i: n,
+          mt: src.media_type || 'image/png',
+          bytes: (src.data || '').length,
+          ts: obj.timestamp || null,
+        });
+        n++;
+        if (out.length >= tran) break;
+      }
+    }
+  }
+  return out;
+}
+
 // Lấy base64 ảnh thứ idx của 1 tool_result — đọc lại file, KHÔNG cache trong parse
 // (giữ payload history nhẹ; ảnh chỉ tải khi user mở card ra xem)
 function findToolImage(file, toolId, idx) {
@@ -261,6 +303,6 @@ function mdForMessage(msg) {
 module.exports = {
   extractText, clampText, base, toolDisplayName, summarizeToolInput, extractTodos,
   extractHoi, extractKeHoach, extractFileKeHoach,
-  buildInputDetail, toolResultPreview, findToolImage, flattenParts, mdForMessage,
+  buildInputDetail, toolResultPreview, findToolImage, listSessionImages, flattenParts, mdForMessage,
   TOOL_SUMMARY_CAP, TOOL_INPUT_CAP, TOOL_RESULT_CAP, THINK_CAP, TOOL_ST_LABEL,
 };

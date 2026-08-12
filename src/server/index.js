@@ -74,7 +74,7 @@ const cache = new Map();
 const {
   extractText, clampText, base, toolDisplayName, summarizeToolInput, extractTodos,
   extractHoi, extractKeHoach, extractFileKeHoach,
-  buildInputDetail, toolResultPreview, findToolImage, flattenParts, mdForMessage,
+  buildInputDetail, toolResultPreview, findToolImage, listSessionImages, flattenParts, mdForMessage,
   TOOL_SUMMARY_CAP, TOOL_INPUT_CAP, TOOL_RESULT_CAP, THINK_CAP, TOOL_ST_LABEL,
 } = require('./tools');
 
@@ -1786,6 +1786,17 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ---- ảnh trong tool_result (screenshot...): trả binary, cache lâu vì nội dung bất biến ----
+  /* ---- MỌI ảnh của cả phiên, không giới hạn cửa sổ 30 tin ----
+     /api/history chỉ trả 30 tin cuối (payload 25KB mỗi 2 giây khi phiên đang chạy),
+     nên ảnh cũ không cách nào xem lại — đo trên phiên 58MB: 123 ảnh, 0 cái nằm trong
+     30 tin cuối. Chỉ trả siêu dữ liệu; ảnh thật vẫn tải lười qua /api/toolimg. */
+  if ((m = p.match(/^\/api\/imgs\/([\w-]+)$/))) {
+    const file = findSessionFile(m[1]);
+    if (!file) return json(res, 404, { error: 'session not found' });
+    const anh = listSessionImages(file);
+    return json(res, 200, { ok: true, anh, tong: anh.length });
+  }
+
   if ((m = p.match(/^\/api\/toolimg\/([\w-]+)\/([\w-]+)\/(\d+)$/))) {
     const file = findSessionFile(m[1]);
     if (!file) return json(res, 404, { error: 'session not found' });

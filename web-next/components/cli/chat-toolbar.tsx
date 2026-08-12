@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Download, Coins, Pencil, Cpu, X, MoreHorizontal, ImagePlus, Loader2, Braces, ClipboardCopy, FileText } from 'lucide-react';
+import { Download, Coins, Pencil, Cpu, X, MoreHorizontal, ImagePlus, Loader2, Braces, ClipboardCopy, FileText, Images } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { AnhPhien } from './anh-phien';
 
 const MODELS = ['opus', 'sonnet', 'haiku'];
 
@@ -95,7 +96,7 @@ export function ChatToolbar({
   onTitle: (t: string) => void;
   onModel: (m: string | null) => void;
 }) {
-  const [dlg, setDlg] = useState<null | 'rename' | 'model' | 'cost' | 'export' | 'summary'>(null);
+  const [dlg, setDlg] = useState<null | 'rename' | 'model' | 'cost' | 'export' | 'summary' | 'anh'>(null);
   const [summary, setSummary] = useState('');
   const [name, setName] = useState('');
 
@@ -132,6 +133,9 @@ export function ChatToolbar({
     { id: 'model', icon: Cpu, label: 'Model cho phiên này', run: () => setDlg('model'), on: !!model },
     { id: 'cost', icon: Coins, label: 'Token đã dùng', run: () => setDlg('cost') },
     { id: 'rename', icon: Pencil, label: 'Đổi tên phiên', run: () => { setName(title); setDlg('rename'); } },
+    /* Ảnh CẢ PHIÊN — khung chat chỉ đọc 30 tin cuối nên ảnh cũ không với tới được.
+       Đo trên phiên 58MB: 128 ảnh, KHÔNG cái nào nằm trong cửa sổ đó. */
+    { id: 'anh', icon: Images, label: 'Ảnh trong phiên', run: () => setDlg('anh') },
     // Bấm mở hộp chọn .md / .json / chép — gộp lại vì bày 3 nút riêng trên header
     // thì tên phiên lại bị bóp như lần trước (còn 54px trên iPhone).
     { id: 'export', icon: Download, label: 'Tải / chép phiên', run: () => setDlg('export') },
@@ -179,6 +183,8 @@ export function ChatToolbar({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {dlg === 'anh' && <AnhPhien sid={sid} onClose={() => setDlg(null)} />}
 
       {dlg === 'summary' && (
         <Dialog open onOpenChange={() => setDlg(null)}>

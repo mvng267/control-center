@@ -1247,7 +1247,56 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.locator('[data-testid=chat-more]').click();
       await pg.waitForTimeout(600);
       const soMuc = await pg.locator('[data-testid^=m-], [data-testid=model-chip]').count();
-      ok('menu ⋯ co du 5 muc CO NHAN CHU', soMuc === 5, soMuc + ' muc');
+      ok('menu ⋯ co du 6 muc CO NHAN CHU', soMuc === 6, soMuc + ' muc');
+
+      /* XEM ANH CA PHIEN. Khung chat chi doc 30 tin CUOI (payload 25KB moi 2 giay)
+         nen anh cu khong voi toi duoc — do tren phien 58MB that: 128 anh, KHONG cai
+         nao nam trong cua so do. Day dung la chuyen "chua xem duoc anh": anh khong
+         hong, chi la khong co duong toi. */
+      await pg.locator('[data-testid=m-anh]').click();
+      await pg.waitForSelector('[data-testid=anh-phien]', { timeout: 20000 });
+      // endpoint quet ca file (do 285ms tren file 58MB) nen cho co dieu kien
+      await pg.waitForSelector('[data-testid=anh-o], [data-testid=anh-trong]', { timeout: 25000 })
+        .catch(() => {});
+      const soAnh = await pg.locator('[data-testid=anh-o]').count();
+      const trong = await pg.locator('[data-testid=anh-trong]').count();
+      ok('bang "Anh trong phien" mo duoc va co ket qua',
+        soAnh > 0 || trong === 1, soAnh + ' anh' + (trong ? ' (phien nay khong co anh)' : ''));
+
+      if (soAnh) {
+        // anh phai TAI THAT, khong phai o vuong trong
+        const taiDuoc = await pg.evaluate(() => {
+          const im = document.querySelector('[data-testid=anh-o] img');
+          return !!im && im.complete && im.naturalWidth > 0;
+        });
+        ok('anh trong bang tai THAT (co kich thuoc that)', taiDuoc, 'naturalWidth > 0');
+
+        /* O anh phai CAO bang anh ben trong. Loi da gap: o co lai con 11px trong khi
+           anh cao 104px -> anh tran ra ngoai, ca bang thanh mot day o rong chi co
+           dong chu kich thuoc. Dem so anh van dung 128, nen KHONG bat duoc neu chi
+           dem — phai do chieu cao. */
+        const cao = await pg.evaluate(() => {
+          const o = document.querySelector('[data-testid=anh-o]');
+          const im = o.querySelector('img');
+          return { o: Math.round(o.getBoundingClientRect().height),
+            anh: Math.round(im.getBoundingClientRect().height) };
+        });
+        ok('o anh cao bang anh ben trong (khong bi co lai)',
+          cao.o >= cao.anh && cao.anh > 40, `o=${cao.o}px anh=${cao.anh}px`);
+
+        /* HANG LUOI cung phai cao theo noi dung. Thieu auto-rows-max thi trinh duyet
+           chia deu chieu cao khung cho 33 hang — do duoc 10.78px/hang trong khi o cao
+           144px, cac o tran xuong de len nhau. */
+        const hang = await pg.evaluate(() => {
+          const luoi = document.querySelector('[data-testid=anh-o]').parentElement;
+          const r = getComputedStyle(luoi).gridTemplateRows.split(' ')[0];
+          return Math.round(parseFloat(r) || 0);
+        });
+        ok('hang luoi cao theo noi dung (khong bi chia deu)',
+          hang >= cao.anh, hang + 'px/hang, o cao ' + cao.o + 'px');
+      }
+      await pg.keyboard.press('Escape');
+      await pg.waitForTimeout(500);
       await pg.keyboard.press('Escape');
       await pg.waitForTimeout(400);
 
