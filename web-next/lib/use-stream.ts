@@ -24,19 +24,34 @@ export function useStream() {
     const es = new EventSource(streamUrl(), { withCredentials: true });
     esRef.current = es;
 
+    /* CHỜ 8 GIÂY rồi mới báo mất kết nối, đừng báo ngay khi onerror bắn.
+       EventSource TỰ nối lại sau mỗi lần đứt, thường xong trong 1-2 giây. Qua
+       Tailscale thì gián đoạn ngắn là chuyện thường — đo thật khi giữ 3 phút: 90/90
+       snapshot về đủ, nhưng có một nhịp chậm 10,8s. Báo ngay lập tức thì banner
+       "mất kết nối" nhấp nháy liên tục dù dữ liệu vẫn về đều, còn người dùng thì
+       tưởng server hỏng. Ngưỡng 8s: dài hơn một lần nối lại bình thường, ngắn hơn
+       mức người dùng kịp sốt ruột. */
+    let henBao: ReturnType<typeof setTimeout> | null = null;
+    const huyBao = () => { if (henBao) { clearTimeout(henBao); henBao = null; } };
+    const noiLai = () => { huyBao(); setOffline(false); };
+
     es.onmessage = (e) => {
       if (stopped) return;
-      setOffline(false);
+      noiLai();
       try { setData(JSON.parse(e.data)); } catch {}
     };
-    es.onopen = () => !stopped && setOffline(false);
+    es.onopen = () => !stopped && noiLai();
     es.onerror = () => {
       if (stopped) return;
-      setOffline(true);
-      // Không có token thì server trả 401 và SSE không bao giờ mở được -> hiện màn nhập mã
+      // Không có token thì server trả 401 và SSE không bao giờ mở được -> hiện màn
+      // nhập mã NGAY, đây là lỗi thật chứ không phải mạng chập chờn.
       if (es.readyState === EventSource.CLOSED && !localStorage.getItem('dashToken')) {
+        huyBao();
+        setOffline(true);
         setUnauthorized(true);
+        return;
       }
+      if (!henBao) henBao = setTimeout(() => { if (!stopped) setOffline(true); }, 8000);
     };
 
     const onNet = () => setOffline(!navigator.onLine);
@@ -45,6 +60,7 @@ export function useStream() {
 
     return () => {
       stopped = true;
+      huyBao();   // đừng để hẹn giờ bắn sau khi component đã rời đi
       es.close();
       window.removeEventListener('offline', onNet);
       window.removeEventListener('online', onNet);

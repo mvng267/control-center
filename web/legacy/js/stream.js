@@ -6,11 +6,16 @@
    vẫn chạy. Chỉ lộ khi vào từ MÁY KHÁC, vì loopback được miễn cả token lẫn mã khoá. */
 es = new EventSource('/stream' + (dashToken ? '?t=' + encodeURIComponent(dashToken) : ''),
   { withCredentials: true });
+/* CHỜ 8 GIÂY rồi mới báo mất kết nối. EventSource TỰ nối lại sau mỗi lần đứt,
+   thường xong trong 1-2 giây; qua Tailscale thì gián đoạn ngắn là chuyện thường.
+   Báo ngay thì banner nhấp nháy liên tục dù dữ liệu vẫn về đều. */
+let henBao = null;
+const huyBao = () => { if (henBao) { clearTimeout(henBao); henBao = null; } };
 es.onerror = () => {
-  if (!dashToken) askToken();       // chưa có token thì hiện màn nhập mã
-  setOffline(true);                 // SSE đứt = mất kết nối tới server
+  if (!dashToken) { huyBao(); askToken(); setOffline(true); return; }  // lỗi thật, báo ngay
+  if (!henBao) henBao = setTimeout(() => setOffline(true), 8000);
 };
-es.onopen = () => setOffline(false);
+es.onopen = () => { huyBao(); setOffline(false); };
 
 /* ---- báo mất mạng: vỏ app vẫn mở nhờ service worker nhưng dữ liệu thì đứng im ---- */
 function setOffline(off) {
@@ -24,6 +29,7 @@ window.addEventListener('offline', () => setOffline(true));
 window.addEventListener('online', () => setOffline(false));
 let prevRunning = null; // Set sid RUNNING tick trước — null = tick đầu (không notify session cũ)
 es.onmessage = e => {
+  huyBao(); setOffline(false);   // có dữ liệu về = đang kết nối tốt, huỷ hẹn báo lỗi
   const data = JSON.parse(e.data);
   allSessions = data.sessions || [];
   allJobs = data.jobs || [];
