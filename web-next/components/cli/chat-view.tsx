@@ -424,12 +424,16 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                   ) : p.t === 'think' ? (
                     <ThinkCard key={i} text={p.text} />
                   ) : p.text?.trim() ? (
-                    /* Câu văn: mình thì "> ", Claude thì "⏺ ". Đúng hai ký tự terminal
-                       dùng để phân biệt ai đang nói — không cần tô màu cả khối. */
+                    /* Câu văn: mình thì "> ", Claude thì "⏺ ".
+                       MÀU theo đúng Claude CLI: chấm của lượt TRẢ LỜI là màu chữ
+                       thường (trắng), không phải tím. Tím trong CLI dành riêng cho
+                       tool. Đo trên ảnh chụp: dashboard tô tím cả câu văn lẫn tool
+                       nên không phân biệt được đâu là Claude nói, đâu là nó chạy
+                       lệnh — mất đúng thông tin mà ký tự ⏺ sinh ra để mang. */
                     <div key={i} data-testid="bubble" data-role={m.role}
                       className="flex w-full items-start gap-2 text-[13px] leading-relaxed">
                       <span className={cn('shrink-0 select-none',
-                        m.role === 'user' ? 'text-primary' : 'text-tool-accent')}>
+                        m.role === 'user' ? 'text-primary' : 'text-foreground')}>
                         {m.role === 'user' ? '>' : '⏺'}
                       </span>
                       <div className={cn('min-w-0 flex-1 break-words',

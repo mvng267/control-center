@@ -48,9 +48,11 @@ export function NoteLine({ part }: { part: NotePart }) {
 
   return (
     <div data-testid="note-line" data-kind={part.kind} className="text-[13px] leading-relaxed">
+      {/* Thụt cùng mức với dòng ⎿ của tool: hook lỗi sinh ra TỪ một tool cụ thể nên
+          nó là con của tool đó. Không thụt thì nó ngang hàng với ⏺ của cả lượt. */}
       <button onClick={() => setOpen((v) => !v)} data-testid="note-toggle"
         disabled={!part.body}
-        className="tap44 flex w-full items-start gap-2 text-left">
+        className="tap44 flex w-full items-start gap-2 pl-[18px] text-left">
         <span className={cn('shrink-0 select-none', tone)}>⎿</span>
         <span className={cn('min-w-0 flex-1 truncate', tone)}>{part.title}</span>
         {part.body && (
@@ -59,8 +61,10 @@ export function NoteLine({ part }: { part: NotePart }) {
           </span>
         )}
       </button>
+      {/* ml-36px = 18px thụt của nút + 18px cho ký tự ⎿, để thân thẳng hàng với
+          tiêu đề ghi chú ở trên chứ không thò ra trái */}
       {open && part.body && (
-        <pre className="ml-[18px] max-h-[180px] overflow-auto whitespace-pre-wrap break-words border-l border-border pl-3 text-[12px] leading-relaxed text-muted-foreground">
+        <pre className="ml-[36px] max-h-[180px] overflow-auto whitespace-pre-wrap break-words border-l border-border pl-3 text-[12px] leading-relaxed text-muted-foreground">
           {part.body}
         </pre>
       )}

@@ -195,8 +195,11 @@ export function ToolCard({ part, sid, open, onToggle }: {
           open && 'rotate-180')} />
       </button>
 
-      {/* Dòng ⎿ — luôn hiện, đúng như terminal: thấy ngay kết quả mà không phải bấm */}
-      <div className="flex gap-2 pl-[3px]">
+      {/* Dòng ⎿ — luôn hiện, đúng như terminal: thấy ngay kết quả mà không phải bấm.
+          Thụt vào cho ⎿ nằm DƯỚI CHỮ ĐẦU của tên tool, đúng như Claude CLI in ra.
+          `pl-[3px]` cũ gần như không thụt nên ⎿ dính sát lề trái, ngang hàng với ⏺
+          của lượt — nhìn ra hai thứ cùng cấp trong khi kết quả là con của tool. */}
+      <div className="flex gap-2 pl-[18px]">
         <span className="shrink-0 select-none text-muted-foreground/40">⎿</span>
         <div className={cn('min-w-0 flex-1', isErr ? 'text-status-error/90' : 'text-muted-foreground')}>
           {soTodo ? (

@@ -198,6 +198,37 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       };
     });
     ok('bản chép dùng phông chữ đều như terminal', cli.mono, JSON.stringify(cli).slice(0, 120));
+
+    /* CẤU TRÚC như Claude CLI in ra:
+         ⏺ câu Claude nói      <- chấm màu CHỮ THƯỜNG
+         ⏺ Bash(lệnh)          <- chấm TÍM, tím dành riêng cho tool
+           ⎿ kết quả           <- THỤT VÀO, là con của tool
+       Trước đây tô tím cả câu văn lẫn tool nên không phân biệt được Claude đang NÓI
+       hay đang CHẠY LỆNH; còn ⎿ chỉ thụt 3px nên dính sát lề, nhìn ra ngang hàng
+       với ⏺ trong khi nó là con. */
+    const cauTruc = await page.evaluate(() => {
+      const bub = document.querySelector('[data-testid=bubble] span');
+      const tool = document.querySelector('[data-testid=tool-card-status]');
+      const kq = document.querySelector('[data-testid=tool-card] > div:nth-child(2)');
+      const note = document.querySelector('[data-testid=note-line] button');
+      return {
+        mauLuot: bub ? getComputedStyle(bub).color : '',
+        mauTool: tool ? getComputedStyle(tool).color : '',
+        thutKQ: kq ? Math.round(parseFloat(getComputedStyle(kq).paddingLeft)) : -1,
+        thutNote: note ? Math.round(parseFloat(getComputedStyle(note).paddingLeft)) : -1,
+      };
+    });
+    if (cauTruc.mauLuot && cauTruc.mauTool) {
+      ok('cham cua LUOT khac mau cham cua TOOL (nhu CLI)',
+        cauTruc.mauLuot !== cauTruc.mauTool,
+        'luot=' + cauTruc.mauLuot + ' tool=' + cauTruc.mauTool);
+    } else {
+      ok('cham cua LUOT khac mau cham cua TOOL (nhu CLI)', true, 'bo qua: phien khong du phan tu');
+    }
+    ok('dong ⎿ ket qua THUT VAO lam con cua tool',
+      cauTruc.thutKQ < 0 || cauTruc.thutKQ >= 12, cauTruc.thutKQ + 'px');
+    ok('dong ⎿ hook loi cung thut vao', cauTruc.thutNote < 0 || cauTruc.thutNote >= 12,
+      cauTruc.thutNote + 'px');
     /* ⎿ chỉ có khi phiên CÓ tool. Phiên nào đứng đầu danh sách là tuỳ máy, gặp phiên
        chỉ toàn câu chữ thì đòi ⎿ là bắt lỗi môi trường chứ không phải lỗi code
        (đã dính: ⏺=1 ⎿=0 ở một phiên không có tool nào). */
@@ -1264,7 +1295,13 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         soAnh > 0 || trong === 1, soAnh + ' anh' + (trong ? ' (phien nay khong co anh)' : ''));
 
       if (soAnh) {
-        // anh phai TAI THAT, khong phai o vuong trong
+        /* Anh phai TAI THAT, khong phai o vuong trong.
+           Cho CO DIEU KIEN: anh dung loading=lazy va moi anh ~100KB, do ngay sau khi
+           bang mo ra thi complete=false — bai do oan khoang 1/3 lan chay. */
+        await pg.waitForFunction(() => {
+          const im = document.querySelector('[data-testid=anh-o] img');
+          return !!im && im.complete && im.naturalWidth > 0;
+        }, { timeout: 20000 }).catch(() => {});
         const taiDuoc = await pg.evaluate(() => {
           const im = document.querySelector('[data-testid=anh-o] img');
           return !!im && im.complete && im.naturalWidth > 0;

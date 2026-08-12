@@ -217,7 +217,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 ```bash
 node scripts/verify.js          # cú pháp + thứ tự nạp
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 115 mục (server ở 7799)
+node tests/ui-new.js            # GIAO DIỆN MỚI — 118 mục (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
 NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
 DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục
@@ -244,3 +244,6 @@ file đó là gỡ khoá.
 | 168 | **Xem mọi ảnh trong phiên** (ngoài cửa sổ 30 tin) | menu ⋯ → Ảnh trong phiên; phiên thật có 130 ảnh | ui-new |
 | 169 | Ảnh trong bảng tải THẬT, không phải ô rỗng | `naturalWidth > 0` | ui-new |
 | 170 | Ô ảnh và hàng lưới cao theo nội dung | ô 144px, hàng 144px — không bị chia đều 10.78px | ui-new |
+| 171 | Chấm `⏺` của LƯỢT khác màu chấm của TOOL | trắng = Claude nói, tím = chạy lệnh | ui-new |
+| 172 | Dòng `⎿` thụt vào làm con của tool (18px) | trước chỉ 3px, dính sát lề | ui-new |
+| 173 | Dòng `⎿` hook lỗi cũng thụt cùng mức | nó sinh ra TỪ một tool cụ thể | ui-new |
