@@ -26,7 +26,11 @@ type TextPart = { t: 'text'; text: string };
 type ThinkPart = { t: 'think'; text: string };
 type Part = TextPart | ThinkPart | ToolPart | NotePart;
 
-interface Msg { role: string; content: string; ts: string | null; parts?: Part[]; n?: number; sub?: boolean }
+interface Msg {
+  role: string; content: string; ts: string | null; parts?: Part[]; n?: number; sub?: boolean;
+  /** mốc ĐẦU lượt — bất biến qua các vòng gộp, dùng làm React key */
+  tsDau?: string | null;
+}
 interface Usage { turns: number; inTok: number; outTok: number; cacheRead: number; cacheWrite: number }
 interface History {
   messages: Msg[]; total: number; start: number; typing: boolean; status: string;
@@ -84,7 +88,8 @@ function groupMessages(msgs: Msg[]): Msg[] {
       prev.n = (prev.n || 1) + 1;
       continue;
     }
-    out.push({ ...m });
+    // tsDau ghim mốc lúc MỞ lượt; prev.ts còn bị ghi đè khi gộp thêm tin
+    out.push({ ...m, tsDau: m.ts });
   }
   return out;
 }
@@ -345,9 +350,16 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           const showDay = k && k !== lastDay;
           if (showDay) lastDay = k;
           return (
-            /* key theo nội dung, không theo chỉ số: chỉ số đổi mỗi khi cách gộp
-               nhóm thay đổi -> React dựng lại cả lượt vô cớ. */
-            <div key={(m.ts || '') + ':' + (m.role || '') + ':' + gi} className="contents">
+            /* key phải BẤT BIẾN qua các vòng poll, nếu không React dựng lại cả lượt
+               và mọi state bên trong về 0.
+               Hai thứ KHÔNG được đưa vào key:
+                 - m.ts: groupMessages ghi đè prev.ts bằng mốc tin mới nhất gộp vào;
+                 - gi (chỉ số nhóm): cửa sổ chỉ giữ 30 tin CUỐI, phiên đang chạy thì
+                   tin mới đẩy tin cũ ra nên mọi chỉ số tụt đi một.
+               Hậu quả đo được: đang chọn dở bảng câu hỏi thì cứ 2 giây mất sạch lựa
+               chọn ("Còn 1 câu" -> "Còn 3 câu"), thẻ tool đang mở cũng tự đóng.
+               Dùng mốc ĐẦU lượt — nó gắn với chính tin đó, không đổi khi cửa sổ trượt. */
+            <div key={(m.tsDau || m.ts || '') + ':' + (m.role || '')} className="contents">
               {showDay && (
                 <div className="my-2 flex items-center gap-2.5 text-[10.5px] text-muted-foreground/70"
                   data-testid="day-divider">
@@ -390,7 +402,15 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                   p.t === 'tool' && p.hoi?.length ? (
                     // Bảng chọn: bấm rồi gửi lựa chọn thành tin nhắn mới
                     <div key={p.id || i} className="my-1">
-                      <AskCard hoi={p.hoi} daTraLoi={gi < groups.length - 1} onGui={(t) => send(t)} />
+                      {/* daTraLoi: chỉ khoá khi phiên đã CÓ LƯỢT SAU thật sự. Trước
+                          dùng `gi < groups.length - 1` — cửa sổ 30 tin trượt làm cả
+                          gi lẫn groups.length đổi mỗi vòng poll, nên thẻ chớp giữa
+                          khoá/mở và mất sạch lựa chọn đang chọn dở.
+                          Mốc lượt là bất biến, so nó với lượt cuối thì ổn định. */}
+                      <AskCard hoi={p.hoi}
+                        daTraLoi={(m.tsDau || m.ts || '') !== (groups[groups.length - 1]?.tsDau
+                          || groups[groups.length - 1]?.ts || '')}
+                        onGui={(t) => send(t)} />
                     </div>
                   ) : p.t === 'tool' && p.ke ? (
                     <div key={p.id || i} className="my-1">

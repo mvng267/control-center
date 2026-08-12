@@ -31,15 +31,28 @@ export function AskCard({
 }) {
   const [chon, setChon] = useState<Record<number, Set<number>>>({});
   const [daGui, setDaGui] = useState(false);
+  const [tab, setTab] = useState(0);
 
   const bam = (qi: number, oi: number, nhieu: boolean) => {
     if (daTraLoi || daGui) return;
-    setChon((c) => {
-      const cu = c[qi] ? new Set(c[qi]) : new Set<number>();
-      if (nhieu) { cu.has(oi) ? cu.delete(oi) : cu.add(oi); }
-      else { cu.clear(); cu.add(oi); }
-      return { ...c, [qi]: cu };
-    });
+
+    /* Tính state MỚI ở ngoài, KHÔNG gọi setTab bên trong hàm cập nhật của setChon.
+       Hàm cập nhật phải thuần tuý — React được phép chạy nó nhiều lần rồi bỏ kết quả,
+       nên đặt setState khác vào trong là mất cả hai. Đo được: bấm câu thứ ba làm
+       sạch luôn cả ba lựa chọn (✓✓✓ -> trống trơn), nút Gửi khoá vĩnh viễn. */
+    const cu = chon[qi] ? new Set(chon[qi]) : new Set<number>();
+    if (nhieu) { cu.has(oi) ? cu.delete(oi) : cu.add(oi); }
+    else { cu.clear(); cu.add(oi); }
+    const moi = { ...chon, [qi]: cu };
+    setChon(moi);
+
+    /* Chọn xong -> tự nhảy sang câu CHƯA trả lời. Bắt bấm tay từng tab thì rất dễ
+       tưởng đã xong rồi bấm Gửi, mà nút lại khoá vì còn câu bỏ trống ở tab khuất.
+       Câu chọn-nhiều thì ở lại để còn tick tiếp. */
+    if (!nhieu) {
+      const con = hoi.findIndex((_, i) => (moi[i]?.size || 0) === 0);
+      if (con >= 0) setTab(con);
+    }
   };
 
   const dayDu = hoi.every((_, i) => (chon[i]?.size || 0) > 0);
@@ -70,15 +83,33 @@ export function AskCard({
         )}
       </div>
 
+      {/* TAB NGANG như Claude CLI: mỗi lúc chỉ hiện MỘT câu.
+          Bản trước đổ hết câu hỏi xuống một cột dọc — đo với 3 câu (đúng bộ Vinh gửi
+          ảnh) ra 623px, dài gần trọn màn điện thoại và không thấy được nút Gửi.
+          Nhãn tab còn cho biết đang ở câu mấy trong bao nhiêu câu. */}
+      {hoi.length > 1 && (
+        <div className="flex items-stretch gap-1 overflow-x-auto border-b border-primary/15 px-2"
+          style={{ scrollbarWidth: 'none' }} data-testid="ask-tabs">
+          {hoi.map((q, i) => {
+            const xong = (chon[i]?.size || 0) > 0;
+            return (
+              <button key={i} onClick={() => setTab(i)} data-testid="ask-tab" data-active={tab === i}
+                className={cn('shrink-0 whitespace-nowrap border-b-2 px-2 py-1.5 text-[12px] transition-colors',
+                  tab === i ? 'border-primary font-medium text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground')}>
+                {q.nhan || `Câu ${i + 1}`}
+                {/* dấu ✓ để biết câu nào đã chọn xong mà không phải bấm qua từng tab */}
+                {xong && <span className="ml-1 text-status-ok">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="flex flex-col gap-3 px-3 py-2.5">
         {hoi.map((q, qi) => (
-          <div key={qi} className="flex flex-col gap-2">
+          <div key={qi} className={cn('flex-col gap-2', qi === tab ? 'flex' : 'hidden')}>
             <div className="flex flex-wrap items-baseline gap-2">
-              {q.nhan && (
-                <span className="rounded bg-primary/15 px-1.5 py-px text-[10.5px] font-medium text-primary">
-                  {q.nhan}
-                </span>
-              )}
               <span className="text-[13px] font-medium leading-snug">{q.hoi}</span>
               {q.nhieu && <span className="text-[11px] text-muted-foreground">(chọn nhiều được)</span>}
             </div>
@@ -124,8 +155,13 @@ export function AskCard({
               )}>
               <Send className="size-3.5" /> Gửi lựa chọn
             </button>
+            {/* Còn câu bỏ trống thì NÓI RÕ còn mấy câu. Nút xám mà không giải thích
+                thì tưởng hỏng — nhất là khi câu chưa trả lời nằm ở tab khác, khuất
+                khỏi tầm mắt. */}
             <span className="text-[11px] leading-snug text-muted-foreground">
-              Gửi thành một tin nhắn mới — dashboard không nối được vào lượt đang chờ như terminal
+              {dayDu
+                ? 'Gửi thành một tin nhắn mới — dashboard không nối được vào lượt đang chờ như terminal'
+                : `Còn ${hoi.filter((_, i) => (chon[i]?.size || 0) === 0).length} câu chưa chọn`}
             </span>
           </div>
         )}
