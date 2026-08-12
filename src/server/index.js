@@ -158,6 +158,9 @@ function parseSessionFile(file) {
     model: '',     // model + mức nghĩ của lượt assistant mới nhất
     effort: '',
     du: '',        // dòng cuối bị cắt giữa chừng, ghép với phần đọc lần sau
+    // "hook + nội dung lỗi" -> part đã hiện. Phải sống qua các lần đọc thêm, nếu
+    // không mỗi lần đọc đuôi lại đẻ ra một dòng lỗi mới cho cùng một lỗi cũ.
+    hookDaThay: new Map(),
   };
   const { msgs, toolIndex, usage } = S;
   let { aiTitle, firstUser, model, effort } = S;
@@ -216,18 +219,34 @@ function parseSessionFile(file) {
       continue;
     }
 
-    // Hook chạy lỗi: giữ lại để hiện; hook chạy OK thì bỏ (nhiều nghìn dòng, chỉ gây nhiễu)
+    /* Hook chạy lỗi: giữ lại để hiện; hook chạy OK thì bỏ (nhiều nghìn dòng, chỉ gây nhiễu).
+
+       GỘP TOÀN PHIÊN, không gộp theo vị trí liền kề. Một hook cấu hình sai thì lỗi
+       ở MỌI lần gọi tool: đếm thật trên phiên này được 548 dòng "Hook lỗi:
+       PreToolUse:Bash" y hệt nhau trong 3000 dòng cuối. Nhưng chúng KHÔNG liền nhau
+       (mỗi lỗi nằm cạnh một lần gọi tool khác nhau) — đã đo: 0/548 dòng liền kề,
+       nên gộp kiểu "trùng với dòng ngay trước" hoàn toàn vô dụng.
+       Vậy: giữ LẦN ĐẦU của mỗi lỗi (cùng hook + cùng nội dung), các lần sau chỉ
+       tăng bộ đếm trên chính dòng đó. Vẫn biết có lỗi gì và lặp bao nhiêu lần,
+       mà màn chat không bị chữ đỏ nuốt mất nội dung thật. */
     if (obj.type === 'attachment' && obj.attachment && obj.attachment.hookName) {
       const a = obj.attachment;
       if (a.exitCode) {
-        msgs.push({
-          role: 'system', text: '', ts: obj.timestamp || null,
-          parts: [{
+        const body = clampText(String(a.stderr || a.stdout || '').trim(), 600);
+        const khoa = a.hookName + ' ' + body;
+        const da = S.hookDaThay.get(khoa);
+        if (da) {
+          da.lap++;   // cùng lỗi đã hiện ở trên -> chỉ đếm thêm
+        } else {
+          const part = {
             t: 'note', kind: 'hook-error',
             title: 'Hook lỗi: ' + a.hookName,
-            body: clampText(String(a.stderr || a.stdout || '').trim(), 600),
-          }],
-        });
+            hook: a.hookName, lap: 1,
+            body,
+          };
+          S.hookDaThay.set(khoa, part);
+          msgs.push({ role: 'system', text: '', ts: obj.timestamp || null, parts: [part] });
+        }
       }
       continue;
     }
@@ -1860,7 +1879,16 @@ const server = http.createServer(async (req, res) => {
       // đang chờ duyệt kế hoạch: có file plan ở lượt cuối và Claude đã dừng
       awaiting: !!(parsed && parsed.planFile && !typing),
       usage: parsed ? parsed.usage : null, // token đã dùng (thay cho /cost)
-      model: loadModels()[sid] || null,    // model riêng phiên (null = theo model toàn cục)
+      /* Dự án của phiên: tên thư mục thật + repo GitHub + nhánh + thư mục còn tồn
+         tại không. Danh sách phiên đã hiện đủ những thứ này, nhưng MỞ phiên ra thì
+         mất sạch — chỉ còn mỗi cái tên. Cùng một dữ liệu, không tốn thêm lần đọc
+         file nào (docCwd có cache riêng). */
+      duAn: duAnCho(docCwd(file)),
+      /* model: ưu tiên bản đặt riêng cho phiên; không có thì lấy model THẬT đọc từ
+         .jsonl. Trước đây chỉ đọc dashboard-models.json — file đó gần như luôn rỗng
+         nên đầu trang không bao giờ hiện được model, kể cả khi .jsonl ghi rõ. */
+      model: loadModels()[sid] || (parsed && parsed.model) || null,
+      effort: parsed ? parsed.effort : '',
       /* Bản nháp đang chảy ra từ stdout của lượt hiện tại.
          .jsonl chỉ được ghi KHI LƯỢT XONG, nên nếu chỉ đọc file thì màn hình đứng im
          hàng chục giây rồi bung ra một cục. Có cái này thì chữ hiện dần như terminal.

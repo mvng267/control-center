@@ -2,6 +2,20 @@
 // Trước đây tool bị đè phẳng thành "[tool: Bash]" — mất sạch input, mất is_error,
 // mất liên kết call<->result. Giữ nguyên ở dạng parts để client vẽ tool card.
 const fs = require("fs");
+const os = require("os");
+
+/* Rút gọn $HOME thành "~" trong chữ hiện ra (KHÔNG đụng file .jsonl gốc).
+   Log tool đầy đường dẫn tuyệt đối kiểu
+   "/Users/mvng/Desktop/project/control/web-next/components/cli/chat-view.tsx"
+   — riêng phần $HOME đã 11 ký tự vô nghĩa lặp ở mọi dòng. Trên iPhone 390px một
+   đường dẫn như thế nuốt trọn cả dòng, phần đáng đọc bị cắt mất bên phải.
+   Lấy os.homedir() chứ không viết cứng "/Users/mvng": server còn chạy trên Debian. */
+const NHA = os.homedir();
+function gonNhaTrongChu(s) {
+  if (!s || !NHA || NHA === '/') return s;
+  // split/join thay TẤT CẢ, vì một dòng log thường có nhiều đường dẫn
+  return String(s).split(NHA + '/').join('~/');
+}
 
 /* ---------------- JSONL parsing (Claude CLI sessions) ---------------- */
 
@@ -196,7 +210,7 @@ function toolResultPreview(content) {
     }
     text = buf.filter(Boolean).join('\n');
   }
-  return { text: clampText(text, TOOL_RESULT_CAP), images };
+  return { text: clampText(gonNhaTrongChu(text), TOOL_RESULT_CAP), images };
 }
 
 /* Liệt kê MỌI ảnh trong cả phiên, không giới hạn cửa sổ 30 tin.

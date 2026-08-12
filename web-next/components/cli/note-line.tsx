@@ -16,6 +16,7 @@ export interface NotePart {
   kind: 'hook-error' | 'compact' | 'api-error' | 'ngay' | 'hang-doi' | 'ke-hoach' | 'dinh-kem';
   title: string;
   body: string;
+  lap?: number;   // cùng một lỗi lặp bao nhiêu lần trong phiên (server đã gộp)
 }
 
 const TONE: Record<string, string> = {
@@ -52,12 +53,23 @@ export function NoteLine({ part }: { part: NotePart }) {
           nó là con của tool đó. Không thụt thì nó ngang hàng với ⏺ của cả lượt. */}
       <button onClick={() => setOpen((v) => !v)} data-testid="note-toggle"
         disabled={!part.body}
+        title={part.body ? (open ? 'Thu gọn' : 'Xem chi tiết lỗi') : undefined}
         className="tap44 flex w-full items-start gap-2 pl-[18px] text-left">
         <span className={cn('shrink-0 select-none', tone)}>⎿</span>
         <span className={cn('min-w-0 flex-1 truncate', tone)}>{part.title}</span>
+        {/* Cùng một lỗi lặp hàng nghìn lần thì server gộp thành một dòng (đo thật:
+            4.220 -> 12 dòng trên phiên này). Số lần vẫn phải hiện, nếu không giấu
+            mất mức độ nghiêm trọng: "lỗi 1 lần" và "lỗi 2.513 lần" khác hẳn nhau. */}
+        {(part.lap || 1) > 1 && (
+          <span data-testid="note-lap"
+            className="shrink-0 rounded-md bg-muted px-1.5 text-[10.5px] font-medium tabular-nums text-muted-foreground">
+            {part.lap}×
+          </span>
+        )}
+        {/* "+" trơ trọi không ai đoán ra để làm gì -> nói thẳng bằng chữ */}
         {part.body && (
-          <span className="shrink-0 select-none text-[11px] text-muted-foreground/50">
-            {open ? '−' : '+'}
+          <span className="shrink-0 select-none text-[11px] text-muted-foreground/60">
+            {open ? 'thu gọn' : 'chi tiết'}
           </span>
         )}
       </button>

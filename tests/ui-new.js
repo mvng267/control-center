@@ -1797,6 +1797,74 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     await ctx.close();
   }
 
+  /* ---------- I. Khung chat: đầu trang đủ dữ kiện, không bị rác hook nuốt ----------
+     Danh sách phiên hiện đủ dự án/repo/model, nhưng MỞ phiên ra thì mất sạch — chỉ
+     còn mỗi cái tên. Trên iPhone còn tệ hơn: model và trạng thái bị `hidden sm:`
+     nên không thấy gì cả. */
+  for (const [ten, w, h, touch] of [['desktop', 1440, 900, false], ['iPhone', 390, 844, true]]) {
+    const ctx = await browser.newContext({
+      viewport: { width: w, height: h }, hasTouch: touch, isMobile: touch,
+    });
+    const page = await ctx.newPage();
+    await page.goto(URL, { waitUntil: 'networkidle' });
+    await page.waitForSelector('[data-testid=session-row]:visible', { timeout: 20000 });
+    await page.waitForTimeout(2500);
+    await page.locator('[data-testid=session-row]:visible').first().click();
+    await page.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+    await page.waitForTimeout(2500);
+
+    const meta = await page.evaluate(() => {
+      const t = (id) => {
+        const e = document.querySelector(`[data-testid=${id}]`);
+        return e && e.offsetParent ? (e.textContent || '').trim() : '';
+      };
+      return {
+        duAn: t('chat-du-an'), repo: t('chat-repo'), model: t('chat-model'),
+        luot: t('chat-luot'), tok: t('chat-tok'),
+      };
+    });
+    // Tên dự án phải hiện Ở CẢ HAI cỡ màn — đây là thứ trước đây iPhone không có
+    ok(`chat ${ten}: đầu trang có tên dự án`, !!meta.duAn, JSON.stringify(meta.duAn));
+    ok(`chat ${ten}: đầu trang cho biết phiên chạy ở đâu (repo hoặc đường dẫn)`,
+      !!meta.repo, meta.repo.slice(0, 40));
+    // Token hiện ở CẢ HAI cỡ; số lượt chỉ desktop (màn hẹp nhường chỗ cho repo+model,
+    // và danh sách phiên đã hiện số lượt sẵn).
+    ok(`chat ${ten}: đầu trang có token`, !!meta.tok, meta.tok);
+    if (!touch) ok('chat desktop: đầu trang có số lượt', !!meta.luot, meta.luot);
+
+    /* Dòng phụ đề phải nằm gọn MỘT dòng. Lúc mới thêm nó để flex-wrap, trên iPhone
+       390px nó tách làm 2 dòng, ăn 39px và đẩy khung đọc từ 688px xuống 593px —
+       tức là đổi gần 100px vùng đọc lấy một dòng phụ đề. Bài này chặn tái phát. */
+    const caoMeta = await page.evaluate(() => {
+      const e = document.querySelector('[data-testid=chat-meta]');
+      return e ? Math.round(e.getBoundingClientRect().height) : 0;
+    });
+    ok(`chat ${ten}: dòng phụ đề gọn một dòng (không đẩy khung đọc)`,
+      caoMeta > 0 && caoMeta <= 24, caoMeta + 'px');
+
+    /* Rác hook: một hook cấu hình sai lỗi ở MỌI lần gọi tool — đếm thật 4.220 dòng
+       trong một phiên. Server gộp thành một dòng kèm số lần; nếu gộp hỏng thì màn
+       chat lại đầy chữ đỏ. Kiểm: mỗi lỗi hook chỉ được xuất hiện ĐÚNG MỘT LẦN. */
+    const hook = await page.evaluate(() => {
+      const ds = [...document.querySelectorAll('[data-testid=note-line][data-kind=hook-error]')];
+      const tieuDe = ds.map((e) => (e.querySelector('[data-testid=note-toggle]')?.textContent || '').trim());
+      return { so: ds.length, trung: tieuDe.length - new Set(tieuDe).size };
+    });
+    ok(`chat ${ten}: lỗi hook không lặp lại (gộp thành một dòng)`, hook.trung === 0,
+      hook.so + ' dòng, ' + hook.trung + ' trùng');
+
+    // Đường dẫn tuyệt đối trong KẾT QUẢ tool phải rút gọn thành ~/…
+    const duongDan = await page.evaluate(() => {
+      const box = document.querySelector('[data-testid=chat-bubbles]');
+      const chu = box ? box.innerText : '';
+      return { dai: (chu.match(/\/Users\/[a-z0-9_-]+\//gi) || []).length, gon: (chu.match(/~\//g) || []).length };
+    });
+    ok(`chat ${ten}: đường dẫn rút gọn thành ~/ (không phải /Users/…)`,
+      duongDan.gon > 0 || duongDan.dai === 0, `${duongDan.gon} gọn / ${duongDan.dai} dài`);
+
+    await ctx.close();
+  }
+
   await browser.close();
   traPasscode();
   const fails = results.filter((r) => !r.pass);

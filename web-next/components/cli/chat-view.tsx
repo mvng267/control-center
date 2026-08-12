@@ -33,11 +33,34 @@ interface Msg {
   tsDau?: string | null;
 }
 interface Usage { turns: number; inTok: number; outTok: number; cacheRead: number; cacheWrite: number }
+interface DuAnChat {
+  ten: string; khoa: string; duongDan: string;
+  repo: string; nhanh: string; conTonTai: boolean; laNhap: boolean;
+}
 interface History {
   messages: Msg[]; total: number; start: number; typing: boolean; status: string;
   title: string; error: string | null; awaiting: boolean; model: string | null;
   usage: Usage | null;
+  duAn?: DuAnChat;   // dự án của phiên: tên thư mục thật, repo, nhánh, còn tồn tại không
+  effort?: string;   // mức nghĩ của lượt gần nhất
   nhap?: string;   // chữ đang chảy ra của lượt hiện tại (bản nháp từ stdout)
+}
+
+/** claude-opus-5 -> Opus. Tên đầy đủ dài gấp ba mà không thêm thông tin nào ở mức
+    xem lướt. `<synthetic>` là dòng lỗi API, không phải model thật -> bỏ. */
+function gonModel(m?: string | null) {
+  if (!m) return '';
+  const x = String(m).replace(/^claude-/, '').replace(/-\d[\d-]*$/, '');
+  if (x === '<synthetic>') return '';
+  return x.charAt(0).toUpperCase() + x.slice(1);
+}
+
+/** 3.785.161 -> "3,8M" — số token thô dài quá, đọc lướt không kịp. */
+function gonTok(n: number) {
+  if (!n) return '0';
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace('.0', '') + 'M';
+  if (n >= 1e3) return Math.round(n / 1e3) + 'K';
+  return String(n);
 }
 
 const GROUP_GAP_MS = 120000;
@@ -304,24 +327,72 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
       {/* paddingTop bù safe-area: trên điện thoại header của vỏ app bị ẩn khi đang
           chat, nên thanh này thành thứ trên cùng — thiếu bù thì nút quay lại chui
           xuống dưới notch. Từ md trở lên header vẫn còn nên biến này bằng 0. */}
-      <div className="flex w-full shrink-0 items-center gap-2 border-b border-border px-4 py-2.5"
+      {/* Đầu trang HAI DÒNG. Trước đây chỉ có mỗi tiêu đề, còn model/trạng thái thì
+          `hidden sm:inline-flex` nên trên iPhone không thấy gì cả — mở một phiên ra
+          là mất sạch dữ kiện mà danh sách vừa hiện đầy đủ. Dòng 2 mang đúng bộ đó:
+          dự án, repo + nhánh, model · mức nghĩ, token, số lượt. */}
+      <div className="flex w-full shrink-0 flex-col gap-1 border-b border-border px-4 py-2.5"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}>
-        <Button variant="ghost" size="icon" className="tap44 size-8" onClick={onBack}
-          title="Quay lại danh sách" aria-label="Quay lại danh sách" data-testid="chat-back">
-          <ArrowLeft className="size-4" />
-        </Button>
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium" data-testid="chat-title" title={sid}>
-          {h?.title || sid.slice(0, 8)}
-        </span>
-        {h?.model && <Badge variant="outline" className="hidden shrink-0 text-[10.5px] text-tool-accent sm:inline-flex">{h.model}</Badge>}
-        <Badge variant="outline" className={cn('hidden shrink-0 text-[10.5px] sm:inline-flex',
-          h?.status === 'RUNNING' && 'border-status-ok/40 text-status-ok')}>{h?.status || '…'}</Badge>
-        {/* Chế độ quyền + mức nghĩ chuyển XUỐNG dòng trạng thái dưới ô gõ, đúng chỗ
-            Claude CLI in chúng. Để trên này thì lẫn giữa các nút icon, và trên iPhone
-            còn bị đẩy khuất. */}
-        <ChatToolbar sid={sid} title={h?.title || ''} model={h?.model ?? null} usage={h?.usage}
-          onTitle={(t) => setH((x) => (x ? { ...x, title: t } : x))}
-          onModel={(mo) => setH((x) => (x ? { ...x, model: mo } : x))} />
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" className="tap44 size-8" onClick={onBack}
+            title="Quay lại danh sách" aria-label="Quay lại danh sách" data-testid="chat-back">
+            <ArrowLeft className="size-4" />
+          </Button>
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium" data-testid="chat-title" title={sid}>
+            {h?.title || sid.slice(0, 8)}
+          </span>
+          <Badge variant="outline" className={cn('shrink-0 text-[10.5px]',
+            h?.status === 'RUNNING' && 'border-status-ok/40 text-status-ok')}>{h?.status || '…'}</Badge>
+          {/* Chế độ quyền + mức nghĩ chuyển XUỐNG dòng trạng thái dưới ô gõ, đúng chỗ
+              Claude CLI in chúng. Để trên này thì lẫn giữa các nút icon, và trên iPhone
+              còn bị đẩy khuất. */}
+          <ChatToolbar sid={sid} title={h?.title || ''} model={h?.model ?? null} usage={h?.usage}
+            onTitle={(t) => setH((x) => (x ? { ...x, title: t } : x))}
+            onModel={(mo) => setH((x) => (x ? { ...x, model: mo } : x))} />
+        </div>
+
+        {/* MỘT dòng, cuộn ngang nếu chật — không cho xuống hàng. Đo trên iPhone
+            390px: để flex-wrap thì nó tách thành 2 dòng, ăn 39px và đẩy khung chat
+            từ 688px xuống 593px. Nội dung ở đây là phụ đề, không đáng đổi lấy gần
+            100px vùng đọc. */}
+        <div className="flex min-w-0 items-center gap-x-2.5 overflow-x-auto whitespace-nowrap pl-10 text-[11.5px] text-muted-foreground"
+          style={{ scrollbarWidth: 'none' }}
+          data-testid="chat-meta">
+          {h?.duAn && (
+            <span className="shrink-0 font-medium text-foreground/75" data-testid="chat-du-an">{h.duAn.ten}</span>
+          )}
+          {/* Repo GitHub khi có git; không thì đường dẫn — trả lời "phiên này chạy ở đâu" */}
+          {!!(h?.duAn?.repo || h?.duAn?.duongDan) && (
+            <span className="truncate" title={h?.duAn?.duongDan} data-testid="chat-repo">
+              {h?.duAn?.repo ? h.duAn.repo + (h.duAn.nhanh ? ' · ' + h.duAn.nhanh : '') : h?.duAn?.duongDan}
+            </span>
+          )}
+          {/* Thư mục gốc đã xoá -> --resume trượt, tin nhắn RƠI VÀO HƯ KHÔNG. Phải
+              báo TRƯỚC khi gõ, không phải sau khi gửi mà không thấy gì xảy ra. */}
+          {h?.duAn && !h.duAn.conTonTai && (
+            <span data-testid="chat-mat" title="Thư mục gốc đã bị xoá — nhắn vào phiên này sẽ không tới nơi"
+              className="shrink-0 rounded-md bg-status-error/12 px-1.5 py-px text-[10.5px] font-medium text-status-error">
+              thư mục đã xoá
+            </span>
+          )}
+          {!!h?.model && (
+            <span className="shrink-0 text-tool-accent" data-testid="chat-model"
+              title={h.model + (h.effort ? ' · mức nghĩ ' + h.effort : '')}>
+              {gonModel(h.model)}{h.effort ? ' · ' + h.effort : ''}
+            </span>
+          )}
+          {/* Số lượt ẩn trên màn hẹp: ít quan trọng nhất trong hàng này, mà danh
+              sách phiên đã hiện sẵn. Nhường chỗ cho repo + model. */}
+          {!!h?.usage?.turns && (
+            <span className="hidden shrink-0 tabular-nums sm:inline" data-testid="chat-luot">{h.usage.turns} lượt</span>
+          )}
+          {!!h?.usage && (
+            <span className="shrink-0 tabular-nums" data-testid="chat-tok"
+              title={((h.usage.inTok || 0) + (h.usage.outTok || 0)).toLocaleString('vi-VN') + ' token'}>
+              {gonTok((h.usage.inTok || 0) + (h.usage.outTok || 0))}
+            </span>
+          )}
+        </div>
       </div>
 
       {keoVao && (

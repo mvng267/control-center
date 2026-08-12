@@ -209,7 +209,13 @@ export function ToolCard({ part, sid, open, onToggle }: {
               {tt.dong.map((l, i) => (
                 <div key={i} className="truncate">{l}</div>
               ))}
-              {tt.con > 0 && <div className="text-muted-foreground/60">… +{tt.con} dòng</div>}
+              {/* "… +12 dòng" MỞ ĐƯỢC (bấm đầu thẻ) nhưng trông như chữ chết nên
+                  không ai bấm. Nói thẳng ra phải làm gì. */}
+              {tt.con > 0 && (
+                <div className="text-muted-foreground/60">
+                  … +{tt.con} dòng{open ? '' : ' — bấm để xem'}
+                </div>
+              )}
             </>
           )}
         </div>
