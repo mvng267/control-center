@@ -315,10 +315,9 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         {h?.model && <Badge variant="outline" className="hidden shrink-0 text-[10.5px] text-tool-accent sm:inline-flex">{h.model}</Badge>}
         <Badge variant="outline" className={cn('hidden shrink-0 text-[10.5px] sm:inline-flex',
           h?.status === 'RUNNING' && 'border-status-ok/40 text-status-ok')}>{h?.status || '…'}</Badge>
-        {/* Chế độ quyền phải thấy được NGAY TRONG chat: đang nhắn mà không biết Claude
-            có tự sửa file được không thì không dám giao việc. */}
-        <PermSwitch perm={perm} compact testid="chat-perm" />
-        <EffortSwitch effort={effort} compact />
+        {/* Chế độ quyền + mức nghĩ chuyển XUỐNG dòng trạng thái dưới ô gõ, đúng chỗ
+            Claude CLI in chúng. Để trên này thì lẫn giữa các nút icon, và trên iPhone
+            còn bị đẩy khuất. */}
         <ChatToolbar sid={sid} title={h?.title || ''} model={h?.model ?? null} usage={h?.usage}
           onTitle={(t) => setH((x) => (x ? { ...x, title: t } : x))}
           onModel={(mo) => setH((x) => (x ? { ...x, model: mo } : x))} />
@@ -560,33 +559,42 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             }}
             placeholder="Nhắn cho Claude…"
             className="max-h-[35dvh] min-h-11 resize-none border-0 bg-transparent px-0 py-2.5 font-mono text-[16px] shadow-none focus-visible:ring-0" />
-          {/* Nút gửi: bo tròn nhỏ gọn nằm TRONG khung, không phải khối vuông 44px
-              chồm ra ngoài như trước. Mờ đi khi chưa có gì để gửi, thay vì biến mất —
-              biến mất thì khung nhảy giật mỗi lần gõ ký tự đầu. */}
-          <Button size="icon" onClick={() => send()} title="Gửi tin nhắn"
+          {/* Nút gửi PHẲNG, không nền đặc. Terminal không có nút xanh nào cả — khối
+              màu đặc trong khung mono trông như dán từ app khác vào. Chỉ tô màu chữ
+              khi đã có gì để gửi; mờ đi chứ không biến mất, vì biến mất thì khung
+              nhảy giật ngay lúc gõ ký tự đầu. */}
+          <Button size="icon" variant="ghost" onClick={() => send()} title="Gửi tin nhắn"
             aria-label="Gửi tin nhắn"
-            className={cn('tap44 size-8 shrink-0 rounded-lg transition-opacity',
-              !text.trim() && !att.length && 'opacity-40')}
+            className={cn('tap44 size-8 shrink-0 rounded-lg transition-colors',
+              text.trim() || att.length ? 'text-primary hover:text-primary' : 'text-muted-foreground/40')}
             disabled={!text.trim() && !att.length} data-testid="chat-send">
             <Send className="size-3.5" />
           </Button>
         </div>
 
-        {/* Dòng gợi ý phím dưới ô gõ — Claude CLI luôn in một dòng như vậy.
-            Ẩn trên điện thoại: không có bàn phím cứng thì nhắc phím tắt là vô nghĩa,
-            mà lại ăn mất một dòng trên màn hình vốn đã hẹp. */}
-        <div className="mt-1.5 hidden flex-wrap items-center gap-x-3 gap-y-1 px-1 font-mono text-[10.5px] text-muted-foreground/60 sm:flex"
+        {/* DÒNG TRẠNG THÁI dưới ô gõ — Claude CLI luôn in một dòng như vậy.
+
+            Trước đây dòng này chỉ nhắc phím tắt và bị `hidden sm:flex` ẩn HẲN trên
+            điện thoại. Mà iPhone mới là nơi Vinh dùng chính, nên ở đó không thấy được
+            chế độ quyền lẫn mức nghĩ đang bật — hai thứ quyết định Claude có tự sửa
+            file hay không. Chúng nằm tít trên header, lẫn giữa các nút icon.
+
+            Giờ: chế độ + mức nghĩ hiện Ở ĐÂY, ngay dưới chỗ gõ, mọi bề rộng. Phần
+            nhắc phím tắt vẫn chỉ hiện từ sm trở lên — không có bàn phím cứng thì
+            nhắc Shift+Enter là vô nghĩa. */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 font-mono text-[10.5px] text-muted-foreground/60"
           data-testid="input-hint">
-          <span><b className="font-semibold text-muted-foreground">Enter</b> gửi</span>
-          <span><b className="font-semibold text-muted-foreground">Shift+Enter</b> xuống dòng</span>
-          <span><b className="font-semibold text-muted-foreground">/</b> lệnh</span>
-          <span><b className="font-semibold text-muted-foreground">@</b> file</span>
-          <span><b className="font-semibold text-muted-foreground">!</b> bash</span>
-          <span><b className="font-semibold text-muted-foreground">#</b> ghi nhớ</span>
-          <span><b className="font-semibold text-muted-foreground">↑</b> tin cũ</span>
+          <PermSwitch perm={perm} compact testid="chat-perm" />
+          <EffortSwitch effort={effort} compact />
+          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">Enter</b> gửi</span>
+          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">Shift+Enter</b> xuống dòng</span>
+          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">/</b> lệnh</span>
+          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">@</b> file</span>
+          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">!</b> bash</span>
+          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">#</b> ghi nhớ</span>
           {(h?.typing || h?.status === 'RUNNING') && (
             <span className="ml-auto text-status-error">
-              <b className="font-semibold">Esc</b> dừng Claude
+              <b className="font-semibold">Esc</b> dừng
             </span>
           )}
         </div>

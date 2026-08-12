@@ -66,13 +66,20 @@ export function PermSwitch({
 
   return (
     <DropdownMenu>
+      {/* compact = nằm trong DÒNG TRẠNG THÁI dưới ô gõ, kiểu Claude CLI: chữ phẳng
+          không viền không nền, cỡ bằng phần còn lại của dòng. Bản cũ để `w-8 px-0`
+          chỉ hiện icon 32px — nhìn ra nút bấm lạc lõng, và không đọc được đang ở chế
+          độ nào nếu chưa thuộc icon. */}
       <DropdownMenuTrigger
         render={
-          <Button variant="outline" size="sm" data-testid={testid} data-perm={mode}
+          <Button variant={compact ? 'ghost' : 'outline'} size="sm" data-testid={testid} data-perm={mode}
             title={'Chế độ quyền: ' + cur.label + ' — ' + cur.desc}
-            className={cn('tap44 h-8 shrink-0 gap-1.5 text-[12px]', cur.tone, compact && 'w-8 px-0')}>
-            <cur.Icon className="size-3.5" />
-            {!compact && <span className="max-w-[92px] truncate">{cur.label}</span>}
+            className={cn('tap44 shrink-0 gap-1.5', cur.tone,
+              compact
+                ? 'h-auto px-1 py-0 font-mono text-[10.5px] font-normal hover:bg-transparent hover:underline'
+                : 'h-8 text-[12px]')}>
+            <cur.Icon className={compact ? 'size-3' : 'size-3.5'} />
+            <span className="max-w-[92px] truncate">{cur.label}</span>
           </Button>
         } />
       <DropdownMenuContent align="end" className="w-[268px]">

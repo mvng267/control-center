@@ -916,6 +916,17 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       });
       ok('trong CHAT tren iPhone: an header va thanh tab',
         !oChat.header && !oChat.tabbar, JSON.stringify(oChat));
+
+      /* Dong trang thai phai HIEN tren dien thoai. Bo `hidden sm:flex` cu khien no
+         bien mat o dung 390px — noi Vinh dung chinh — nen khong biet Claude dang o
+         che do quyen nao. Kiem CA su hien dien LAN noi dung doc duoc. */
+      const dongTT = await pg.evaluate(() => {
+        const h = document.querySelector('[data-testid=input-hint]');
+        return { hien: !!h?.offsetParent, chu: (h?.innerText || '').trim() };
+      });
+      ok('dong trang thai HIEN tren iPhone, doc duoc che do',
+        dongTT.hien && dongTT.chu.length > 0,
+        JSON.stringify(dongTT.chu.replace(/\n/g, ' · ').slice(0, 50)));
       /* 656px là số đo TRƯỚC khi ẩn header+tab bar; sau khi ẩn phải cao hơn.
          Ngưỡng 665 chứ không phải 700: khung chat còn chia chỗ cho thanh việc-đang-làm
          và banner lỗi, phiên nào đang có chúng thì thấp hơn — đo được 667px ở một
@@ -1180,6 +1191,20 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
 
       ok('co dong goi y phim duoi o go (nhu CLI in ra)',
         (await pg.locator('[data-testid=input-hint]').count()) === 1);
+
+      /* Che do quyen + muc nghi nam TRONG dong trang thai duoi o go, dung cho CLI in.
+         Truoc day chung o header va dong nay bi `hidden sm:flex` an han tren dien
+         thoai — tuc la o noi Vinh dung chinh thi KHONG thay duoc Claude co tu sua
+         file hay khong. */
+      const trongDong = await pg.evaluate(() => {
+        const h = document.querySelector('[data-testid=input-hint]');
+        return {
+          perm: !!h?.querySelector('[data-testid=chat-perm]'),
+          effort: !!h?.querySelector('[data-testid=effort-btn]'),
+        };
+      });
+      ok('che do quyen + muc nghi nam trong dong trang thai',
+        trongDong.perm && trongDong.effort, JSON.stringify(trongDong));
 
       /* "!" chay bash, "#" ghi nho — hai che do cua Claude CLI.
          Da thu THAT truoc khi lam: ca hai chay qua `claude -p`, dung duong dashboard

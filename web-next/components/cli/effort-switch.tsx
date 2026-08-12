@@ -51,14 +51,18 @@ export function EffortSwitch({ effort, compact }: { effort?: string; compact?: b
 
   return (
     <DropdownMenu>
+      {/* compact = trong dòng trạng thái dưới ô gõ — xem chú thích ở perm-switch */}
       <DropdownMenuTrigger
         render={
-          <Button variant="outline" size="sm" data-testid="effort-btn" data-effort={muc || 'auto'}
+          <Button variant={compact ? 'ghost' : 'outline'} size="sm" data-testid="effort-btn"
+            data-effort={muc || 'auto'}
             title={'Mức suy nghĩ: ' + cur.label + ' — ' + cur.desc}
-            className={cn('tap44 h-8 shrink-0 gap-1.5 text-[12px]',
-              muc && 'text-tool-accent', compact && 'w-8 px-0')}>
-            <Gauge className="size-3.5" />
-            {!compact && <span className="max-w-[74px] truncate">{cur.label}</span>}
+            className={cn('tap44 shrink-0 gap-1.5', muc && 'text-tool-accent',
+              compact
+                ? 'h-auto px-1 py-0 font-mono text-[10.5px] font-normal hover:bg-transparent hover:underline'
+                : 'h-8 text-[12px]')}>
+            <Gauge className={compact ? 'size-3' : 'size-3.5'} />
+            <span className="max-w-[74px] truncate">{cur.label}</span>
           </Button>
         } />
       <DropdownMenuContent align="end" className="w-[260px]">
