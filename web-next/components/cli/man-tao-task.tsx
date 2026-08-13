@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Send, Sparkles, Wand2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Send, Sparkles, Wand2, Loader2, ImagePlus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PermSwitch } from './perm-switch';
 import { EffortSwitch } from './effort-switch';
+import { ModelSwitch } from './model-switch';
+import { AttachBar, AttachButton, type Attachment } from './chat-toolbar';
 import { Segmented } from '@/components/ui/segmented';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -42,15 +44,17 @@ const MODE_DESC: Record<string, string> = {
 };
 
 export function ManTaoTask({
-  perm, effort, onDong, onOpen,
+  perm, effort, model, onDong, onOpen,
 }: {
   perm?: string;
   effort?: string;
+  model?: string | null;
   onDong: () => void;
   onOpen: (sid: string) => void;
 }) {
   const [text, setText] = useState('');
   const [mode, setMode] = useState<string>('');
+  const [att, setAtt] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
   const oGo = useRef<HTMLTextAreaElement | null>(null);
@@ -67,11 +71,17 @@ export function ManTaoTask({
 
   const gui = async () => {
     const v = text.trim();
-    if (!v || busy) return;
+    if ((!v && !att.length) || busy) return;
     setBusy(true);
     try {
+      /* Claude CLI đọc ảnh qua ĐƯỜNG DẪN file, không nhận base64 trong câu lệnh.
+         /api/upload đã lưu ảnh xuống đĩa rồi nên ở đây chỉ cần nối đường dẫn vào —
+         giống hệt cách khung chat làm, để hai nơi không lệch. */
+      const kemAnh = att.length
+        ? (v ? v + '\n\n' : 'Xem ảnh này:\n\n') + att.map((a) => a.path).join('\n')
+        : v;
       const r = await api<{ sid?: string; error?: string }>('/api/task', {
-        method: 'POST', body: JSON.stringify({ task: (MODE_PREFIX[mode] || '') + v }),
+        method: 'POST', body: JSON.stringify({ task: (MODE_PREFIX[mode] || '') + kemAnh }),
       });
       if (r.sid) {
         toast.success('Đã giao task — đang mở phiên');
@@ -146,6 +156,9 @@ export function ManTaoTask({
       {/* chân màn: lựa chọn + nút gửi */}
       <div className="shrink-0 space-y-2.5 border-t border-border bg-card/40 p-3"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+        {/* Ảnh đã đính — xoá được từng cái. Không có dải này thì bấm "Ảnh" xong không
+            có dấu hiệu nào cho thấy ảnh đã lên, dễ bấm thêm lần nữa thành hai ảnh. */}
+        <AttachBar items={att} onRemove={(i) => setAtt((xs) => xs.filter((_, k) => k !== i))} />
         <div className="overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           <Segmented items={MODES} value={mode as (typeof MODES)[number]['id']}
             onChange={(v) => setMode(v)} testid="mode-seg" size="sm" />
@@ -154,19 +167,46 @@ export function ManTaoTask({
           {MODE_DESC[mode] || MODE_DESC['']}
         </p>
 
-        <div className="flex items-center gap-2">
+        {/* BA NÚT cấu hình, tách hẳn khỏi hàng gửi.
+            Trước đây chế độ quyền và mức nghĩ chen chung hàng với "Viết lại" + "Giao
+            task": trên iPhone 390px bốn thứ đó không đủ chỗ, nút gửi bị đẩy hẹp lại
+            còn hai công tắc thì cụt nhãn. Giờ hàng riêng, cuộn ngang nếu chật.
+            Model TRƯỚC ĐÂY KHÔNG CHỌN ĐƯỢC ở màn này — chỉ có trong menu ⋯ của khung
+            chat — nên mọi task giao từ đây đều chạy model toàn cục mà không biết là
+            model nào. */}
+        {/* `flex-wrap` chứ KHÔNG cuộn ngang. Đo ở 390px: bốn nút cần ~460px, cuộn
+            ngang thì nút "Ảnh" nằm hẳn ngoài mép phải — không ai biết là có. Cho
+            xuống dòng thì cao thêm 42px nhưng thấy đủ, mà đây là màn gõ xong mới
+            chọn nên 42px đó không cạnh tranh với chỗ đọc. */}
+        <div className="flex flex-wrap items-center gap-2" data-testid="hang-cau-hinh">
           {/* Cùng component với khung chat để hai nơi không lệch nhãn lẫn cách đổi */}
+          <ModelSwitch model={model} />
           <PermSwitch perm={perm} />
           <EffortSwitch effort={effort} />
+          {/* Ảnh xuống đây cùng hai nút kia: đính ảnh cũng là một lựa chọn của lần
+              giao việc này, không phải thao tác trên chữ đang gõ. */}
+          {/* `dangTai` chứ không đặt tên `busy`: ngoài này đã có state `busy` (đang
+              giao task) — trùng tên là che mất, rồi có lúc khoá nhầm nút. */}
+          <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])}
+            render={(moChon, dangTai) => (
+              <Button variant="outline" size="sm" className="tap44 h-10 shrink-0 gap-1.5"
+                data-testid="task-anh" disabled={dangTai} onClick={moChon} title="Đính kèm ảnh">
+                {dangTai ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
+                <span className="text-[12px]">Ảnh</span>
+              </Button>
+            )} />
+        </div>
 
+        <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="tap44 ml-auto h-10 gap-1.5"
             onClick={vietLai} disabled={enhancing || !text.trim()} data-testid="enhance-btn"
             title="Nhờ Claude viết lại câu lệnh cho rõ ràng hơn">
             {enhancing ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
             <span className="hidden sm:inline">Viết lại</span>
           </Button>
+          {/* Gửi được khi CÓ ẢNH dù chưa gõ chữ — "xem ảnh này" là một việc hợp lệ */}
           <Button size="sm" className="tap44 h-10 gap-1.5 px-4" onClick={gui}
-            disabled={busy || !text.trim()} data-testid="task-send">
+            disabled={busy || (!text.trim() && !att.length)} data-testid="task-send">
             {busy ? <Sparkles className="size-4 animate-pulse" /> : <Send className="size-4" />}
             Giao task
           </Button>

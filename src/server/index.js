@@ -26,7 +26,15 @@ const HERMES_MODEL = process.env.HERMES_MODEL || 'tencent/hy3:free';
 const procs = new Map();
 // sid -> timestamp lần cuối user mở chat view (để tính unread badge)
 const lastSeen = new Map();
-// Model áp dụng cho task mới (--model khi spawn), set qua lệnh /model. null = default
+/* Model áp dụng cho task mới (--model khi spawn). null = để CLI dùng model theo cấu
+   hình sẵn có của Claude.
+   Chỉ nhận tên RÚT GỌN: tên đầy đủ kèm ngày (`claude-opus-4-...`) sẽ sai ngay khi bản
+   cài được nâng cấp, còn tên rút gọn luôn trỏ tới bản mới nhất. Không có danh sách
+   này thì `POST /api/model` nhận bất cứ chuỗi gì rồi mọi lần spawn về sau đều chết
+   với "unknown model" — mà lỗi đó chỉ lộ ra lúc giao task, không phải lúc bấm chọn.
+   Đọc lại từ đĩa ở dưới (cùng file với chế độ quyền) — trước đây chỉ nằm trong RAM
+   nên restart dashboard là lặng lẽ về mặc định. */
+const MODELS = ['opus', 'sonnet', 'haiku'];
 let currentModel = null;
 /* Chế độ quyền khi spawn Claude.
    Dashboard chạy `claude -p` với stdio ignore -> KHÔNG có kênh nào để hỏi quyền:
@@ -73,8 +81,13 @@ try {
 function effortArgs() {
   return effort ? ['--effort', effort] : [];
 }
+// Model đã chọn cũng nằm trong file này — xem chú thích ở khai báo currentModel
+try {
+  const saved = JSON.parse(fs.readFileSync(PERM_FILE, 'utf8'));
+  if (MODELS.indexOf(saved.model) >= 0) currentModel = saved.model;
+} catch {}
 function saveModes() {
-  try { ghiJson(PERM_FILE, { mode: permMode, effort }); return true; }
+  try { ghiJson(PERM_FILE, { mode: permMode, effort, model: currentModel || '' }); return true; }
   catch { return false; }   // chỗ gọi báo cho người dùng, đừng nuốt
 }
 // Loop/cron jobs: id -> { id, kind: 'loop'|'cron', spec, prompt, runs, lastSid, timer?, lastKey? }
@@ -791,10 +804,47 @@ async function listSessions() {
     }
   }
   out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  ghiNhip(out);   // vòng đệm cho sparkline — chỉ đính vào phiên ĐANG CHẠY
   // Đọc git ở NỀN, sau khi đã trả kết quả — không chặn request nào.
   if (canDocGit.size) setTimeout(() => napGit([...canDocGit]), 0);
   // KHÔNG cắt 100: máy có 133 phiên, 33 phiên biến mất mà không báo gì. Phân trang lo.
   return out;
+}
+
+/* ---- nhịp token cho sparkline ----
+   Server vốn chỉ gửi SỐ TỔNG, không có lịch sử theo thời gian nên không vẽ được
+   đường nhịp. Giữ một vòng đệm nhỏ trong RAM: mỗi phiên 20 mốc gần nhất.
+
+   CHỈ đính vào phiên ĐANG CHẠY. Đo thật: gửi cho cả 136 phiên tốn +13KB mỗi nhịp
+   (2.520 -> 2.918 KB/phút), mà phiên IDLE thì token không đổi nên đường vẽ ra phẳng
+   lì — tốn băng thông để hiện một thứ vô nghĩa. Chỉ phiên đang chạy thì gần như
+   miễn phí (hiện 2 phiên).
+
+   Lưu CHÊNH LỆCH token giữa hai nhịp, không phải số tổng: tổng là 4.2 triệu nên vẽ
+   ra đường gần như nằm ngang, còn chênh lệch mới cho thấy Claude đang làm nhanh hay
+   chậm. */
+const NHIP_TRAN = 20;
+const nhipTok = new Map();   // sid -> number[] (chênh lệch token mỗi nhịp)
+const tokTruoc = new Map();  // sid -> token tổng lần đo trước
+
+function ghiNhip(ds) {
+  const song = new Set();
+  for (const s of ds) {
+    const chay = s.status === 'RUNNING' || s.status === 'ACTIVE';
+    if (!chay) continue;
+    song.add(s.sid);
+    const tok = s.tok || 0;
+    const cu = tokTruoc.get(s.sid);
+    tokTruoc.set(s.sid, tok);
+    if (cu === undefined) continue;            // lần đầu chưa có gì để trừ
+    const arr = nhipTok.get(s.sid) || [];
+    arr.push(Math.max(0, tok - cu));           // âm = file bị ghi đè, coi như 0
+    if (arr.length > NHIP_TRAN) arr.shift();
+    nhipTok.set(s.sid, arr);
+    s.nhip = arr;
+  }
+  // Phiên nghỉ rồi thì dọn, không giữ mãi trong RAM
+  for (const sid of [...nhipTok.keys()]) if (!song.has(sid)) { nhipTok.delete(sid); tokTruoc.delete(sid); }
 }
 
 /* ---------------- spawning claude ---------------- */
@@ -2007,6 +2057,9 @@ const server = http.createServer(async (req, res) => {
          hàng chục giây rồi bung ra một cục. Có cái này thì chữ hiện dần như terminal.
          Chỉ gửi khi đang chạy; xong lượt là bản thật từ .jsonl thay chỗ. */
       nhap: typing ? String((procs.get(sid) || {}).nhap || '').trim() : '',
+      // Lệnh đang chạy dở (tool chưa có kết quả) — dải "đang chạy" hiện nó để biết
+      // Claude kẹt ở đâu mà không phải cuộn lên tìm.
+      dangChay: parsed ? (parsed.dangChay || '') : '',
     });
   }
 
@@ -2201,8 +2254,11 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/model' && req.method === 'POST') {
     let body;
     try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
-    currentModel = (body.model || '').trim() || null;
-    return json(res, 200, { ok: true, model: currentModel });
+    const v = String(body.model || '').trim();
+    if (v && MODELS.indexOf(v) < 0) return json(res, 400, { error: 'model không hợp lệ' });
+    currentModel = v || null;   // '' = theo cấu hình sẵn có của Claude
+    const luu = saveModes();    // giữ nguyên sau khi restart dashboard
+    return json(res, 200, { ok: true, model: currentModel, luu });
   }
 
   // ---- chế độ quyền: quyết định Claude có tự sửa file được không ----
@@ -2462,6 +2518,72 @@ const server = http.createServer(async (req, res) => {
      Chỉ cho đọc ĐÚNG trong ~/.claude/plans và đúng đuôi .md. Kiểm bằng đường dẫn đã
      resolve chứ không phải chuỗi thô — nếu không thì `../../.ssh/id_rsa` lọt qua và
      dashboard thành công cụ đọc trộm cả đĩa. */
+  /* ---- xem file trong dự án của phiên ----
+     Cây thư mục: dùng lại quetFile() (đã có cache 30 giây, đã bỏ node_modules/.git).
+     Đo thật: control 127 file = 4KB, agy-proxy 289 file = 9KB — gửi MỘT LẦN khi mở
+     panel, không đi qua SSE nên không ảnh hưởng băng thông 2 giây/nhịp. */
+  if (p === '/api/tree' && req.method === 'GET') {
+    const sid = String(url.searchParams.get('sid') || '');
+    const root = sid ? sessionCwd(sid) : null;
+    if (!root) return json(res, 200, { ok: true, root: null, files: [] });
+    let ds;
+    try { ds = quetFile(root); } catch { return json(res, 200, { ok: true, root, files: [] }); }
+    return json(res, 200, { ok: true, root: gonNha(root), files: ds });
+  }
+
+  /* Nội dung một file. BA lớp chặn, KHÔNG dựa vào danh sách quetFile trả về — người
+     gọi tự đặt được path bất kỳ, không nhất thiết lấy từ cây. */
+  if (p === '/api/file' && req.method === 'GET') {
+    const sid = String(url.searchParams.get('sid') || '');
+    const root = sid ? sessionCwd(sid) : null;
+    if (!root) return json(res, 400, { error: 'phiên không có thư mục làm việc' });
+
+    // 1) resolve khử ../ rồi bắt buộc nằm TRONG cwd của phiên
+    const xin = path.resolve(root, String(url.searchParams.get('path') || ''));
+    if (xin !== root && !xin.startsWith(root + path.sep)) {
+      return json(res, 400, { error: 'chỉ đọc được file trong thư mục dự án' });
+    }
+
+    /* 2) Chặn thẳng file bí mật. KHÔNG dựa vào việc quetFile đã bỏ file ẩn: hàm đó
+          phục vụ gợi ý "@", ai sửa nó là chốt chặn này thủng lúc đó.
+          .git/config TỒN TẠI THẬT trong repo (đã kiểm), chứa URL remote. */
+    const tuong = path.relative(root, xin);
+    const CAM = [/(^|[\\/])\.env/i, /(^|[\\/])\.git([\\/]|$)/i, /id_rsa/i,
+      /(^|[\\/])\.npmrc$/i, /credential/i, /(^|[\\/])\.ssh([\\/]|$)/i];
+    if (CAM.some((re) => re.test(tuong))) {
+      return json(res, 403, { error: 'file này không cho xem' });
+    }
+
+    let st;
+    try { st = fs.statSync(xin); } catch { return json(res, 404, { error: 'không thấy file' }); }
+    if (!st.isFile()) return json(res, 400, { error: 'không phải file' });
+    /* 3) Trần 512KB — đo thật: file lớn nhất dự án 420KB (package-lock.json), không
+          file mã nguồn nào vượt. Chặn file build khổng lồ mà không cắt gì cần đọc. */
+    if (st.size > 512 * 1024) {
+      return json(res, 200, { ok: false, quaLon: true, kichThuoc: st.size });
+    }
+
+    let buf;
+    try { buf = fs.readFileSync(xin); } catch { return json(res, 404, { error: 'không đọc được' }); }
+    /* File nhị phân (ảnh, .ico): báo rõ thay vì đổ byte rác ra màn hình.
+       KHÔNG dùng buf.includes(0): src/server/index.js có đúng MỘT byte NUL viết thẳng
+       trong mã (dấu nối khoá hook) nên bị bắt nhầm là nhị phân — đã gặp thật lúc kiểm.
+       Xét tỷ lệ trên 8KB đầu: file nhị phân thật đặc NUL, mã nguồn thì hoạ hoằn một byte. */
+    const dau = buf.subarray(0, 8192);
+    let soXau = 0;
+    for (const b of dau) {
+      // byte điều khiển, trừ tab (9), xuống dòng (10), về đầu dòng (13)
+      if (b < 9 || (b > 13 && b < 32) || b === 127) soXau++;
+    }
+    if (soXau / (dau.length || 1) > 0.01) {
+      return json(res, 200, { ok: true, laNhiPhan: true, kichThuoc: st.size });
+    }
+    const noiDung = buf.toString('utf8');
+    return json(res, 200, {
+      ok: true, noiDung, kichThuoc: st.size, soDong: noiDung.split('\n').length,
+    });
+  }
+
   if (p === '/api/plan' && req.method === 'GET') {
     const THU_MUC = path.join(os.homedir(), '.claude', 'plans');
     const xin = path.resolve(String(url.searchParams.get('path') || ''));

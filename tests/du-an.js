@@ -279,6 +279,55 @@ async function snapshot() {
     }
   }
 
+  /* ---------- Chốt chặn đường dẫn của /api/file ----------
+     Đây là endpoint DUY NHẤT trong app đọc file tuỳ ý theo đường dẫn gửi từ ngoài vào.
+     Thủng nó là dashboard thành công cụ đọc trộm cả đĩa — mà máy này mở trên tailnet.
+     Ba lớp: resolve + phải nằm trong cwd; danh sách cấm; trần 512KB.
+     KHÔNG dựa vào việc quetFile() bỏ file ẩn: hàm đó phục vụ gợi ý "@", ai sửa nó là
+     chốt chặn thủng lúc đó. Nên test bắn thẳng đường dẫn, không lấy từ cây. */
+  {
+    const snap = await snapshot();
+    const ss = (snap.data.sessions || []).filter((s) => s.duAn && s.duAn.conTonTai && !s.duAn.laNhap);
+    const phien = ss[0];
+    if (!phien) {
+      ok('có phiên để kiểm chốt chặn /api/file', false, 'không tìm được phiên nào có cwd thật');
+    } else {
+      const doc = async (duong) => {
+        const u = `${URL}/api/file?sid=${encodeURIComponent(phien.sid)}&path=${encodeURIComponent(duong)}`;
+        const r = await fetch(u, { headers: { 'X-Dash-Token': token } });
+        return { code: r.status, body: await r.json().catch(() => ({})) };
+      };
+
+      // Vượt ra ngoài cwd bằng ../ — phải bị chặn, KHÔNG được trả nội dung
+      for (const xau of ['../../.ssh/id_rsa', '../../../etc/passwd', '../../../../etc/hosts']) {
+        const r = await doc(xau);
+        ok('chặn thoát khỏi thư mục dự án: ' + xau,
+          r.code === 400 && !r.body.noiDung, r.code + ' ' + JSON.stringify(r.body).slice(0, 60));
+      }
+
+      // File bí mật NẰM TRONG cwd — resolve không cứu được, phải có danh sách cấm.
+      // .git/config tồn tại thật trong repo và chứa URL remote.
+      for (const bim of ['.env', '.env.local', '.git/config', 'src/../.env', 'node_modules/../.git/config']) {
+        const r = await doc(bim);
+        ok('chặn file bí mật trong dự án: ' + bim,
+          r.code === 403 && !r.body.noiDung, r.code + ' ' + JSON.stringify(r.body).slice(0, 60));
+      }
+
+      // Còn phải ĐỌC ĐƯỢC file thường, không thì chặn quá tay thành vô dụng
+      const bt = await doc('package.json');
+      ok('vẫn đọc được file thường trong dự án',
+        bt.code === 200 && typeof bt.body.noiDung === 'string' && bt.body.soDong > 0,
+        bt.code + ' ' + (bt.body.soDong || 0) + ' dòng');
+
+      // Phiên không có cwd -> không đọc gì hết, không rơi về thư mục nào khác
+      const khong = await fetch(`${URL}/api/file?sid=khong-co-that&path=package.json`,
+        { headers: { 'X-Dash-Token': token } });
+      const kbody = await khong.json().catch(() => ({}));
+      ok('phiên không tồn tại thì không đọc được file nào',
+        khong.status === 400 && !kbody.noiDung, khong.status + ' ' + JSON.stringify(kbody).slice(0, 50));
+    }
+  }
+
   const fails = results.filter((r) => !r.pass);
   console.log('\n==== DỰ ÁN: ' + (results.length - fails.length) + '/' + results.length + ' PASS ====');
   process.exit(fails.length ? 1 : 0);

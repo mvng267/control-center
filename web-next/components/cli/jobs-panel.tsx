@@ -34,13 +34,19 @@ function cronVi(spec: string) {
   return hit ? hit.label : spec;
 }
 
-export function JobsPanel({ jobs, onOpen }: { jobs: Job[]; onOpen?: (sid: string) => void }) {
+export function JobsPanel({ jobs, onOpen, moSan }: {
+  jobs: Job[];
+  onOpen?: (sid: string) => void;
+  /* Đứng một mình trong tab "Việc nền" thì luôn mở — gập lại là tab trống trơn.
+     Khi còn là dải nhét giữa danh sách thì mới cần gập cho đỡ chiếm chỗ. */
+  moSan?: boolean;
+}) {
   const [dlg, setDlg] = useState<null | 'loop' | 'cron'>(null);
   const [prompt, setPrompt] = useState('');
   const [spec, setSpec] = useState('15m');
   const [busy, setBusy] = useState(false);
   // có việc đang chạy thì mở sẵn, không thì gập cho gọn
-  const [mo, setMo] = useState(jobs.length > 0);
+  const [mo, setMo] = useState(moSan || jobs.length > 0);
 
   const create = async () => {
     const p = prompt.trim();

@@ -128,7 +128,7 @@ export default function Page() {
         }}>
         {tab === 'cli' && (openSid
           ? <ChatView sid={openSid} onBack={() => setOpenSid(null)} perm={data?.perm} effort={data?.effort} />
-          : <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} perm={data?.perm} effort={data?.effort}
+          : <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} perm={data?.perm} effort={data?.effort} model={data?.model}
               onOpen={setOpenSid} quick={quick} />)}
         {tab === 'hermes' && <HermesTab />}
         {tab === 'agy' && <AgyTab />}

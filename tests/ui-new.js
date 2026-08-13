@@ -81,11 +81,16 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     for (const t of TABS) {
       await page.click(`[data-testid=nav-${t}]`);
       await page.waitForTimeout(1600);
+      /* Tab CLI KHÔNG còn page-header: tiêu đề "Phiên Claude" + mô tả + dải tóm tắt
+         đẩy thẻ phiên đầu tiên xuống 296px trên iPhone (35% màn hình). Thay bằng
+         hàng tab lọc (`tab-loc`) vừa gọn hơn vừa bấm được. Các tab khác giữ nguyên. */
       const m = await page.evaluate(() => ({
         tran: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         coHeader: !!document.querySelector('[data-testid=page-header]'),
+        coTabLoc: !!document.querySelector('[data-testid=tab-loc]'),
       }));
-      ok(`desktop /${t}: không tràn ngang + có page header`, !m.tran && m.coHeader);
+      ok(`desktop /${t}: không tràn ngang + có phần đầu trang`,
+        !m.tran && (t === 'cli' ? m.coTabLoc : m.coHeader), JSON.stringify(m));
     }
 
     // Vỏ khớp Atlas — số đo trong memory/atlas-theme.md
@@ -960,24 +965,30 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
            tab bar co chay khong. */
         const gy = document.querySelector('[data-testid=goi-y]');
         const buGoiY = gy?.offsetParent ? Math.round(gy.getBoundingClientRect().height) : 0;
+        /* Alert "dang chay" (hoa Claude xoay + nut Dung) noi tren o go, CHI hien khi
+           phien dang chay. Cung ly do voi todo-bar: khong bu thi bai nay do theo viec
+           phien nao tinh co dung dau danh sach co dang chay hay khong. */
+        const dc = document.querySelector('[data-testid=typing]');
+        const buChay = dc?.offsetParent ? Math.round(dc.getBoundingClientRect().height) : 0;
         return {
           header: !!document.querySelector('[data-testid=app-header]')?.offsetParent,
           tabbar: !!document.querySelector('[data-testid=tabbar]')?.offsetParent,
-          caoChat: Math.round(box.getBoundingClientRect().height) + buTodo + buGoiY,
-          buTodo, buGoiY,
+          caoChat: Math.round(box.getBoundingClientRect().height) + buTodo + buGoiY + buChay,
+          buTodo, buGoiY, buChay,
         };
       });
       ok('trong CHAT tren iPhone: an header va thanh tab',
         !oChat.header && !oChat.tabbar, JSON.stringify(oChat));
 
-      /* Dong trang thai phai HIEN tren dien thoai. Bo `hidden sm:flex` cu khien no
-         bien mat o dung 390px — noi Vinh dung chinh — nen khong biet Claude dang o
-         che do quyen nao. Kiem CA su hien dien LAN noi dung doc duoc. */
+      /* Che do quyen + muc nghi phai HIEN tren dien thoai — hai thu quyet dinh Claude
+         co tu sua file hay khong. Truoc day chung nam trong dong `input-hint` rieng;
+         gio gop vao HANG 2 (`goi-y`) va ghim ben phai de khong bi cuon mat.
+         Kiem CA su hien dien LAN noi dung doc duoc. */
       const dongTT = await pg.evaluate(() => {
-        const h = document.querySelector('[data-testid=input-hint]');
+        const h = document.querySelector('[data-testid=goi-y]');
         return { hien: !!h?.offsetParent, chu: (h?.innerText || '').trim() };
       });
-      ok('dong trang thai HIEN tren iPhone, doc duoc che do',
+      ok('hang 2 HIEN tren iPhone, doc duoc che do',
         dongTT.hien && dongTT.chu.length > 0,
         JSON.stringify(dongTT.chu.replace(/\n/g, ' · ').slice(0, 50)));
       /* 656px là số đo TRƯỚC khi ẩn header+tab bar; sau khi ẩn phải cao hơn.
@@ -996,20 +1007,29 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       /* Hang nut goi y phai BAM DUOC va hien tren iPhone. Truoc day `/ @ ! #` chi la
          chu nhac `hidden sm:inline` -> tren iPhone khong thay gi, ma cung kho go vi
          ban phim ao phai chuyen sang bang ky hieu moi co `/` va `@`. */
-      const nutGY = await pg.evaluate(() => {
-        const ds = [...document.querySelectorAll('[data-testid^=goi-y-]')];
+      /* Tren iPhone hang nut nay `hidden sm:flex` — bay 5 nut tren mot hang cuon ngang
+         o 390px thi chi thay hai nut ruoi, `#ghi nho` nam han ngoai man. Thay bang MOT
+         nut mo sheet truot len, moi chuc nang deu thay cung luc kem mo ta. */
+      await pg.locator('[data-testid=mo-chuc-nang]').click();
+      await pg.waitForTimeout(400);
+      const mucSheet = await pg.evaluate(() => {
+        // bo `sheet-chuc-nang` (vo sheet) va `sheet-nen` (nen bam de dong) — khong phai muc
+        const BO = ['sheet-chuc-nang', 'sheet-nen'];
+        const ds = [...document.querySelectorAll('[data-testid^=sheet-]')]
+          .filter((e) => !BO.includes(e.getAttribute('data-testid')));
         return { so: ds.length, hien: ds.filter((e) => !!e.offsetParent).length,
-          nhan: ds.map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim()) };
+          nhan: ds.map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24)) };
       });
-      ok('iPhone: hang nut goi y hien du 4 nut', nutGY.hien === 4,
-        nutGY.hien + '/' + nutGY.so + ': ' + nutGY.nhan.join(' | '));
+      // 4 ky tu mo dau + dinh anh + xem file
+      ok('iPhone: sheet chuc nang hien du 6 muc', mucSheet.hien === 6,
+        mucSheet.hien + '/' + mucSheet.so + ': ' + mucSheet.nhan.join(' | '));
 
-      // Bam nut `/` phai CHEN ky tu vao o nhap (nhu go tay), khong phai nut trang tri
+      // Bam muc `/` trong sheet phai CHEN ky tu vao o nhap (nhu go tay)
       const truocGo = await pg.inputValue('[data-testid=chat-input]').catch(() => '');
-      await pg.click('[data-testid=goi-y-lệnh]').catch(() => {});
+      await pg.click('[data-testid=sheet-lệnh]').catch(() => {});
       await pg.waitForTimeout(400);
       const sauGo = await pg.inputValue('[data-testid=chat-input]').catch(() => '');
-      ok('bam nut goi y chen ky tu vao o nhap', sauGo.endsWith('/') && sauGo !== truocGo,
+      ok('bam muc sheet chen ky tu vao o nhap', sauGo.endsWith('/') && sauGo !== truocGo,
         JSON.stringify(truocGo) + ' -> ' + JSON.stringify(sauGo));
 
       // Vẫn phải quay lại được danh sách — nếu không thì ẩn tab bar là cụt đường
@@ -1266,27 +1286,29 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         bd.rongChat > 920, bd.rongChat + 'px / man ' + bd.rongMan + 'px');
       ok('khung go cung dan het be ngang', bd.rongO > 920, bd.rongO + 'px');
 
-      ok('co dong goi y phim duoi o go (nhu CLI in ra)',
-        (await pg.locator('[data-testid=input-hint]').count()) === 1);
+      ok('co hang 2 duoi o go (nut chuc nang + che do)',
+        (await pg.locator('[data-testid=goi-y]').count()) === 1);
 
-      /* Che do quyen + muc nghi nam TRONG dong trang thai duoi o go, dung cho CLI in.
-         Truoc day chung o header va dong nay bi `hidden sm:flex` an han tren dien
-         thoai — tuc la o noi Vinh dung chinh thi KHONG thay duoc Claude co tu sua
-         file hay khong. */
+      /* Che do quyen + muc nghi nam trong HANG 2 duoi o go — hai thu quyet dinh
+         Claude co tu sua file hay khong, phai luon nhin thay.
+         Truoc day o header va bi `hidden sm:flex` an han tren dien thoai; roi chuyen
+         xuong dong `input-hint` rieng; gio gop vao hang 2 va GHIM BEN PHAI
+         (shrink-0) nen khong bao gio bi cuon mat khi hang chat. */
       const trongDong = await pg.evaluate(() => {
-        const h = document.querySelector('[data-testid=input-hint]');
+        const h = document.querySelector('[data-testid=goi-y]');
         return {
           perm: !!h?.querySelector('[data-testid=chat-perm]'),
           effort: !!h?.querySelector('[data-testid=effort-btn]'),
         };
       });
-      ok('che do quyen + muc nghi nam trong dong trang thai',
+      ok('che do quyen + muc nghi nam trong hang 2',
         trongDong.perm && trongDong.effort, JSON.stringify(trongDong));
 
-      /* Khung nhap phai giong CLI: mot DUONG KE ngang, khong phai hop bo goc.
-         Bat bang PTY that (expect + TERM=xterm-256color) roi dem ky tu: 80 dau `─`
-         ke ngang, dau nhac `❯`, dau `·` ngan cac goi y — KHONG co ky tu goc ┌┐└┘.
-         Truoc day ve hop bo 10px co vien bon phia. */
+      /* Khung nhap KHONG duoc la hop bo goc — dau nhac `❯`/`!`/`#` la thu bao che do,
+         giong dong nhap cua Claude CLI.
+         Duong ke ngang phia tren o go DA BO co y: tren iPhone no an 10px vung doc chat
+         ma chi noi lai dung thu dau nhac ngay ben canh da noi (dau nhac doi mau y het).
+         Nen o day chi con kiem: dau nhac dung, va khung khong bo goc kieu hop chat. */
       const khung = await pg.evaluate(() => {
         const dau = document.querySelector('[data-testid=prompt-sign]');
         const k = dau?.closest('div');
@@ -1295,15 +1317,11 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         return {
           dauNhac: (dau?.textContent || '').trim(),
           bo: cs ? Math.round(parseFloat(cs.borderRadius)) : -1,
-          keTren: cs ? Math.round(parseFloat(cs.borderTopWidth)) : -1,
-          keDuoi: cs ? Math.round(parseFloat(cs.borderBottomWidth)) : -1,
           nenOGo: o ? getComputedStyle(o).backgroundColor : '',
         };
       });
       ok('dau nhac la ❯ dung nhu CLI', khung.dauNhac === '❯', khung.dauNhac);
-      ok('khung nhap la DUONG KE ngang, khong phai hop bo goc',
-        khung.bo === 0 && khung.keTren > 0 && khung.keDuoi === 0,
-        `bo=${khung.bo} tren=${khung.keTren} duoi=${khung.keDuoi}`);
+      ok('khung nhap khong phai hop bo goc', khung.bo === 0, `bo=${khung.bo}`);
       /* Textarea goc co san `dark:bg-input/30` — bien the dark THANG `bg-transparent`
          thuong, nen o giao dien toi o go noi mot mang xam giua khung mono. */
       ok('o go KHONG co nen (terminal khong co nen nao)',
@@ -1444,8 +1462,11 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         const b = await pg.locator('[data-testid=hoa-xoay]').innerText();
         ok('bong hoa Claude XOAY (khong dung yen)', a !== b, JSON.stringify(a + ' -> ' + b));
         const chu = await pg.locator('[data-testid=typing]').innerText();
+        /* Chu doi theo thoi gian cho — giong Claude CLI, de biet no khong dung im.
+           Vinh chot giong suong sa ("De tao nghi ti", "Kho vcl, cho ti") nen KHONG
+           khop cung chuoi: chi doi hoi co chu tieng Viet + so giay. */
         ok('co dong tu + so giay troi',
-          /Đang|Vẫn|lâu/.test(chu) && /\d+s/.test(chu), JSON.stringify(chu.replace(/\n/g, ' ')));
+          /[a-zà-ỹ]{3,}/i.test(chu) && /\d+s/.test(chu), JSON.stringify(chu.replace(/\n/g, ' ')));
       } else {
         ok('bong hoa Claude XOAY (khong dung yen)', true, 'bo qua: khong o trang thai dang chay');
         ok('co dong tu + so giay troi', true, 'bo qua: khong o trang thai dang chay');
@@ -1538,9 +1559,12 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
          Chot nguong long hon so do that de con cho thay doi nho. */
       const cao = await pg.evaluate(() => {
         const the = [...document.querySelectorAll('[data-testid=session-row]')];
+        /* `page-header` da bo han: tieu de + dai tom tat chiem 296px tren 844px chi de
+           noi lai thu hang tab da noi. Gio phan dau trang bat dau bang hang tab. */
+        const dau = document.querySelector('[data-testid=tab-loc]');
         return {
-          header: Math.round(document.querySelector('[data-testid=page-header]').getBoundingClientRect().height),
-          top: Math.round(the[0].getBoundingClientRect().top),
+          header: dau ? Math.round(dau.getBoundingClientRect().height) : -1,
+          top: the.length ? Math.round(the[0].getBoundingClientRect().top) : -1,
           nhinThay: the.filter((c) => {
             const r = c.getBoundingClientRect();
             return r.top >= 0 && r.bottom <= window.innerHeight;
@@ -1549,6 +1573,23 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       });
       ok('phan dau trang gon tren iPhone (truoc 133px)',
         cao.header <= 80, cao.header + 'px');
+
+      /* Ca BON tab phai nam tron trong 390px. Hang tab cuon ngang duoc, nen tab thu tu
+         ("Viec nen") tran ra ngoai thi khong vo giao dien — nhung nhin vao tuong chi co
+         ba tab, khong ai vuot di tim cai thu tu. Do that: da bi cat mot lan. */
+      const tabTran = await pg.evaluate(() => {
+        const h = document.querySelector('[data-testid=tab-loc]');
+        if (!h) return { loi: 'khong thay hang tab' };
+        const g = h.getBoundingClientRect();
+        const ds = [...h.querySelectorAll('[data-testid^=tab-]')];
+        return {
+          so: ds.length,
+          tran: ds.filter((e) => e.getBoundingClientRect().right > g.right + 1).length,
+          cuoi: ds.length ? (ds[ds.length - 1].textContent || '').trim() : '',
+        };
+      });
+      ok('ca 4 tab loc nam tron trong man 390px',
+        tabTran.so === 4 && tabTran.tran === 0, JSON.stringify(tabTran));
       ok('the phien dau tien khong bi day qua nua man hinh',
         cao.top < 340, 'top=' + cao.top + 'px (truoc 439px, man 844px)');
       ok('nhin thay it nhat 3 the cung luc',
@@ -1679,9 +1720,17 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     // 62: tạo job lặp/cron rồi HUỶ — kiểm cả endpoint xoá (trước đây không có, job chạy mãi)
     await page.click('[data-testid=chat-back]').catch(() => {});
     await page.waitForTimeout(1200);
+    /* Viec nen gio nam o TAB RIENG, khong con la dai nhet giua danh sach phien nua —
+       phai bam tab truoc, khong thi JobsPanel chua duoc dung ra. */
+    await page.click('[data-testid=tab-jobs]');
+    await page.waitForTimeout(600);
     const truoc = await page.locator('[data-testid=job-row]').count();
-    await page.click('[data-testid=jobs-toggle]').catch(() => {});
-    await page.waitForTimeout(500);
+    /* KHONG bam `jobs-toggle` nua: trong tab rieng JobsPanel mo san (`moSan`), bam vao
+       la GAP LAI dung thu vua mo ra. Chi bam khi no dang gap. */
+    if (!(await page.locator('[data-testid=job-new-cron]').isVisible().catch(() => false))) {
+      await page.click('[data-testid=jobs-toggle]').catch(() => {});
+      await page.waitForTimeout(500);
+    }
     await page.click('[data-testid=job-new-cron]');
     await page.waitForTimeout(700);
     await page.fill('[data-testid=job-prompt]', 'kiểm tra tự động');
@@ -1695,6 +1744,74 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       const sauXoa = await page.locator('[data-testid=job-row]').count();
       ok('huỷ việc nền (trước đây KHÔNG có cách dừng, phải restart server)',
         sauXoa === truoc, `${sauTao} -> ${sauXoa}`);
+    }
+    await ctx.close();
+  }
+
+  /* ---------- F2. Xem file trong du an (kieu VSCode, khong to mau) ----------
+     Doc ma nguon ngay tren dashboard: truoc day muon xem file Claude vua sua phai mo
+     may tinh ra. Kiem ca giao dien LAN chot chan duong dan o server — day la thu duy
+     nhat trong app doc file tuy y theo yeu cau tu ngoai. */
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page = await ctx.newPage();
+    await page.goto(URL, { waitUntil: 'networkidle' });
+    await page.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+    await page.waitForTimeout(2000);
+    /* Phai mo dung phien CO thu muc du an. The dau danh sach hay la phien "(khong ro)"
+       — phien khong ghi cwd trong .jsonl (vd phien tao roi bo ngay), luc do cay thu muc
+       RONG la dung: giao dien bao "Phien nay khong co thu muc lam viec".
+       Loc bang o tim de chac chan roi vao du an that. */
+    await page.fill('[data-testid=search-box]', 'control');
+    await page.waitForTimeout(900);
+    await page.locator('[data-testid=session-row]:visible').first().click();
+    await page.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+    await page.waitForTimeout(1500);
+
+    // iPhone: nut xem file nam trong sheet chuc nang (hang nut la `hidden sm:flex`)
+    await page.click('[data-testid=mo-chuc-nang]');
+    await page.waitForTimeout(400);
+    await page.click('[data-testid=sheet-xem-file]');
+    const hienPanel = await page.waitForSelector('[data-testid=xem-file]', { timeout: 15000 })
+      .then(() => true).catch(() => false);
+    ok('mo duoc panel xem file tu sheet chuc nang', hienPanel, String(hienPanel));
+
+    if (hienPanel) {
+      await page.waitForTimeout(1800);
+      const soFile = await page.locator('[data-testid=file-item]').count();
+      ok('cay thu muc co file', soFile > 0, soFile + ' file');
+
+      /* Bam mot file .js roi kiem CO SO DONG va noi dung — khong to mau cu phap (shiki
+         nang ~1MB, gap doi bundle, ma Vinh vao qua Tailscale). */
+      await page.locator('[data-testid=file-item]').first().click();
+      /* Cho den khi CO noi dung that, khong cho cung mot khoang thoi gian: file doc
+         xong nhanh hay cham con tuy kich thuoc, cho cung 2s la bai nay do ngau nhien. */
+      await page.waitForFunction(
+        () => (document.querySelector('[data-testid=file-content]')?.textContent || '').length > 20,
+        null, { timeout: 15000 },
+      ).catch(() => {});
+      const noi = await page.evaluate(
+        () => document.querySelector('[data-testid=file-content]')?.textContent || '');
+      ok('mo file hien duoc noi dung', noi.length > 20, noi.length + ' ky tu');
+
+      /* iPhone mot cot: chon file roi thi cay AN di, nhuong ca man cho noi dung —
+         chia doi tren 390px thi ca hai ben deu khong doc noi. */
+      const cayAn = await page.evaluate(() => {
+        const c = document.querySelector('[data-testid=file-tree]');
+        return !c || !c.offsetParent;
+      });
+      ok('iPhone: chon file thi cay thu muc an di', cayAn, String(cayAn));
+
+      // Nut ← phai quay lai duoc cay, khong thi cut duong
+      await page.click('[data-testid=file-back]');
+      await page.waitForTimeout(600);
+      const cayHien = await page.locator('[data-testid=file-tree]').isVisible().catch(() => false);
+      ok('nut back quay lai duoc cay thu muc', cayHien, String(cayHien));
+
+      await page.click('[data-testid=file-close]');
+      await page.waitForTimeout(500);
+      const daDong = (await page.locator('[data-testid=xem-file]').count()) === 0;
+      ok('dong duoc panel xem file', daDong, String(daDong));
     }
     await ctx.close();
   }

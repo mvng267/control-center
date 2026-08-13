@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus,
-  Terminal, FileCode2, Zap, Brain,
+  ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus, Loader2, Plus,
+  Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
@@ -15,16 +15,28 @@ import { TodoBar } from './todo-bar';
 import { SlashHint, useSlash } from './slash-hint';
 import { MentionHint, useMention } from './mention-hint';
 import { ModeHint, docChe } from './mode-hint';
-import { DangChay } from './dang-chay';
+import { DangChay, HoaClaude } from './dang-chay';
 import { ThinkCard } from './think-card';
 import { NoteLine, type NotePart } from './note-line';
 import { AskCard } from './ask-card';
 import { PlanCard } from './plan-card';
+import { XemFile } from './xem-file';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { SheetDuoi, MucSheet } from '@/components/ui/sheet-duoi';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+
+/* Bốn ký tự mở đầu mà Claude CLI hiểu. MỘT nguồn duy nhất cho cả hai cách bày: hàng
+   nút trên máy tính và sheet trượt lên trên điện thoại. Hai bản riêng thì thêm chức
+   năng mới lại quên một bên. */
+const CHUC_NANG = [
+  { k: '/', nhan: 'lệnh', Icon: Terminal, mo: 'Lệnh dựng sẵn của Claude CLI' },
+  { k: '@', nhan: 'file', Icon: FileCode2, mo: 'Chèn đường dẫn file trong dự án' },
+  { k: '!', nhan: 'bash', Icon: Zap, mo: 'Chạy thẳng một lệnh shell' },
+  { k: '#', nhan: 'ghi nhớ', Icon: Brain, mo: 'Ghi vào trí nhớ dài hạn của Claude' },
+] as const;
 
 type TextPart = { t: 'text'; text: string };
 type ThinkPart = { t: 'think'; text: string };
@@ -45,6 +57,7 @@ interface History {
   title: string; error: string | null; awaiting: boolean;
   model: string | null;        // model ĐẶT RIÊNG cho phiên (null = theo model toàn cục)
   modelDaChay?: string | null; // model THẬT của lượt gần nhất, đọc từ .jsonl
+  dangChay?: string;           // lệnh đang chạy dở, vd "Bash(npm test)"
   usage: Usage | null;
   duAn?: DuAnChat;   // dự án của phiên: tên thư mục thật, repo, nhánh, còn tồn tại không
   effort?: string;   // mức nghĩ của lượt gần nhất
@@ -160,9 +173,23 @@ function CopyTurn({ parts }: { parts: Part[] }) {
 export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: () => void; perm?: string; effort?: string }) {
   const [h, setH] = useState<History | null>(null);
   const [att, setAtt] = useState<Attachment[]>([]);
+  // Sheet chức năng (chỉ mở được trên điện thoại — nút mở có `sm:hidden`)
+  const [sheet, setSheet] = useState(false);
+  // Panel xem file phủ toàn màn — mở từ nút hàng 2 hoặc từ tên file trong thẻ tool
+  const [moFile, setMoFile] = useState(false);
   // Thẻ tool nào đang mở — giữ ở ĐÂY chứ không trong từng thẻ, xem chú thích ở
   // tool-card.tsx. Khoá là tool_use_id nên bền qua mọi lần dựng lại cây.
   const [openTools, setOpenTools] = useState<Set<string>>(new Set());
+  /* Lượt ĐANG GẬP. Khoá là `tsDau` (mốc đầu lượt) chứ KHÔNG phải chỉ số: cửa sổ chỉ
+     giữ 30 tin cuối, phiên đang chạy thì tin mới đẩy tin cũ ra nên mọi chỉ số tụt đi
+     một mỗi 2 giây — dùng chỉ số thì gập xong 2 giây sau tự mở lại (đúng lỗi đã gặp
+     với thẻ tool và bảng câu hỏi). */
+  const [gapLuot, setGapLuot] = useState<Set<string>>(new Set());
+  const toggleLuot = (k: string) => setGapLuot((s) => {
+    const n = new Set(s);
+    n.has(k) ? n.delete(k) : n.add(k);
+    return n;
+  });
   const toggleTool = (id: string) => setOpenTools((s) => {
     const n = new Set(s);
     n.has(id) ? n.delete(id) : n.add(id);
@@ -265,6 +292,14 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
     // đổi, chỉ nghe groups.length thì con chữ mới trôi khỏi tầm nhìn.
   }, [groups.length, h?.typing, h?.nhap?.length]);
 
+  /* Chèn ký tự mở đầu (`/`, `@`, `!`, `#`) rồi đưa con trỏ về ô gõ — bảng gợi ý tự
+     bung ra theo ký tự đó. Thêm vào CUỐI chỗ đang gõ chứ không ghi đè: người ta có
+     thể đã gõ dở rồi mới nhớ ra muốn chèn tên file. */
+  const chen = (k: string) => {
+    setText((t) => (t && !t.endsWith(' ') ? t + ' ' : t) + k);
+    inputRef.current?.focus();
+  };
+
   /* Nhận tham số để bảng chọn (AskCard) gửi thẳng lựa chọn mà không phải chờ state
      `text` cập nhật xong — setText rồi gọi send() ngay thì send vẫn đọc giá trị cũ. */
   const send = async (noiDung?: string) => {
@@ -339,10 +374,16 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
       <div className="flex w-full shrink-0 flex-col gap-1 border-b border-border px-4 py-2.5"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="tap44 size-8" onClick={onBack}
+          {/* Nút back có VIỀN: trước chỉ là icon trần trên nền tối, nhìn không ra là
+              bấm được — mà trên iPhone đây là đường DUY NHẤT quay lại danh sách vì
+              thanh tab dưới đã ẩn khi vào chat. */}
+          <Button variant="outline" size="icon" className="tap44 size-9 shrink-0" onClick={onBack}
             title="Quay lại danh sách" aria-label="Quay lại danh sách" data-testid="chat-back">
             <ArrowLeft className="size-4" />
           </Button>
+          {/* Hoa Claude cạnh tên: xoay khi đang chạy, đứng yên mờ khi nghỉ. Nhìn một
+              cái là biết phiên còn sống hay không, khỏi đọc chữ trạng thái. */}
+          <HoaClaude chay={!!(h?.typing || h?.status === 'RUNNING')} />
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium" data-testid="chat-title" title={sid}>
             {h?.title || sid.slice(0, 8)}
           </span>
@@ -461,24 +502,61 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                   {parts.map((p, i) => p.t === 'note' ? <NoteLine key={i} part={p} /> : null)}
                 </div>
               ) : (
-              <div data-testid="msg-wrap" data-role={m.role} className="relative flex w-full flex-col pr-12">
-                {/* Giờ + nút chép: terminal không có, nhưng đây là dashboard xem lại
-                    phiên nên vẫn cần. Đặt nổi ở góc phải, rất mờ, chừa sẵn pr-12 để
-                    không đè lên chữ. Neo ở LƯỢT chứ không ở dòng chữ đầu — có lượt
-                    chỉ toàn tool, không có câu văn nào để bám vào. */}
-                <span className="absolute right-0 top-0 flex items-center gap-1.5 opacity-45 transition-opacity hover:opacity-100">
-                  {m.sub && (
-                    <span data-testid="msg-sub" className="text-[10px] text-tool-accent">sub</span>
-                  )}
-                  {m.ts && (
-                    <span className="select-none text-[10px] tabular-nums text-muted-foreground">
-                      {clock(m.ts)}
-                    </span>
-                  )}
-                  <CopyTurn parts={parts} />
-                </span>
+              <div data-testid="msg-wrap" data-role={m.role}
+                data-gap={gapLuot.has(m.tsDau || m.ts || '')}
+                className="flex w-full flex-col border-t border-border/50 pt-1.5">
+                {/* DÒNG TIÊU ĐỀ LƯỢT — vùng bấm gập DUY NHẤT.
+                    Không cho bấm cả lượt: bên trong đã có 5 thứ bấm được (thẻ tool,
+                    bảng chọn, thẻ kế hoạch, nút chép, dòng ghi chú), bấm cả khối thì
+                    nuốt hết chúng.
+                    Giờ + nút chép chuyển từ góc phải tuyệt đối lên đây, nên thân lượt
+                    dùng được TRỌN bề rộng (trước phải chừa pr-12). */}
+                {(() => {
+                  const khoa = m.tsDau || m.ts || '';
+                  const gap = gapLuot.has(khoa);
+                  const soTool = parts.filter((p) => p.t === 'tool').length;
+                  const tomTat = parts.find((p) => p.t === 'text') as TextPart | undefined;
+                  return (
+                    <>
+                      <div className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground/70">
+                        <button type="button" data-testid="luot-gap"
+                          onClick={() => toggleLuot(khoa)}
+                          title={gap ? 'Mở lượt này' : 'Gập lượt này'}
+                          /* KHÔNG dùng .tap44 ở đây: lớp phủ của nó cao tối thiểu
+                             44px, mà dòng này chỉ ~20px nên vùng chạm TRÀN LÊN lượt
+                             bên trên và che mất nút gập của lượt đó (Playwright báo
+                             "element intercepts pointer events"). Nới bằng đệm thật:
+                             py-2 cho ~36px, đủ ngón tay mà không đè hàng xóm. */
+                          className="flex min-w-0 flex-1 items-center gap-1.5 rounded py-2 text-left transition-colors hover:text-foreground">
+                          <ChevronDown className={cn('size-3 shrink-0 transition-transform',
+                            gap && '-rotate-90')} />
+                          <span className={cn('shrink-0 font-medium',
+                            m.role === 'user' ? 'text-primary' : 'text-tool-accent')}>
+                            {m.role === 'user' ? '❯ Vinh' : '⏺ Claude'}
+                          </span>
+                          {m.ts && <span className="shrink-0 tabular-nums">{clock(m.ts)}</span>}
+                          {!!soTool && <span className="shrink-0">· {soTool} thẻ</span>}
+                          {/* Gập rồi thì phải biết bên trong là gì mới quyết định có mở.
+                              Một lượt gộp tới 2 phút hội thoại (GROUP_GAP_MS) nên có
+                              thể rất dài — gập mà không có mồi thì màn hình trống trơn,
+                              không biết vừa giấu cái gì. */}
+                          {gap && !!tomTat?.text && (
+                            <span className="min-w-0 truncate opacity-70">· {tomTat.text.slice(0, 60)}</span>
+                          )}
+                        </button>
+                        {m.sub && (
+                          <span data-testid="msg-sub" className="shrink-0 text-[10px] text-tool-accent">sub</span>
+                        )}
+                        <span className="shrink-0 opacity-45 transition-opacity hover:opacity-100">
+                          <CopyTurn parts={parts} />
+                        </span>
+                      </div>
+                      {gap && null}
+                    </>
+                  );
+                })()}
 
-                {parts.map((p, i) =>
+                {!gapLuot.has(m.tsDau || m.ts || '') && parts.map((p, i) =>
                   p.t === 'tool' && p.hoi?.length ? (
                     // Bảng chọn: bấm rồi gửi lựa chọn thành tin nhắn mới
                     <div key={p.id || i} className="my-1">
@@ -550,7 +628,9 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           đúng khi chính dashboard spawn Claude — phiên chạy từ terminal ngoài thì
           typing=false nên KHÔNG có nút dừng nào, mà bấm Gửi lại nhận 409 "session is
           busy". Bản legacy dùng status nên vẫn xử lý được (export.js:453). */}
-      {(h?.typing || h?.status === 'RUNNING') && <DangChay onStop={stop} />}
+      {(h?.typing || h?.status === 'RUNNING') && (
+        <DangChay onStop={stop} lenh={h?.dangChay} />
+      )}
 
       {h?.error && (
         <div className="mx-4 mb-2 shrink-0 rounded-[10px] border border-status-error/30 bg-status-error/[0.08] px-3 py-2 text-[12.5px] text-status-error"
@@ -575,19 +655,14 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         <MentionHint items={mention.items} active={mention.active} onPick={mention.pick} />
         <ModeHint che={docChe(text)} />
         <AttachBar items={att} onRemove={(i) => setAtt((xs) => xs.filter((_, k) => k !== i))} />
-        {/* Claude CLI KHÔNG vẽ hộp bo góc quanh dòng nhập — bắt bằng PTY thật
-            (expect + TERM=xterm-256color) rồi đếm ký tự: 80 dấu `─` kẻ một đường
-            ngang hết bề rộng, dấu nhắc `❯`, dấu `·` ngăn các gợi ý. Không có ký tự
-            góc ┌┐└┘ nào cả.
-            Nên: một đường kẻ trên, ô gõ nằm dưới, không viền không bo. Màu đường kẻ
-            đổi theo chế độ để vẫn biết đang gõ `!` hay `#`. */}
-        <div className={cn('flex items-center gap-2 border-t-2 pt-2 transition-colors',
-          docChe(text) === 'bash' ? 'border-tool-accent/60'
-            : docChe(text) === 'nho' ? 'border-primary/60'
-            : text.trim() ? 'border-primary/50' : 'border-border')}>
-          {/* Nút ảnh nằm CẠNH ô nhắn tin, không phải trên header: đính ảnh là một
-              phần của việc soạn tin, để tít trên cùng thì tay phải với. */}
-          <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])} />
+        {/* KHÔNG kẻ đường ngang phía trên ô gõ nữa.
+            Bản trước bắt chước Claude CLI: `border-t-2 pt-2` đổi màu theo chế độ đang
+            gõ. Nhưng trên iPhone nó ăn 10px của vùng đọc chat mà chỉ nói lại đúng thứ
+            dấu nhắc `❯`/`!`/`#` ngay bên cạnh đã nói — và dấu nhắc ĐỔI MÀU y hệt.
+            Bỏ đường kẻ, giữ dấu nhắc: mất 0 thông tin, lãi 10px.
+            Nút ảnh cũng rời hàng này — nó nằm trong sheet chức năng (mobile) / hàng 2
+            (desktop), để hàng 1 chỉ còn đúng việc nhắn tin. */}
+        <div className="flex items-center gap-2">
           {/* Dấu nhắc trước ô gõ, đúng như dòng nhập của Claude CLI — và ĐỔI theo chế
               độ: "!" chạy bash, "#" ghi nhớ, còn lại là ">" nhắn cho Claude. */}
           <span aria-hidden data-testid="prompt-sign"
@@ -643,7 +718,9 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               màu đặc trong khung mono trông như dán từ app khác vào. Chỉ tô màu chữ
               khi đã có gì để gửi; mờ đi chứ không biến mất, vì biến mất thì khung
               nhảy giật ngay lúc gõ ký tự đầu. */}
-          <Button size="icon" variant="ghost" onClick={() => send()} title="Gửi tin nhắn"
+          {/* title mang luôn phần nhắc phím tắt đã bỏ khỏi hàng dưới */}
+          <Button size="icon" variant="ghost" onClick={() => send()}
+            title="Gửi tin nhắn — Enter gửi, Shift+Enter xuống dòng"
             aria-label="Gửi tin nhắn"
             className={cn('tap44 size-8 shrink-0 rounded-lg transition-colors',
               text.trim() || att.length ? 'text-primary hover:text-primary' : 'text-muted-foreground/40')}
@@ -665,48 +742,83 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         {/* Ngăn các mục bằng dấu `·` — đúng ký tự Claude CLI dùng, bắt được trong bản
             ghi PTY ("Enter to confirm · Esc to cancel"). Khoảng trắng trần thì các
             mục dính vào nhau, đọc ra một câu dài. */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 px-1 font-mono text-[10.5px] text-muted-foreground/60 [&>span:not(:first-child)]:before:mr-1.5 [&>span:not(:first-child)]:before:text-muted-foreground/30 [&>span:not(:first-child)]:before:content-['·']"
-          data-testid="input-hint">
-          <PermSwitch perm={perm} compact testid="chat-perm" />
-          <EffortSwitch effort={effort} compact />
-          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">Enter</b> gửi</span>
-          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">Shift+Enter</b> xuống dòng</span>
-          {(h?.typing || h?.status === 'RUNNING') && (
-            <span className="ml-auto text-status-error">
-              <b className="font-semibold">Esc</b> dừng
-            </span>
-          )}
+        {/* HÀNG 2 — nút chức năng bên trái, chế độ + model GHIM bên phải.
+            Trước đây có HAI hàng: một hàng chữ nhắc (chế độ, Enter gửi…) và một hàng
+            nút. Gộp lại còn một, bỏ 18px mà không mất chức năng nào:
+            `Enter gửi` / `Shift+Enter` chuyển thành title của nút gửi — iPhone không
+            có bàn phím cứng nên hai nhắc đó vốn vô nghĩa ở đó.
+            Bên trái cuộn ngang khi chật; bên phải `shrink-0` nên chế độ quyền và
+            model KHÔNG BAO GIỜ bị cuộn mất — đó là hai thứ quyết định Claude có tự
+            sửa file hay không, phải luôn nhìn thấy. */}
+        <div className="mt-1.5 flex items-center gap-2 px-1 pb-0.5" data-testid="goi-y">
+          {/* ĐIỆN THOẠI: một nút "Chức năng" mở sheet trượt lên.
+              Bản trước bày cả 4 nút trên một hàng cuộn ngang ở 390px: chỉ nhìn thấy
+              hai nút rưỡi, `#ghi nhớ` nằm hẳn ngoài màn — muốn dùng phải biết trước
+              là có rồi vuốt đi tìm. Một nút mở sheet thì mọi chức năng đều nhìn thấy
+              cùng lúc, kèm mô tả, và ngón cái với tới được ngay đáy màn. */}
+          <button type="button" data-testid="mo-chuc-nang" onClick={() => setSheet(true)}
+            className="tap44 inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95 sm:hidden">
+            <Plus className="size-3.5 opacity-70" />
+            Chức năng
+          </button>
+
+          {/* MÁY TÍNH: đủ bề ngang thì bày thẳng, không bắt bấm thêm một lần */}
+          <div className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-x-auto sm:flex"
+            style={{ scrollbarWidth: 'none' }}>
+            {CHUC_NANG.map(({ k, nhan, Icon }) => (
+              <button key={k} type="button" data-testid={'goi-y-' + nhan}
+                onClick={() => chen(k)}
+                className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95">
+                <Icon className="size-3 opacity-70" />
+                <b className="font-semibold text-foreground/80">{k}</b>
+                {/* Giữ nhãn ở MỌI bề rộng: chỉ mỗi ký tự `#` thì không ai đoán ra
+                    nó làm gì. Hàng này cuộn ngang được nên chật cũng không vỡ. */}
+                <span className="font-sans">{nhan}</span>
+              </button>
+            ))}
+            {/* Nút ảnh rời khỏi hàng 1 (hàng 1 chỉ để nhắn tin) về đây */}
+            <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])} />
+            {/* Xem file: KHÁC nút `@file` bên cạnh — `@` chèn đường dẫn vào tin nhắn
+                cho Claude đọc, nút này mở panel để CHÍNH MÌNH đọc mã. */}
+            <button type="button" data-testid="goi-y-xem-file" onClick={() => setMoFile(true)}
+              className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95">
+              <FolderTree className="size-3 opacity-70" />
+              xem file
+            </button>
+          </div>
+
+          {/* Ghim phải — không cuộn mất. `ml-auto` cho trường hợp điện thoại: bên
+              trái chỉ còn một nút nhỏ, không có khối flex-1 nào đẩy hộ. */}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground/70">
+            <PermSwitch perm={perm} compact testid="chat-perm" />
+            <EffortSwitch effort={effort} compact />
+          </div>
         </div>
 
-        {/* HÀNG NÚT GỢI Ý — bấm được, hiện ở MỌI bề rộng.
-            Trước đây `/` `@` `!` `#` chỉ là chữ nhắc `hidden sm:inline`, nên trên
-            iPhone — nơi Vinh dùng chính — không thấy gì, mà cũng không gõ được vì
-            bàn phím ảo phải chuyển sang bảng ký hiệu mới có `/` và `@`.
-            Bấm nút = chèn ký tự vào ô nhập rồi focus, đúng như gõ tay: bảng gợi ý
-            lệnh/file tự bung theo. */}
-        <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5"
-          style={{ scrollbarWidth: 'none' }} data-testid="goi-y">
-          {[
-            { k: '/', nhan: 'lệnh', Icon: Terminal },
-            { k: '@', nhan: 'file', Icon: FileCode2 },
-            { k: '!', nhan: 'bash', Icon: Zap },
-            { k: '#', nhan: 'ghi nhớ', Icon: Brain },
-          ].map(({ k, nhan, Icon }) => (
-            <button key={k} type="button" data-testid={'goi-y-' + nhan}
-              onClick={() => {
-                // Thêm vào CUỐI chỗ đang gõ chứ không ghi đè — người dùng có thể đã
-                // gõ dở rồi mới nhớ ra muốn chèn file.
-                setText((t) => (t && !t.endsWith(' ') ? t + ' ' : t) + k);
-                inputRef.current?.focus();
-              }}
-              className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95">
-              <Icon className="size-3 opacity-70" />
-              <b className="font-semibold text-foreground/80">{k}</b>
-              <span className="font-sans">{nhan}</span>
-            </button>
+        {/* Sheet chức năng — chỉ mở từ nút bên trên, tức chỉ trên điện thoại */}
+        <SheetDuoi mo={sheet} onDong={() => setSheet(false)} tieuDe="Chức năng"
+          testid="sheet-chuc-nang">
+          {CHUC_NANG.map(({ k, nhan, Icon, mo }) => (
+            <MucSheet key={k} Icon={Icon} nhan={nhan} mo={mo} ky={k}
+              testid={'sheet-' + nhan}
+              onClick={() => { setSheet(false); chen(k); }} />
           ))}
-        </div>
+          <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])}
+            render={(moChon, busy) => (
+              <MucSheet Icon={busy ? Loader2 : ImagePlus} nhan="Đính kèm ảnh"
+                mo={busy ? 'Đang tải lên…' : 'Chụp hoặc chọn ảnh từ máy'}
+                testid="sheet-anh"
+                onClick={() => { if (!busy) { setSheet(false); moChon(); } }} />
+            )} />
+          <MucSheet Icon={FolderTree} nhan="Xem file" mo="Đọc mã nguồn trong thư mục dự án"
+            testid="sheet-xem-file"
+            onClick={() => { setSheet(false); setMoFile(true); }} />
+        </SheetDuoi>
       </div>
+
+      {/* Panel xem file — phủ toàn màn (fixed inset-0), nằm ngoài khu nhập để bàn phím
+          iPhone bật lên không đẩy nó lệch. */}
+      {moFile && <XemFile sid={sid} onClose={() => setMoFile(false)} />}
     </div>
   );
 }

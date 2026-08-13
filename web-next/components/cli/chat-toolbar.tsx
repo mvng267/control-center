@@ -60,7 +60,14 @@ export async function taiAnhLen(f: File): Promise<Attachment | null> {
 
 /* Nút đính kèm ảnh — tách riêng để đặt CẠNH ô nhắn tin (soạn tin ở đâu thì nút ở đó),
    thay vì nằm chung với nhóm nút quản lý phiên trên header. */
-export function AttachButton({ onAttach }: { onAttach: (a: Attachment) => void }) {
+export function AttachButton({ onAttach, render }: {
+  onAttach: (a: Attachment) => void;
+  /* Cho chỗ gọi tự vẽ nút. Cần vì đính ảnh giờ xuất hiện ở BA nơi khác kiểu nhau:
+     nút icon ở hàng 2 (desktop), một dòng trong sheet chức năng (điện thoại), và một
+     nút có chữ ở màn giao task. Nhân bản logic tải ảnh ra ba bản là ba nơi lệch nhau
+     lúc nào không biết — chỉ phần VẼ khác, còn chọn-file/thu-nhỏ/tải-lên vẫn một. */
+  render?: (moChon: () => void, busy: boolean) => React.ReactNode;
+}) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
@@ -78,10 +85,12 @@ export function AttachButton({ onAttach }: { onAttach: (a: Attachment) => void }
     <>
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pick}
         data-testid="file-pick" />
-      <Button variant="ghost" size="icon" className="size-11 shrink-0" title="Đính kèm ảnh"
-        data-testid="attach-btn" disabled={busy} onClick={() => fileRef.current?.click()}>
-        {busy ? <Loader2 className="size-[18px] animate-spin" /> : <ImagePlus className="size-[18px]" />}
-      </Button>
+      {render ? render(() => fileRef.current?.click(), busy) : (
+        <Button variant="ghost" size="icon" className="size-11 shrink-0" title="Đính kèm ảnh"
+          data-testid="attach-btn" disabled={busy} onClick={() => fileRef.current?.click()}>
+          {busy ? <Loader2 className="size-[18px] animate-spin" /> : <ImagePlus className="size-[18px]" />}
+        </Button>
+      )}
     </>
   );
 }

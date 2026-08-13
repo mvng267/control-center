@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Search, ChevronsUpDown, ChevronLeft, ChevronRight, Plus, SlidersHorizontal,
+  Search, ChevronsUpDown, ChevronLeft, ChevronRight, Plus,
   MoreHorizontal, MessageSquare, Download, Square,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -11,7 +11,6 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { Session, Job } from '@/lib/types';
-import { PageHeader } from '@/components/layout/app-shell';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -83,9 +82,10 @@ function gomNhom(ss: Session[]): Nhom[] {
 }
 
 export function SessionList({
-  sessions, jobs, perm, effort, onOpen, quick,
+  sessions, jobs, perm, effort, model, onOpen, quick,
 }: {
   sessions: Session[]; jobs: Job[]; perm?: string; effort?: string;
+  model?: string | null;   // model toàn cục — chuyển tiếp cho màn giao task
   onOpen: (sid: string) => void;
   quick?: { q: string; n: number };   // lối tắt "Xem nhanh" ở sidebar
 }) {
@@ -155,10 +155,15 @@ export function SessionList({
       if (proj && (d?.khoa || s.project) !== proj) return false;
       if (stat === 'run' && !['RUNNING', 'ACTIVE'].includes(s.status)) return false;
       if (stat === 'idle' && ['RUNNING', 'ACTIVE'].includes(s.status)) return false;
-      // Ô tìm trước đây chỉ quét sid + project + title: gõ nội dung câu cuối hay tên
-      // repo đều ra 0 kết quả dù chữ đó đang hiện ngay trên thẻ.
+      // Tab "Việc nền" hiện JobsPanel, không hiện phiên nào
+      if (stat === 'jobs') return false;
+      /* Ô tìm trước đây chỉ quét sid + project + title: gõ nội dung câu cuối hay tên
+         repo đều ra 0 kết quả dù chữ đó đang hiện ngay trên thẻ.
+         `dangChay` cũng phải có mặt: dòng 3 của thẻ hiện dangChay ĐÈ LÊN tinCuoi khi
+         phiên đang chạy, nên thiếu nó thì gõ đúng chữ đang đọc được trên thẻ
+         ("Bash(npm test)") lại ra 0 kết quả — đúng lỗi mà bài này bọc. */
       if (needle) {
-        const kho = [s.sid, s.project, s.title, s.tinCuoi, d?.ten, d?.repo, d?.duongDan]
+        const kho = [s.sid, s.project, s.title, s.tinCuoi, s.dangChay, d?.ten, d?.repo, d?.duongDan]
           .filter(Boolean).join(' ').toLowerCase();
         if (!kho.includes(needle)) return false;
       }
@@ -221,64 +226,50 @@ export function SessionList({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="cli-list">
-      <PageHeader
-        title="Phiên Claude"
-        count={rows.length}
-        desc="Quản lý các phiên Claude CLI đang có trên máy."
-        actions={
-          <>
-            {/* Nút này trước đây KHÔNG có onClick — bấm không xảy ra gì. Giờ mở/đóng
-                hàng lọc theo trạng thái. */}
-            <Button variant={stat ? 'default' : 'outline'} size="sm" className="tap44 h-9 gap-1.5"
-              data-testid="filter-btn"  onClick={() => setStat((v) => (v ? '' : 'run'))}>
-              <SlidersHorizontal className="size-3.5" />
-              {stat === 'run' ? 'Đang chạy' : stat === 'idle' ? 'Đã nghỉ' : 'Lọc'}
-            </Button>
-            {/* Mở HẲN màn giao việc. Trước đây chỉ focus vào thanh dẹt dưới đáy —
-                thanh đó cao 109px chiếm chỗ vĩnh viễn mà lúc cần lại quá chật. */}
-            <Button size="sm" className="tap44 h-9 gap-1.5" data-testid="new-session"
-              onClick={() => setTaoTask(true)}>
-              <Plus className="size-3.5" /> Giao việc
-            </Button>
-          </>
-        }
-      />
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6">
-        {/* Tóm tắt gọn thành MỘT HÀNG. Bản cũ là một thẻ cao 4 dòng có số 100 cỡ lớn
-            và thanh tỉ lệ — đo trên iPhone 390px: nó cùng phần đầu trang đẩy lưới
-            xuống tới mức chỉ còn thấy ĐÚNG MỘT thẻ phiên. Con số đó đã có sẵn ở
-            huy hiệu cạnh tiêu đề, in to lần nữa là thừa. */}
-        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]"
-          data-testid="cli-summary">
-          <button onClick={() => { setStat(stat === 'run' ? '' : 'run'); setPage(0); }}
-            data-testid="sum-run" title="Chỉ hiện phiên đang chạy"
-            data-active={stat === 'run'}
-            className={cn('tap44 flex items-center gap-1.5 rounded-lg px-2 py-1 transition-colors',
-              stat === 'run' ? 'bg-status-ok/15 text-status-ok' : 'hover:bg-accent/50')}>
-            <span className="size-2 rounded-full bg-status-ok" />
-            Đang chạy <b className="tabular-nums">{tally.run}</b>
+      {/* HÀNG TAB thay cho tiêu đề "Phiên Claude" + mô tả + dải tóm tắt.
+          Đo trên iPhone 390px: ba khối đó đẩy thẻ phiên đầu tiên xuống 296px — 35%
+          màn hình chỉ để tới được danh sách. Tab vừa gọn hơn vừa nói đúng việc:
+          mỗi mục là một BỘ LỌC có số đếm, không phải nhãn trang trí. */}
+      {/* px-2 + gap-0 trên điện thoại: với px-3/gap-1 thì tab thứ tư ("Việc nền") tràn
+          khỏi mép 390px — cuộn ngang được nhưng nhìn vào tưởng chỉ có ba tab, mà tab
+          nào cũng phải thấy mới biết là bấm được. */}
+      <div className="flex shrink-0 items-center gap-0 overflow-x-auto border-b border-border px-2 pt-2 sm:gap-1 sm:px-3"
+        style={{ scrollbarWidth: 'none' }} data-testid="tab-loc">
+        {[
+          { id: '', nhan: 'Tất cả', so: sessions.length, cham: '' },
+          { id: 'run', nhan: 'Đang chạy', so: tally.run, cham: 'bg-status-ok' },
+          { id: 'idle', nhan: 'Đã nghỉ', so: tally.idle, cham: 'bg-muted-foreground/50' },
+          { id: 'jobs', nhan: 'Việc nền', so: jobs.length, cham: '' },
+        ].map((t) => (
+          <button key={t.id || 'all'} data-testid={'tab-' + (t.id || 'all')} data-active={stat === t.id}
+            onClick={() => { setStat(t.id); setPage(0); }}
+            className={cn('relative flex shrink-0 items-center gap-1 whitespace-nowrap px-2 py-2 text-[12px] transition-colors sm:gap-1.5 sm:px-2.5 sm:text-[12.5px]',
+              stat === t.id
+                ? 'font-medium text-foreground after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary'
+                : 'text-muted-foreground hover:text-foreground')}>
+            {!!t.cham && <span className={cn('size-1.5 rounded-full', t.cham)} />}
+            {t.nhan}
+            <b className="tabular-nums opacity-60">{t.so}</b>
           </button>
-          <button onClick={() => { setStat(stat === 'idle' ? '' : 'idle'); setPage(0); }}
-            data-testid="sum-idle" title="Chỉ hiện phiên đã nghỉ"
-            data-active={stat === 'idle'}
-            className={cn('tap44 flex items-center gap-1.5 rounded-lg px-2 py-1 transition-colors',
-              stat === 'idle' ? 'bg-muted text-foreground' : 'hover:bg-accent/50')}>
-            <span className="size-2 rounded-full bg-muted-foreground/60" />
-            Đã nghỉ <b className="tabular-nums">{tally.idle}</b>
-          </button>
-          {stat && (
-            <button onClick={() => { setStat(''); setPage(0); }} data-testid="sum-clear"
-              className="tap44 px-1 text-muted-foreground underline-offset-2 hover:underline">bỏ lọc</button>
-          )}
-        </div>
+        ))}
+      </div>
 
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2 md:px-6">
+
+        {/* KHÔNG bọc khung bảng. Bản cũ nhốt tất cả trong một hộp `rounded-xl border
+            bg-card`, thành ra hai lớp viền lồng nhau: viền hộp rồi tới viền từng thẻ.
+            Trên iPhone 390px lớp ngoài còn ăn thêm 2px mỗi bên và cắt bóng đổ của thẻ.
+            Bỏ hộp, để thẻ nổi thẳng trên nền — ngăn cách bằng khoảng trắng, không phải
+            đường kẻ. */}
+        <div className="flex flex-col gap-2">
           {/* Thanh công cụ — MỘT hàng, không cho xuống dòng.
               Bản cũ dùng flex-wrap + min-w-[160px] nên trên iPhone 390px ô tìm và bộ
               lọc dự án tách thành hai dòng, ăn 105px. Cộng cả phần đầu trang thì thẻ
               phiên đầu tiên nằm ở 439px — quá nửa màn hình chỉ để tới được nó. */}
-          <div className="flex items-center gap-2 border-b border-border p-2.5">
+          {/* Tab "Việc nền" không có phiên nào để tìm hay lọc — ẩn cả thanh công cụ,
+              nếu không nó gợi ý sai rằng đang lọc danh sách phiên. */}
+          <div className={cn('items-center gap-2',
+            stat === 'jobs' ? 'hidden' : 'flex')}>
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} data-testid="search-box"
@@ -291,16 +282,16 @@ export function SessionList({
             </select>
           </div>
 
-          {/* Việc nền: tạo/xem/huỷ ngay tại đây. Trước chỉ có một nhãn đếm số job,
-              bấm không được và không có cách nào huỷ. */}
-          <JobsPanel jobs={jobs} onOpen={onOpen} />
+          {/* Việc nền giờ là MỘT TAB riêng, không còn là dải nhét giữa danh sách.
+              Dải cũ ăn 20px vĩnh viễn trên mọi màn dù hầu hết lúc không có việc nào. */}
+          {stat === 'jobs' && <JobsPanel jobs={jobs} onOpen={onOpen} moSan />}
 
           {/* bảng — desktop */}
           {/* Chọn xong phải LÀM ĐƯỢC gì đó, không thì checkbox chỉ để trang trí.
               Dừng hàng loạt các phiên đang chạy — việc duy nhất hợp lý ở đây, vì
               dashboard KHÔNG được xoá .jsonl (đó là dữ liệu gốc của Claude CLI). */}
           {sel.size > 0 && (
-            <div className="flex items-center gap-2 border-b border-border bg-accent/30 px-3 py-2"
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-accent/30 px-3 py-2"
               data-testid="bulk-bar">
               <span className="text-[13px] font-medium">Đã chọn {sel.size}</span>
               <Button variant="outline" size="sm" className="tap44 ml-auto h-8 text-[12px]"
@@ -328,7 +319,7 @@ export function SessionList({
           {/* MỘT hàng, cuộn ngang nếu chật — không cho xuống dòng.
               Chữ "Sắp xếp" bỏ trên điện thoại: ba nút bên cạnh đã tự nói lên điều đó,
               giữ lại chỉ tổ đẩy hàng thành hai dòng. */}
-          <div className="flex items-center gap-2 overflow-x-auto border-b border-border px-2.5 py-1.5"
+          <div className="flex items-center gap-2 overflow-x-auto"
             style={{ scrollbarWidth: 'none' }}>
             {/* "Chọn cả trang" ẨN HẲN trên điện thoại. Đo trên iPhone 390px: hàng này
                 ăn 45px nhưng chữ bị ẩn, nên chỉ còn MỘT Ô VUÔNG TRƠ TRỌI không ai hiểu
@@ -361,7 +352,7 @@ export function SessionList({
               Hai bản lệch nhau (mobile thiếu hẳn menu ⋯ và ô chọn), và cả hai đều
               không có chỗ hiện "phiên đang dở việc gì". Một lưới co giãn là đủ. */}
           {gomTheoNhom ? (
-            <div data-testid="session-groups" className="p-3">
+            <div data-testid="session-groups">
               {nhomView.map((g) => {
                 const gap = gapNhom.has(g.khoa);
                 return (
@@ -431,7 +422,7 @@ export function SessionList({
                Chú thích để NGOÀI dấu ngoặc nhọn: nhánh ternary chỉ nhận MỘT phần tử,
                thêm một khối chú thích JSX nữa vào là thành hai phần tử, Turbopack
                báo "Expected '</', got 'ident'". */
-            <div data-testid="session-grid" className="flex flex-col gap-2 p-3">
+            <div data-testid="session-grid" className="flex flex-col gap-2">
               {view.map((s) => (
                 <SessionCard key={s.sid} s={s} truoc={ago}
                   chon={sel.has(s.sid)} cheDoChon={cheDoChon}
@@ -463,12 +454,14 @@ export function SessionList({
             </button>
           )}
 
-          {view.length === 0 && (
+          {view.length === 0 && stat !== 'jobs' && (
             <div className="py-12 text-center text-[14px] text-muted-foreground">Không có phiên nào khớp</div>
           )}
 
           {/* phân trang */}
-          <div className="flex items-center justify-between gap-2 border-t border-border p-3">
+          {/* Tab "Việc nền" không phân trang phiên — ẩn cả hàng này */}
+          <div className={cn('items-center justify-between gap-2 border-t border-border/60 pt-3',
+            stat === 'jobs' ? 'hidden' : 'flex')}>
             <div className="flex items-center gap-2">
               <span className="text-[13px] text-muted-foreground">Dòng mỗi trang</span>
               <select value={perPage} data-testid="per-page"
@@ -498,10 +491,20 @@ export function SessionList({
           </div>
         </div>
       </div>
+      {/* NÚT TRÒN NỔI — thay nút "Giao việc" cũ nằm trên tiêu đề (tiêu đề đã bỏ).
+          Đặt cách đáy 74px để không đè thanh tab dưới (58px + safe-area) và không
+          che nút phân trang. Luôn với tới được bằng ngón cái. */}
+      <button data-testid="new-session" onClick={() => setTaoTask(true)}
+        title="Giao việc mới cho Claude" aria-label="Giao việc mới cho Claude"
+        className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 active:scale-95 md:bottom-6"
+        style={{ bottom: 'calc(74px + env(safe-area-inset-bottom))' }}>
+        <Plus className="size-6" />
+      </button>
+
       {/* Giao việc là một MÀN RIÊNG, không phải thanh dẹt chiếm 109px dưới đáy danh
-          sách. Bấm "Giao việc" ở đầu trang mới mở. */}
+          sách. Bấm nút tròn nổi mới mở. */}
       {taoTask && (
-        <ManTaoTask perm={perm} effort={effort}
+        <ManTaoTask perm={perm} effort={effort} model={model}
           onDong={() => setTaoTask(false)} onOpen={onOpen} />
       )}
     </div>

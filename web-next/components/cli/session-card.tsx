@@ -31,6 +31,25 @@ function gonSo(n: number) {
   return String(n);
 }
 
+/* Đường nhịp token — SVG thuần, KHÔNG dùng recharts.
+   recharts đã có trong dự án nhưng mỗi biểu đồ của nó dựng 30-50 node DOM cộng
+   ResponsiveContainer theo dõi kích thước; nhân với 10 dòng mỗi trang là quá nặng
+   cho một hình 40×14. Ở cỡ này một thẻ <polyline> là đủ và rẻ hơn hàng chục lần. */
+function Nhip({ ds }: { ds: number[] }) {
+  if (!ds || ds.length < 2) return null;
+  const W = 40, H = 14;
+  const max = Math.max(...ds, 1);
+  const diem = ds.map((v, i) =>
+    `${(i / (ds.length - 1)) * W},${H - (v / max) * (H - 2) - 1}`).join(' ');
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} data-testid="card-nhip"
+      className="shrink-0 overflow-visible" aria-hidden>
+      <polyline points={diem} fill="none" stroke="currentColor" strokeWidth="1.2"
+        strokeLinejoin="round" strokeLinecap="round" className="text-status-ok" />
+    </svg>
+  );
+}
+
 /** claude-fable-5 -> Fable, claude-opus-5 -> Opus. Tên đầy đủ dài gấp ba mà không
     thêm thông tin nào ở mức xem lướt. */
 function gonModel(m?: string | null) {
@@ -136,33 +155,31 @@ export function SessionCard({
           </span>
         )}
 
-        {/* Dự án nằm CÙNG dòng tiêu đề, không tách dòng riêng: card hai dòng thì mỗi
-            dòng thừa là một phiên ít đi trong màn. Co lại được nên chật thì tự cắt. */}
-        {!anDuAn && (
-          <span className="flex min-w-0 shrink items-center gap-1 text-[11.5px] text-muted-foreground"
-            data-testid="card-project">
-            <Terminal className="size-3 shrink-0 opacity-50" />
-            {/* Giới hạn 7rem: tên dự án dài (volvo.dalianperfume.com) mà không chặn
-                thì nó chiếm hết chỗ của tiêu đề — thứ quan trọng hơn. */}
-            <span className="max-w-[7rem] truncate font-medium text-foreground/60">{s.duAn?.ten || s.project}</span>
-            {!!(s.duAn?.repo || s.duAn?.duongDan) && (
-              <span className="hidden truncate opacity-70 md:inline" title={s.duAn?.duongDan}>
-                {s.duAn?.repo ? s.duAn.repo + (s.duAn.nhanh ? ' · ' + s.duAn.nhanh : '') : s.duAn?.duongDan}
-              </span>
-            )}
-          </span>
-        )}
-
         <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
           {truoc(s.mtimeMs)}
         </span>
         <div onClick={(e) => e.stopPropagation()}>{menu}</div>
       </div>
 
-      {/* DÒNG 2: đang dở việc gì (trái) + số liệu (phải).
-          Ưu tiên LỆNH ĐANG CHẠY vì đó mới là thứ đang diễn ra ngay lúc này; không có
-          thì mới hiện câu cuối. Số liệu dồn về phải và ẩn dần theo bề rộng — iPhone
-          390px chỉ vừa ~52 ký tự nên câu cuối được ưu tiên giữ. */}
+      {/* DÒNG 2: dự án — tách RIÊNG khỏi dòng tiêu đề để repo + nhánh không bị cắt.
+          Trước đây nhét chung dòng 1 và chặn ở 7rem, nên "volvo.dalianperfume.com"
+          hay "mvng267/control-center · main" gần như luôn bị truncate. */}
+      {!anDuAn && (
+        <div className="flex min-w-0 items-center gap-1.5 pl-4 text-[11.5px] text-muted-foreground"
+          data-testid="card-project">
+          <Terminal className="size-3 shrink-0 opacity-50" />
+          <span className="shrink-0 font-medium text-foreground/65">{s.duAn?.ten || s.project}</span>
+          {!!(s.duAn?.repo || s.duAn?.duongDan) && (
+            <span className="truncate opacity-65" title={s.duAn?.duongDan}>
+              {s.duAn?.repo ? s.duAn.repo + (s.duAn.nhanh ? ' · ' + s.duAn.nhanh : '') : s.duAn?.duongDan}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* DÒNG 3: đang dở việc gì. Ưu tiên LỆNH ĐANG CHẠY vì đó mới là thứ đang diễn
+          ra ngay lúc này; không có thì mới hiện câu cuối. Dùng TRỌN bề rộng — số liệu
+          đã tách xuống dòng 4 nên không phải giành chỗ nữa. */}
       <div className="flex min-w-0 items-center gap-2 pl-4">
         <div className="flex min-w-0 flex-1 items-center gap-1.5" data-testid="card-last">
           {s.dangChay ? (
@@ -187,23 +204,30 @@ export function SessionCard({
           )}
         </div>
 
-        <span className="flex shrink-0 items-center gap-2.5 text-[11px] tabular-nums text-muted-foreground">
-          {!!model && (
-            <span className="hidden items-center gap-1 lg:inline-flex" data-testid="card-model"
-              title={(s.model || '') + (s.effort ? ' · mức nghĩ ' + s.effort : '')}>
-              <Cpu className="size-3 opacity-60" />{model}{s.effort ? '·' + s.effort : ''}
-            </span>
-          )}
-          <span className="inline-flex items-center gap-1" title={s.msgs + ' tin nhắn'}>
-            <MessageSquare className="size-3 opacity-60" />{s.luot || s.msgs}
-          </span>
-          {!!s.tok && (
-            <span className="hidden items-center gap-1 sm:inline-flex"
-              title={s.tok.toLocaleString('vi-VN') + ' token'}>
-              <Coins className="size-3 opacity-60" />{gonSo(s.tok)}
-            </span>
-          )}
+      </div>
+
+      {/* DÒNG 4: số liệu — dòng RIÊNG nên hiện đủ, không phải ẩn dần theo bề rộng
+          như hồi còn chen chung với câu cuối. */}
+      <div className="flex min-w-0 items-center gap-3 pl-4 text-[11px] tabular-nums text-muted-foreground">
+        <span className="inline-flex items-center gap-1" title={s.msgs + ' tin nhắn'}>
+          <MessageSquare className="size-3 opacity-60" />{s.luot || s.msgs} lượt
         </span>
+        {!!s.tok && (
+          <span className="inline-flex items-center gap-1"
+            title={s.tok.toLocaleString('vi-VN') + ' token'}>
+            <Coins className="size-3 opacity-60" />{gonSo(s.tok)}
+          </span>
+        )}
+        {!!model && (
+          <span className="inline-flex min-w-0 items-center gap-1" data-testid="card-model"
+            title={(s.model || '') + (s.effort ? ' · mức nghĩ ' + s.effort : '')}>
+            <Cpu className="size-3 shrink-0 opacity-60" />
+            <span className="truncate">{model}{s.effort ? '·' + s.effort : ''}</span>
+          </span>
+        )}
+        {/* Nhịp token — server chỉ gửi cho phiên ĐANG CHẠY, phiên nghỉ thì đường
+            phẳng lì nên không vẽ. Dồn về phải cho thẳng hàng giữa các dòng. */}
+        {!!s.nhip?.length && <span className="ml-auto"><Nhip ds={s.nhip} /></span>}
       </div>
 
       {/* Phiên ĐỨNG IM CHỜ NGƯỜI BẤM — trước đây chỉ biết khi mở phiên ra.
