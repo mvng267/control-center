@@ -60,6 +60,18 @@ for i in $(seq 1 20); do
   sleep 1
 done
 
+# Kiểm bản mới ĐÃ THẬT SỰ nạp, không phải tiến trình cũ còn sống.
+# Vừa gặp trên Mac: server cũ vẫn nghe cổng 7799 nên /api/tree trả 404 dù mã đã có.
+TOKEN="$(node -e "try{console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.claude/dashboard-token.json','utf8')).token)}catch{}" 2>/dev/null || true)"
+if [ -n "$TOKEN" ]; then
+  MA="$(curl -s -o /dev/null -w '%{http_code}' -H "X-Dash-Token: $TOKEN" "http://127.0.0.1:$CONG/api/tree?sid=kiem-tra" || true)"
+  if [ "$MA" = "404" ]; then
+    echo "!! /api/tree trả 404 — tiến trình CŨ vẫn đang chạy, bản mới chưa nạp." >&2
+    exit 1
+  fi
+  echo "==> Endpoint mới có mặt (/api/tree -> HTTP $MA)"
+fi
+
 # Địa chỉ vào từ iPhone
 IP_TS="$(tailscale ip -4 2>/dev/null | head -1 || true)"
 [ -n "$IP_TS" ] && echo "==> Vào từ iPhone: http://$IP_TS:$CONG"
