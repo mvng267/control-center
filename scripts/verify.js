@@ -131,5 +131,46 @@ if (fs.existsSync(cssFile)) {
   } else console.log('  ok   web/legacy/app.css (' + open + ' khối)');
 }
 
+/* Mọi fetch() gọi THẲNG tới /api/* trong giao diện phải gắn token.
+   Lỗi thật đã gặp: PasscodeGate gọi fetch('/api/passcode/verify') trực tiếp (cố ý, vì
+   api() ném lỗi ở 401 nên không xử lý được "mã sai") nhưng quên gắn token. Cổng token
+   nằm TRƯỚC cổng mã khoá -> verify trả 401, bấm "Mở khoá" không bao giờ ăn, màn hình
+   trống trơn kèm banner "mất kết nối".
+   KHÔNG bài test chạy nào bắt được: tất cả đều qua localhost, mà loopback được server
+   miễn token. Nên phải kiểm ở MÃ NGUỒN, không phải lúc chạy. */
+{
+  const gd = [];
+  const quet = (d) => {
+    let ds; try { ds = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of ds) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) quet(p);
+      else if (/\.tsx?$/.test(e.name)) gd.push(p);
+    }
+  };
+  quet(path.join(ROOT, 'web-next/components'));
+  quet(path.join(ROOT, 'web-next/app'));
+
+  const thieu = [];
+  for (const f of gd) {
+    const L = fs.readFileSync(f, 'utf8').split('\n');
+    L.forEach((l, i) => {
+      if (!/\bfetch\(\s*['"`]\/api\//.test(l)) return;
+      // token có thể nằm ngay dòng đó hoặc 3 dòng kế (khối headers xuống dòng)
+      const quanh = L.slice(i, i + 4).join(' ');
+      if (!/dauToken|X-Dash-Token/.test(quanh)) {
+        thieu.push(path.relative(ROOT, f) + ':' + (i + 1));
+      }
+    });
+  }
+  if (thieu.length) {
+    bad++;
+    console.log('  LỖI  fetch() thẳng tới /api/* mà KHÔNG gắn token (sẽ 401 khi vào từ máy khác):');
+    thieu.forEach((t) => console.log('       ' + t));
+  } else {
+    console.log('  ok   mọi fetch() thẳng tới /api/* đều gắn token');
+  }
+}
+
 console.log(bad ? '\n' + bad + ' file có lỗi' : '\nTất cả hợp lệ (' + targets.length + ' file JS)');
 process.exit(bad ? 1 : 0);

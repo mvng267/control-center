@@ -4,19 +4,31 @@
 
 let token = '';
 
+/* Nạp token từ ?t= vào localStorage. Gọi TRONG LÚC RENDER (useState initializer) để
+   useStream có token ngay ở lần render đầu — trước đây gọi trong useEffect nên
+   EventSource mở /stream KHÔNG có token và trả 401.
+   KHÔNG đụng vào URL ở đây: history.replaceState là side effect, chạy lúc render thì
+   Next.js hydrate xong ghi đè lại, URL vẫn còn ?t=. Việc dọn URL để donDepUrl() lo. */
 export function initToken(): string {
   if (typeof window === 'undefined') return '';
   try {
-    const u = new URL(location.href);
-    const fromUrl = u.searchParams.get('t');
-    if (fromUrl) {
-      localStorage.setItem('dashToken', fromUrl);
-      u.searchParams.delete('t'); // dọn URL cho khỏi lộ token trong lịch sử/chia sẻ
-      history.replaceState(null, '', u.pathname + u.search + u.hash);
-    }
+    const fromUrl = new URL(location.href).searchParams.get('t');
+    if (fromUrl) localStorage.setItem('dashToken', fromUrl);
     token = localStorage.getItem('dashToken') || '';
   } catch {}
   return token;
+}
+
+/* Xoá ?t= khỏi thanh địa chỉ — token không nên nằm trong lịch sử duyệt hay bị chia
+   sẻ nhầm khi copy link. Phải gọi trong useEffect (sau hydrate), không phải lúc render. */
+export function donDepUrl() {
+  if (typeof window === 'undefined') return;
+  try {
+    const u = new URL(location.href);
+    if (!u.searchParams.get('t')) return;
+    u.searchParams.delete('t');
+    history.replaceState(null, '', u.pathname + u.search + u.hash);
+  } catch {}
 }
 
 export function getToken() {
@@ -27,6 +39,15 @@ export function getToken() {
 export function setToken(t: string) {
   token = t;
   try { localStorage.setItem('dashToken', t); } catch {}
+}
+
+/* Header token cho những chỗ phải gọi fetch() THẲNG thay vì qua api() — ví dụ màn
+   nhập mã khoá, nơi api() ném lỗi ở 401/429 nên không xử lý được "mã sai".
+   Quên gắn nó thì cổng token chặn trước cổng mã khoá: /api/passcode/verify trả 401
+   và không bao giờ mở khoá được. Không lộ ở localhost vì loopback được miễn token. */
+export function dauToken(): Record<string, string> {
+  const t = getToken();
+  return t ? { 'X-Dash-Token': t } : {};
 }
 
 export class UnauthorizedError extends Error {}

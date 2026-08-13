@@ -12,7 +12,7 @@ import { StatsTab } from '@/components/stats/stats-tab';
 import { HermesTab } from '@/components/hermes/hermes-tab';
 import { SessionList } from '@/components/cli/session-list';
 import { ChatView } from '@/components/cli/chat-view';
-import { initToken, api } from '@/lib/api';
+import { initToken, donDepUrl, api } from '@/lib/api';
 import { useStream } from '@/lib/use-stream';
 import { usePwa } from '@/lib/use-pwa';
 import { useSoftKeyboard } from '@/lib/use-soft-keyboard';
@@ -63,7 +63,15 @@ export default function Page() {
     setTab("cli");
     toast("Mở phiên rồi dùng nút tương ứng ở đầu khung chat");
   };
-  const [ready, setReady] = useState(false);
+  /* initToken PHẢI chạy TRƯỚC useStream. Trước đây nó nằm trong một useEffect ở dưới
+     (dòng ~86), mà useStream lại gọi ngay ở đây — hook chạy trước effect, nên
+     streamUrl() lấy token rỗng và EventSource mở /stream KHÔNG có token -> 401.
+     Hậu quả: vào bằng link ?t=… thì màn hình trống trơn ("Không có phiên nào khớp"),
+     KHÔNG hiện màn nhập mã và cũng KHÔNG báo lỗi — nhìn ra "mất kết nối, dữ liệu là
+     bản cũ". Đo được: EventSource -> 401, còn fetch cùng URL từ trong trang -> 423,
+     chênh nhau đúng vì fetch chạy sau khi effect đã nạp token.
+     useState(initializer) chạy MỘT LẦN lúc dựng component, trước mọi hook phía dưới. */
+  const [ready, setReady] = useState(() => { initToken(); return true; });
   const { data, offline, unauthorized } = useStream();
   const pass = usePasscode();
   usePwa();
@@ -82,11 +90,12 @@ export default function Page() {
     if (next) setTab(next.id);
   });
 
-  useEffect(() => {
-    initToken();
-    setReady(true);
-  }, []);
+  // Dọn ?t= khỏi URL SAU hydrate. Làm lúc render thì Next.js ghi đè lại, token vẫn
+  // phơi trong thanh địa chỉ và lịch sử duyệt.
+  useEffect(() => { donDepUrl(); }, []);
 
+  // ready luôn true (initToken đã chạy trong useState initializer ở trên). Giữ lại
+  // chốt này để lần render đầu trên server không cố vẽ khi chưa có localStorage.
   if (!ready) return null;
 
   const unread = (data?.sessions || []).reduce((n, s) => n + (s.unread || 0), 0);

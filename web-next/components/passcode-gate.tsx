@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Lock, LockOpen, ShieldCheck, Delete } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, dauToken } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -49,8 +49,11 @@ export function PasscodeGate({ daDat, onDone }: { daDat: boolean; onDone: () => 
         // (lib/api.ts:41-42), mà mã sai chính là 401 -> nhảy thẳng vào catch, dòng
         // xoá ô mã không bao giờ chạy tới. Hậu quả đo được: gõ sai "1111" rồi gõ
         // đúng "2468" thành "11112468" -> sai vĩnh viễn, không vào được nữa.
+        // NHƯNG phải tự gắn token: cổng token nằm TRƯỚC cổng mã khoá, thiếu nó thì
+        // /api/passcode/verify trả 401 và không bao giờ mở khoá được. Không lộ khi
+        // chạy ở localhost vì loopback được miễn token — chỉ hỏng khi vào từ máy khác.
         const res = await fetch('/api/passcode/verify', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...dauToken() },
           body: JSON.stringify({ code: value }),
         });
         const r = await res.json().catch(() => ({}));
@@ -66,7 +69,7 @@ export function PasscodeGate({ daDat, onDone }: { daDat: boolean; onDone: () => 
           setCode(''); setConfirm(''); setBuoc('nhap'); return;
         }
         const res = await fetch('/api/passcode/set', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...dauToken() },
           body: JSON.stringify({ code: value }),
         });
         const r = await res.json().catch(() => ({}));
