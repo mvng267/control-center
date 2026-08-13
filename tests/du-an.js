@@ -243,6 +243,37 @@ async function snapshot() {
       ok('phát hiện ghi đè, parse lại toàn bộ (không nối nhầm)',
         !!c && c.msgs === 40 && c.tok === 600 && c.luot === 40,
         c ? `${c.msgs} tin / ${c.tok} tok (đúng phải là 40 / 600)` : 'không thấy');
+
+      /* nhánh 3: CẮT GIỮA MỘT KÝ TỰ TIẾNG VIỆT — lỗi hỏng IM LẶNG.
+         Đọc thêm cắt theo BYTE, mà chữ có dấu chiếm 2-3 byte. Nếu đoạn đuôi được
+         decode bằng `buf.toString('utf8')` thì ký tự bị chẻ đôi thành "�":
+           "xin chào"  ->  "xin ch<?><?>o"
+         Tệ ở chỗ JSON.parse VẪN CHẠY (chuỗi vẫn hợp lệ), nên tin nhắn hiện ra với
+         chữ sai mà không có lỗi nào — không cách nào biết trừ khi đọc kỹ.
+         Ép đúng tình huống: ghi nửa dòng, đợi server đọc, rồi ghi nốt nửa sau.
+         Điểm cắt nằm GIỮA hai byte của chữ "à". */
+      const cauViet = JSON.stringify({
+        type: 'assistant', timestamp: new Date(1786600000000).toISOString(),
+        cwd: '/private/tmp/inc-check',
+        message: { model: 'claude-opus-5', usage: { input_tokens: 0, output_tokens: 0 },
+          content: [{ type: 'text', text: 'xin chào thế giới' }] },
+      }) + '\n';
+      const bufViet = Buffer.from(cauViet, 'utf8');
+      const cat = bufViet.indexOf(0xC3) + 1;   // ngay SAU byte đầu của một ký tự 2 byte
+
+      fs.writeFileSync(f, Array.from({ length: 40 }, (_, i) => dong(i, 'GHI DE ')).join(''));
+      await new Promise((r) => setTimeout(r, 250));
+      await lay();                              // để server cache mốc hiện tại
+      fs.appendFileSync(f, bufViet.subarray(0, cat));   // nửa đầu, đứt giữa ký tự
+      await new Promise((r) => setTimeout(r, 250));
+      await lay();                              // server đọc phần dở -> chỗ dễ hỏng
+      fs.appendFileSync(f, bufViet.subarray(cat));      // nửa sau
+      await new Promise((r) => setTimeout(r, 250));
+      const d = await lay();
+      const chuCuoi = (d && d.tinCuoi) || '';
+      ok('chữ tiếng Việt bị cắt giữa ký tự vẫn ghép đúng (không ra "�")',
+        chuCuoi.includes('xin chào thế giới') && !chuCuoi.includes('�'),
+        JSON.stringify(chuCuoi.slice(0, 40)));
     } finally {
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     }

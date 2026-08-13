@@ -11,6 +11,8 @@ const path = require('path');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
+// Giải mã UTF-8 an toàn khi đọc từng đoạn: giữ byte lẻ ở ranh giới ký tự (xem docPhanThem)
+const { StringDecoder } = require('string_decoder');
 
 const PORT = +(process.env.PORT || 7799);
 const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
@@ -132,7 +134,13 @@ function docPhanThem(file, cu, st) {
     const them = Buffer.alloc(st.size - cu.size);
     fs.readSync(fd, them, 0, them.length, cu.size);
     fs.closeSync(fd);
-    return them.toString('utf8');
+    /* Trả BUFFER, không phải chuỗi. Cắt theo BYTE có thể rơi vào GIỮA một ký tự
+       UTF-8 nhiều byte — tiếng Việt có dấu toàn 2-3 byte nên chuyện này chạm được.
+       `them.toString('utf8')` khi đó sinh ký tự hỏng "�" ngay đầu đoạn:
+         Buffer.from('xin chào').subarray(giữa 'à')  ->  "�o"
+       Dòng JSON dính ký tự hỏng thì parse trượt -> mất hẳn tin nhắn đó, im lặng.
+       Chỗ gọi dùng StringDecoder để nối byte lẻ sang lần đọc sau. */
+    return them;
   } catch { try { if (fd !== undefined) fs.closeSync(fd); } catch {} return null; }
 }
 
@@ -160,7 +168,9 @@ function parseSessionFile(file) {
      toolIndex phải sống qua các lần đọc, nếu không tool_result nằm ở phần mới sẽ
      không tìm thấy tool_use của nó ở phần cũ và thẻ tool đứng mãi ở "pending". */
   const them = docPhanThem(file, c, st);
-  const S = them ? c.state : {
+  // So với null tường minh: `them` là Buffer, mà Buffer rỗng vẫn là object (truthy),
+  // còn null mới nghĩa là "phải parse lại toàn bộ".
+  const S = them !== null ? c.state : {
     msgs: [],
     // tool_use_id -> part object; ghép result vào call. Ghép trên TOÀN file trước khi
     // slice window 30 -> call ở đầu window vẫn nhận được result nằm sau.
@@ -171,6 +181,9 @@ function parseSessionFile(file) {
     model: '',     // model + mức nghĩ của lượt assistant mới nhất
     effort: '',
     du: '',        // dòng cuối bị cắt giữa chừng, ghép với phần đọc lần sau
+    /* Ký tự UTF-8 bị cắt đôi ở ranh giới byte. StringDecoder giữ lại byte lẻ và nối
+       vào lần decode sau, nên "xin chào" cắt giữa chữ "à" vẫn ra đúng chữ thay vì "�". */
+    bd: new StringDecoder('utf8'),
     // "hook + nội dung lỗi" -> part đã hiện. Phải sống qua các lần đọc thêm, nếu
     // không mỗi lần đọc đuôi lại đẻ ra một dòng lỗi mới cho cùng một lỗi cũ.
     hookDaThay: new Map(),
@@ -180,7 +193,8 @@ function parseSessionFile(file) {
 
   let raw;
   if (them !== null) {
-    raw = S.du + them;
+    // decoder.write() trả phần giải mã ĐƯỢC, giữ lại byte lẻ cuối cho lần sau
+    raw = S.du + S.bd.write(them);
   } else {
     try { raw = fs.readFileSync(file, 'utf8'); } catch { return null; }
   }
