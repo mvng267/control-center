@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, X, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { imgUrl } from '@/lib/api';
 
 /* Thẻ tool vẽ ĐÚNG như Claude CLI in ra terminal:
 
@@ -254,7 +255,7 @@ export function ToolCard({ part, sid, open, onToggle }: {
           {part.images?.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-2">
               {part.images.map((_, idx) => (
-                <ToolImage key={idx} src={`/api/toolimg/${sid}/${part.id}/${idx}`} n={idx + 1}
+                <ToolImage key={idx} src={imgUrl(`/api/toolimg/${sid}/${part.id}/${idx}`)} n={idx + 1}
                   onZoom={setZoom} />
               ))}
             </div>

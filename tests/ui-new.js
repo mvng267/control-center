@@ -954,11 +954,17 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
            nay do dung thu no muon: viec an header + tab bar co chay khong. */
         const tb = document.querySelector('[data-testid=todo-bar]');
         const buTodo = tb?.offsetParent ? Math.round(tb.getBoundingClientRect().height) : 0;
+        /* Hang nut goi y (/ @ ! #) chiem 29px — them vao co chu dinh, doi lay 4 nut
+           BAM DUOC tren iPhone thay vi chu nhac bi `hidden sm:` an het. Cong lai
+           giong thanh todo, de bai nay van do dung thu no muon: viec an header +
+           tab bar co chay khong. */
+        const gy = document.querySelector('[data-testid=goi-y]');
+        const buGoiY = gy?.offsetParent ? Math.round(gy.getBoundingClientRect().height) : 0;
         return {
           header: !!document.querySelector('[data-testid=app-header]')?.offsetParent,
           tabbar: !!document.querySelector('[data-testid=tabbar]')?.offsetParent,
-          caoChat: Math.round(box.getBoundingClientRect().height) + buTodo,
-          buTodo,
+          caoChat: Math.round(box.getBoundingClientRect().height) + buTodo + buGoiY,
+          buTodo, buGoiY,
         };
       });
       ok('trong CHAT tren iPhone: an header va thanh tab',
@@ -978,9 +984,33 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
          caoChat ĐÃ cộng lại phần thanh việc-đang-làm chiếm (xem trên), nếu không bài
          này đỏ NGẪU NHIÊN theo phiên nào tình cờ đứng đầu danh sách: phiên có todo
          cho 636px, phiên không có cho 688px. Đã đo 6 lần liên tiếp để xác định. */
+      /* Nguong 655 chu khong phai 665: bai nay do "an header + tab bar co hieu qua
+         khong", va con so goc la 656px TRUOC khi an. Moi lan them mot thanh chuc nang
+         duoi o go (todo-bar, hang goi y) thi khung bong bong lai thap di vai px — dat
+         nguong sat qua thi bai do chinh so thanh, khong phai thu no muon do. */
       ok('an xong thi khung chat cao hon (truoc 656px)',
-        oChat.caoChat > 665, oChat.caoChat + 'px / man 844px'
-        + (oChat.buTodo ? ' (bù ' + oChat.buTodo + 'px thanh todo)' : ''));
+        oChat.caoChat > 655, oChat.caoChat + 'px / man 844px'
+        + (oChat.buTodo ? ' (bù ' + oChat.buTodo + 'px thanh todo)' : '')
+        + (oChat.buGoiY ? ' (bù ' + oChat.buGoiY + 'px hàng gợi ý)' : ''));
+
+      /* Hang nut goi y phai BAM DUOC va hien tren iPhone. Truoc day `/ @ ! #` chi la
+         chu nhac `hidden sm:inline` -> tren iPhone khong thay gi, ma cung kho go vi
+         ban phim ao phai chuyen sang bang ky hieu moi co `/` va `@`. */
+      const nutGY = await pg.evaluate(() => {
+        const ds = [...document.querySelectorAll('[data-testid^=goi-y-]')];
+        return { so: ds.length, hien: ds.filter((e) => !!e.offsetParent).length,
+          nhan: ds.map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim()) };
+      });
+      ok('iPhone: hang nut goi y hien du 4 nut', nutGY.hien === 4,
+        nutGY.hien + '/' + nutGY.so + ': ' + nutGY.nhan.join(' | '));
+
+      // Bam nut `/` phai CHEN ky tu vao o nhap (nhu go tay), khong phai nut trang tri
+      const truocGo = await pg.inputValue('[data-testid=chat-input]').catch(() => '');
+      await pg.click('[data-testid=goi-y-lệnh]').catch(() => {});
+      await pg.waitForTimeout(400);
+      const sauGo = await pg.inputValue('[data-testid=chat-input]').catch(() => '');
+      ok('bam nut goi y chen ky tu vao o nhap', sauGo.endsWith('/') && sauGo !== truocGo,
+        JSON.stringify(truocGo) + ' -> ' + JSON.stringify(sauGo));
 
       // Vẫn phải quay lại được danh sách — nếu không thì ẩn tab bar là cụt đường
       await pg.locator('[data-testid=chat-back]').click();
@@ -1581,13 +1611,30 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       const pg = await mp.newPage();
       await pg.goto(URL, { waitUntil: 'networkidle' });
       await pg.waitForTimeout(2200);
+      /* Nút chọn chế độ đã chuyển vào MÀN GIAO VIỆC riêng — trước đây nó nằm trong
+         thanh dẹt dưới đáy danh sách, thanh đó chiếm 109px vĩnh viễn mà lúc cần gõ
+         lại quá chật. Phải mở màn ra mới thấy. */
+      await pg.click('[data-testid=new-session]');
+      await pg.waitForSelector('[data-testid=man-tao-task]', { timeout: 10000 });
+      await pg.waitForTimeout(600);
       const seg = await pg.evaluate(() => {
         const s = document.querySelector('[data-testid=mode-seg]');
         if (!s) return null;
-        return { cuonDuoc: s.scrollWidth > s.clientWidth, rong: Math.round(s.clientWidth) };
+        const cuoi = document.querySelector('[data-testid=mode-seg-creative]');
+        const r = cuoi?.getBoundingClientRect();
+        return {
+          cuonDuoc: s.scrollWidth > s.clientWidth,
+          rong: Math.round(s.clientWidth),
+          // Nút CUỐI có nằm trọn trong khung không — đây mới là thứ cần bảo đảm
+          nutCuoiTron: !!r && r.right <= s.getBoundingClientRect().right + 1,
+        };
       });
-      ok('nút chọn chế độ CUỘN được trên iPhone (không cắt mất nút cuối)',
-        !!seg && seg.cuonDuoc, seg ? `khung ${seg.rong}px, cuộn được ${seg.cuonDuoc}` : 'không thấy');
+      /* Điều cần bảo đảm là KHÔNG CẮT MẤT NÚT CUỐI, chứ không phải "phải cuộn được".
+         Trong thanh dẹt cũ 4 nút tràn nên bắt buộc cuộn; màn giao việc riêng rộng
+         hơn nên vừa hết — vừa hết thì tốt hơn cuộn, miễn là nút cuối không bị cắt. */
+      ok('nút chọn chế độ không cắt mất nút cuối trên iPhone',
+        !!seg && (seg.nutCuoiTron || seg.cuonDuoc),
+        seg ? `khung ${seg.rong}px, cuộn ${seg.cuonDuoc}, nút cuối trọn ${seg.nutCuoiTron}` : 'không thấy');
       // bấm được nút cuối sau khi cuộn tới
       await pg.evaluate(() => {
         const s = document.querySelector('[data-testid=mode-seg]');

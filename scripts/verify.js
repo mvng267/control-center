@@ -170,6 +170,26 @@ if (fs.existsSync(cssFile)) {
   } else {
     console.log('  ok   mọi fetch() thẳng tới /api/* đều gắn token');
   }
+
+  /* <img src> cũng KHÔNG gửi được header token — cùng hạn chế với EventSource.
+     Lỗi thật đã gặp: ảnh Claude gửi về không xem được từ iPhone vì
+     /api/toolimg trả 401. Đo từ ngoài: không token -> 401, thêm ?t= -> 200.
+     Mọi src trỏ /api/ phải đi qua imgUrl() (lib/api.ts). */
+  const anhThieu = [];
+  for (const f of gd) {
+    const L = fs.readFileSync(f, 'utf8').split('\n');
+    L.forEach((l, i) => {
+      if (!/\bsrc=\{?[`'"]?[^}]*\/api\//.test(l)) return;
+      if (!/imgUrl|[?&]t=/.test(l)) anhThieu.push(path.relative(ROOT, f) + ':' + (i + 1));
+    });
+  }
+  if (anhThieu.length) {
+    bad++;
+    console.log('  LỖI  src= trỏ /api/* mà KHÔNG gắn token (ảnh vỡ khi vào từ máy khác):');
+    anhThieu.forEach((t) => console.log('       ' + t));
+  } else {
+    console.log('  ok   mọi src= trỏ /api/* đều gắn token');
+  }
 }
 
 console.log(bad ? '\n' + bad + ' file có lỗi' : '\nTất cả hợp lệ (' + targets.length + ' file JS)');

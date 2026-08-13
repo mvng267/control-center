@@ -177,6 +177,10 @@ function parseSessionFile(file) {
     toolIndex: new Map(),
     usage: { inTok: 0, outTok: 0, cacheRead: 0, cacheWrite: 0, turns: 0 },
     aiTitle: '',   // Claude CLI tự sinh tiêu đề (dòng type=ai-title), lấy bản MỚI NHẤT
+    /* Tên NGƯỜI DÙNG tự đặt trên Claude CLI (dòng type=custom-title). Trước đây bị bỏ
+       qua hoàn toàn nên dashboard hiện tên máy sinh thay vì tên đã đặt — đếm thật:
+       1.236 dòng trên máy Debian ("EDMICRO SSO", "video-library"…). */
+    customTitle: '',
     firstUser: '', // dự phòng khi session chưa có ai-title: câu đầu của user
     model: '',     // model + mức nghĩ của lượt assistant mới nhất
     effort: '',
@@ -189,7 +193,7 @@ function parseSessionFile(file) {
     hookDaThay: new Map(),
   };
   const { msgs, toolIndex, usage } = S;
-  let { aiTitle, firstUser, model, effort } = S;
+  let { aiTitle, customTitle, firstUser, model, effort } = S;
 
   let raw;
   if (them !== null) {
@@ -209,6 +213,8 @@ function parseSessionFile(file) {
     let obj;
     try { obj = JSON.parse(line); } catch { continue; }
     if (obj.type === 'ai-title') { if (obj.aiTitle) aiTitle = obj.aiTitle; continue; }
+    // Tên do NGƯỜI DÙNG đặt trên CLI — thắng ai-title do máy sinh (xem titleOf)
+    if (obj.type === 'custom-title') { if (obj.customTitle) customTitle = obj.customTitle; continue; }
 
     /* Các dòng dưới đây TRƯỚC ĐÂY BỊ BỎ HẾT bởi một câu `continue`. Đếm trên 180 file
        .jsonl thật: 11.881 hook chạy LỖI, 4.023 dòng subagent, 16 lỗi API (có cả 401
@@ -385,20 +391,55 @@ function parseSessionFile(file) {
     msgs.push({ role: obj.type, text, ts: obj.timestamp || null, parts, sub: !!obj.isSidechain });
   }
   // tsMs: timestamp (ms) từng message — precompute 1 lần để đếm unread không tốn Date.parse mỗi tick
-  // title: ai-title của Claude CLI; chưa có thì lấy câu đầu của user (cắt gọn)
-  const title = aiTitle || (firstUser ? firstUser.replace(/\s+/g, ' ').slice(0, 70) : '');
+  /* Tiêu đề: tên NGƯỜI DÙNG đặt trên CLI thắng ai-title do máy sinh. Trước đây chỉ
+     đọc ai-title nên phiên Vinh đặt tên "video-library" vẫn hiện
+     "Kiểm tra job video và huỷ đồng bộ Dailymotion". */
+  const title = customTitle || aiTitle
+    || (firstUser ? firstUser.replace(/\s+/g, ' ').slice(0, 70) : '');
   // Chế độ plan: Claude ghi kế hoạch ra ~/.claude/plans/*.md rồi DỪNG, không đụng file đích.
   // Lượt cuối là assistant + có nhắc tới file kế hoạch => đang chờ người duyệt.
   const lastMsg = msgs[msgs.length - 1];
   const planFile = lastMsg && lastMsg.role === 'assistant'
     ? (lastMsg.text.match(/[^\s`'"]*\.claude\/plans\/[^\s`'")]+\.md/) || [null])[0]
     : null;
+
+  /* Phiên đang ĐỨNG IM CHỜ NGƯỜI BẤM — thứ phải đập vào mắt ở danh sách.
+     Trước đây chỉ dò chuỗi ".claude/plans/*.md" trong văn bản lượt cuối, bỏ sót nhiều:
+     đếm trên .jsonl thật có 201 lần ExitPlanMode và 101 lần AskUserQuestion.
+     Dò theo TÊN TOOL chưa có kết quả thì chắc hơn hẳn khớp chuỗi. */
+  const cho = (() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === 'system') continue;
+      if (m.role !== 'assistant') return '';   // người dùng đã trả lời -> hết chờ
+      for (const p of (m.parts || [])) {
+        if (p.t !== 'tool' || p.status !== 'pending') continue;
+        if (p.name === 'ExitPlanMode') return 'ke-hoach';
+        if (p.name === 'AskUserQuestion') return 'cau-hoi';
+      }
+      return '';   // lượt assistant cuối không có tool chờ -> không chờ gì
+    }
+    return '';
+  })();
+
+  /* Lệnh Claude ĐANG chạy dở: tool_use chưa có tool_result ở lượt cuối.
+     Khác `tinCuoi`: chỗ đó ưu tiên câu chữ nên tool bị `break` nuốt mất, thực tế gần
+     như không bao giờ hiện được "đang chạy Bash". */
+  const dangChay = (() => {
+    const m = msgs[msgs.length - 1];
+    if (!m || m.role !== 'assistant') return '';
+    const t = (m.parts || []).find(p => p.t === 'tool' && p.status === 'pending');
+    if (!t) return '';
+    return (t.disp || t.name || '') + (t.summary ? '(' + t.summary + ')' : '');
+  })();
+
   const data = {
-    msgs, mtimeMs: st.mtimeMs, title, planFile, usage, model, effort,
+    msgs, mtimeMs: st.mtimeMs, title, planFile, usage, model, effort, cho, dangChay,
     tsMs: msgs.map(m => Date.parse(m.ts) || 0),
   };
   // Ghi lại giá trị đã cập nhật trong vòng lặp để lần đọc thêm sau nối tiếp đúng.
-  S.aiTitle = aiTitle; S.firstUser = firstUser; S.model = model; S.effort = effort;
+  S.aiTitle = aiTitle; S.customTitle = customTitle;
+  S.firstUser = firstUser; S.model = model; S.effort = effort;
   // moc = MOC_KIEM byte cuối file, dùng lần sau để chắc phần đầu chưa bị ghi đè.
   cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, data, state: S, moc: mocCuoi(file, st.size) });
   return data;
@@ -728,8 +769,13 @@ async function listSessions() {
         // dashboard-models.json — file đó chỉ có rác test, không ứng với phiên nào
         model: parsed.model || '',
         effort: parsed.effort || '',
-        // đang dừng chờ duyệt kế hoạch: phải nhìn thấy NGAY ở danh sách
-        choDuyet: !!parsed.planFile,
+        /* Đang ĐỨNG IM chờ người bấm — phải nhìn thấy NGAY ở danh sách.
+           choDuyet giữ kiểu boolean cho giao diện cũ (web/legacy) khỏi vỡ;
+           `cho` mang lý do cụ thể: 'ke-hoach' | 'cau-hoi'. */
+        choDuyet: !!(parsed.cho || parsed.planFile),
+        cho: parsed.cho || (parsed.planFile ? 'ke-hoach' : ''),
+        // lệnh Claude đang chạy dở (tool chưa có kết quả) — chỉ có nghĩa khi RUNNING
+        dangChay: parsed.dangChay || '',
       });
     }
   }

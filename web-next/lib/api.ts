@@ -69,3 +69,13 @@ export function streamUrl() {
   const t = getToken();
   return '/stream' + (t ? '?t=' + encodeURIComponent(t) : '');
 }
+
+/* URL ảnh cho <img src>. Cùng hạn chế với EventSource: thẻ <img> KHÔNG gửi được
+   header X-Dash-Token, nên token phải đi qua query string.
+   Đã đo từ máy khác: /api/toolimg không kèm token -> HTTP 401, ảnh vỡ hết; thêm ?t=
+   -> 200 image/png. Không lộ ở localhost vì loopback được server miễn token — đúng
+   loại lỗi chỉ hiện khi vào từ iPhone. */
+export function imgUrl(duong: string) {
+  const t = getToken();
+  return duong + (t ? (duong.includes('?') ? '&' : '?') + 't=' + encodeURIComponent(t) : '');
+}

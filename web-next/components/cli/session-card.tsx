@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { MessageSquare, Coins, CornerDownRight, ClipboardList, Cpu } from 'lucide-react';
+import {
+  MessageSquare, Coins, CornerDownRight, ClipboardList, Cpu,
+  Terminal, TriangleAlert, Zap, CircleHelp,
+} from 'lucide-react';
 import type { Session } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -72,13 +75,20 @@ export function SessionCard({
       /* min-w-0 là BẮT BUỘC: ô lưới mặc định min-width:auto, nên câu cuối dài đẩy
          thẻ phình ra 455px trong khung 356px — chữ bị cắt mất bên phải (đo trên
          iPhone 390px). Không có nó thì line-clamp/truncate bên trong đều vô nghĩa. */
+      /* Viền TRÁI dày + nền thở khi đang chạy: nhìn lướt cả danh sách là thấy ngay
+         phiên nào còn sống, không phải soi từng chấm nhỏ trong hàng số liệu.
+         `thoNhe` là keyframes riêng ở globals.css — animate-pulse của Tailwind nhấp
+         nháy đều và gắt, dùng cho cả dòng thì rối mắt. */
       className={cn(
-        'group relative flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl border bg-card p-3 transition-colors',
-        chon ? 'border-primary' : 'border-border hover:border-primary/40 hover:bg-accent/30',
+        'group relative flex min-w-0 cursor-pointer flex-col gap-1.5 rounded-xl border border-l-[3px] bg-card px-3 py-2.5 transition-colors',
+        dangChay
+          ? 'border-l-status-ok border-border animate-tho'
+          : 'border-l-border/60 border-border',
+        chon ? 'border-primary' : 'hover:border-primary/40 hover:bg-accent/30',
       )}>
 
-      {/* hàng 1: chọn + tiêu đề + menu */}
-      <div className="flex items-start gap-2">
+      {/* DÒNG 1: chọn + trạng thái + tiêu đề + dự án + số liệu + thời gian */}
+      <div className="flex items-center gap-2">
         {/* Bọc <label> để nới VÙNG CHẠM lên 44px mà không phóng to ô vuông.
             Đo trên iPhone: ô chỉ 16×16, ngón tay lệch 18px là trượt — mà trượt thì
             rơi vào thẻ và MỞ NHẦM PHIÊN, chứ không phải không ăn gì.
@@ -99,91 +109,111 @@ export function SessionCard({
             onChange={(e) => onChon(e.target.checked)} />
         </label>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-[14px] font-medium" data-testid="session-title" title={s.sid}>
-              {s.title || s.sid.slice(0, 8)}
-            </span>
-            {s.unread > 0 && (
-              <span className="shrink-0 rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
-                {s.unread}
+        {/* Chấm trạng thái ra ĐẦU DÒNG — trước đây nằm lẫn trong hàng số liệu ở dưới
+            cùng nên phải soi mới thấy. */}
+        <i data-testid="card-cham" title={tt.nhan}
+          className={cn('size-2 shrink-0 rounded-full', tt.cham, dangChay && 'animate-pulse')} />
+
+        {/* KHÔNG shrink-0: tiêu đề dài mà không co được thì nó đẩy dự án và thời gian
+            tràn ra ngoài, chữ chồng lên nhau (đo trên iPhone 390px). Cho co + truncate,
+            tiêu đề vẫn được ưu tiên chỗ vì các phần khác đều shrink-0. */}
+        <span className="min-w-0 truncate text-[13.5px] font-medium" data-testid="session-title"
+          title={s.title || s.sid}>
+          {s.title || s.sid.slice(0, 8)}
+        </span>
+
+        {s.unread > 0 && (
+          <span className="shrink-0 rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
+            {s.unread}
+          </span>
+        )}
+
+        {/* Thư mục gốc đã xoá -> --resume trượt, tin nhắn RƠI VÀO HƯ KHÔNG. */}
+        {s.duAn && !s.duAn.conTonTai && (
+          <span data-testid="card-mat" title="Thư mục gốc đã bị xoá — nhắn vào phiên này sẽ không tới nơi"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-error/12 px-1.5 py-px text-[10.5px] font-medium text-status-error">
+            <TriangleAlert className="size-3" />đã xoá
+          </span>
+        )}
+
+        {/* Dự án nằm CÙNG dòng tiêu đề, không tách dòng riêng: card hai dòng thì mỗi
+            dòng thừa là một phiên ít đi trong màn. Co lại được nên chật thì tự cắt. */}
+        {!anDuAn && (
+          <span className="flex min-w-0 shrink items-center gap-1 text-[11.5px] text-muted-foreground"
+            data-testid="card-project">
+            <Terminal className="size-3 shrink-0 opacity-50" />
+            {/* Giới hạn 7rem: tên dự án dài (volvo.dalianperfume.com) mà không chặn
+                thì nó chiếm hết chỗ của tiêu đề — thứ quan trọng hơn. */}
+            <span className="max-w-[7rem] truncate font-medium text-foreground/60">{s.duAn?.ten || s.project}</span>
+            {!!(s.duAn?.repo || s.duAn?.duongDan) && (
+              <span className="hidden truncate opacity-70 md:inline" title={s.duAn?.duongDan}>
+                {s.duAn?.repo ? s.duAn.repo + (s.duAn.nhanh ? ' · ' + s.duAn.nhanh : '') : s.duAn?.duongDan}
               </span>
             )}
-          </div>
-          {/* Đang gom nhóm thì tên dự án đã nằm ở đầu nhóm — lặp lại trên từng thẻ chỉ
-              tốn thêm một dòng, mà trên iPhone mỗi dòng là một thẻ ít đi. */}
-          {!anDuAn && (
-            <div className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted-foreground"
-              data-testid="card-project">
-              <span className="shrink-0 font-medium text-foreground/75">{s.duAn?.ten || s.project}</span>
-              {/* Repo GitHub khi có git, không thì đường dẫn rút gọn — trả lời câu
-                  "dự án này nằm ở đâu" ngay trên thẻ, khỏi mở phiên ra xem. */}
-              {!!(s.duAn?.repo || s.duAn?.duongDan) && (
-                <span className="truncate" title={s.duAn?.duongDan}>
-                  {s.duAn?.repo
-                    ? s.duAn.repo + (s.duAn.nhanh ? ' · ' + s.duAn.nhanh : '')
-                    : s.duAn?.duongDan}
-                </span>
-              )}
-              {/* Thư mục gốc đã bị xoá -> --resume trượt và tin nhắn RƠI VÀO HƯ KHÔNG.
-                  Trước đây chỉ biết sau khi đã gửi. 24 phiên trên máy này dính. */}
-              {s.duAn && !s.duAn.conTonTai && (
-                <span data-testid="card-mat" title="Thư mục gốc đã bị xoá — nhắn vào phiên này sẽ không tới nơi"
-                  className="shrink-0 rounded-md bg-status-error/12 px-1.5 py-px text-[10.5px] font-medium text-status-error">
-                  thư mục đã xoá
-                </span>
-              )}
-            </div>
-          )}
-        </div>
+          </span>
+        )}
 
+        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+          {truoc(s.mtimeMs)}
+        </span>
         <div onClick={(e) => e.stopPropagation()}>{menu}</div>
       </div>
 
-      {/* hàng 2: đang dở việc gì — thứ bảng cũ KHÔNG hiện được chỗ nào */}
-      {s.tinCuoi && (
-        <div className="flex gap-1.5 pl-6" data-testid="card-last">
-          <CornerDownRight className="mt-[3px] size-3 shrink-0 text-muted-foreground/50" />
-          <p className="line-clamp-2 min-w-0 flex-1 text-[12px] leading-snug text-muted-foreground">
-            <span className={cn('font-medium', s.vaiCuoi === 'user' ? 'text-primary' : 'text-tool-accent')}>
-              {s.vaiCuoi === 'user' ? 'Vinh: ' : 'Claude: '}
-            </span>
-            {s.tinCuoi}
-          </p>
+      {/* DÒNG 2: đang dở việc gì (trái) + số liệu (phải).
+          Ưu tiên LỆNH ĐANG CHẠY vì đó mới là thứ đang diễn ra ngay lúc này; không có
+          thì mới hiện câu cuối. Số liệu dồn về phải và ẩn dần theo bề rộng — iPhone
+          390px chỉ vừa ~52 ký tự nên câu cuối được ưu tiên giữ. */}
+      <div className="flex min-w-0 items-center gap-2 pl-4">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5" data-testid="card-last">
+          {s.dangChay ? (
+            <>
+              <Zap className="size-3 shrink-0 animate-pulse text-status-ok" />
+              <span className="truncate text-[11.5px] text-status-ok" data-testid="card-lenh">
+                đang chạy {s.dangChay}
+              </span>
+            </>
+          ) : s.tinCuoi ? (
+            <>
+              <CornerDownRight className="size-3 shrink-0 text-muted-foreground/40" />
+              <p className="truncate text-[11.5px] leading-snug text-muted-foreground">
+                <span className={cn('font-medium', s.vaiCuoi === 'user' ? 'text-primary' : 'text-tool-accent')}>
+                  {s.vaiCuoi === 'user' ? 'Vinh: ' : 'Claude: '}
+                </span>
+                {s.tinCuoi}
+              </p>
+            </>
+          ) : (
+            <span className={cn('text-[11.5px]', tt.chu)}>{tt.nhan}</span>
+          )}
         </div>
-      )}
 
-      {/* hàng 3: các số liệu + trạng thái */}
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pl-6 text-[11.5px] text-muted-foreground">
-        <span className={cn('inline-flex items-center gap-1.5', tt.chu)}>
-          <i className={cn('size-1.5 rounded-full', tt.cham, dangChay && 'animate-pulse')} />
-          {tt.nhan}
-        </span>
-        <span className="inline-flex items-center gap-1 tabular-nums" title={s.msgs + ' tin nhắn'}>
-          <MessageSquare className="size-3" />{s.luot ? s.luot + ' lượt' : s.msgs + ' tin'}
-        </span>
-        {!!s.tok && (
-          <span className="inline-flex items-center gap-1 tabular-nums" title={s.tok.toLocaleString('vi-VN') + ' token'}>
-            <Coins className="size-3" />{gonSo(s.tok)}
+        <span className="flex shrink-0 items-center gap-2.5 text-[11px] tabular-nums text-muted-foreground">
+          {!!model && (
+            <span className="hidden items-center gap-1 lg:inline-flex" data-testid="card-model"
+              title={(s.model || '') + (s.effort ? ' · mức nghĩ ' + s.effort : '')}>
+              <Cpu className="size-3 opacity-60" />{model}{s.effort ? '·' + s.effort : ''}
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1" title={s.msgs + ' tin nhắn'}>
+            <MessageSquare className="size-3 opacity-60" />{s.luot || s.msgs}
           </span>
-        )}
-        {/* Model + mức nghĩ: đọc thẳng từ .jsonl của phiên, nên đúng cả với phiên
-            chạy từ terminal chứ không riêng phiên do dashboard tạo. */}
-        {!!model && (
-          <span className="inline-flex items-center gap-1" data-testid="card-model"
-            title={(s.model || '') + (s.effort ? ' · mức nghĩ ' + s.effort : '')}>
-            <Cpu className="size-3" />{model}{s.effort ? ' · ' + s.effort : ''}
-          </span>
-        )}
-        <span className="ml-auto shrink-0 tabular-nums">{truoc(s.mtimeMs)}</span>
+          {!!s.tok && (
+            <span className="hidden items-center gap-1 sm:inline-flex"
+              title={s.tok.toLocaleString('vi-VN') + ' token'}>
+              <Coins className="size-3 opacity-60" />{gonSo(s.tok)}
+            </span>
+          )}
+        </span>
       </div>
 
-      {/* Chờ duyệt kế hoạch: phải đập vào mắt ngay ở danh sách, vì phiên đang ĐỨNG
-          IM chờ người bấm — trước đây chỉ biết khi mở phiên ra. */}
+      {/* Phiên ĐỨNG IM CHỜ NGƯỜI BẤM — trước đây chỉ biết khi mở phiên ra.
+          Hai loại khác nhau: duyệt kế hoạch, và Claude hỏi để chọn phương án. */}
       {s.choDuyet && (
-        <div data-testid="card-plan"
-          className="ml-6 flex items-center gap-1.5 rounded-lg border border-primary/35 bg-primary/10 px-2 py-1 text-[11.5px] font-medium text-primary">
-          <ClipboardList className="size-3.5 shrink-0" /> Đang chờ duyệt kế hoạch
+        <div data-testid="card-plan" data-cho={s.cho || 'ke-hoach'}
+          className="ml-4 flex items-center gap-1.5 rounded-md border border-primary/35 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+          {s.cho === 'cau-hoi'
+            ? <><CircleHelp className="size-3 shrink-0" /> Claude đang hỏi — cần chọn</>
+            : <><ClipboardList className="size-3 shrink-0" /> Đang chờ duyệt kế hoạch</>}
         </div>
       )}
     </div>

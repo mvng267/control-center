@@ -172,3 +172,18 @@
     width: 100%; height: 100%;
   }
 }
+
+/* Nhịp "thở" cho dòng phiên đang chạy — nền sáng lên rồi dịu đi rất nhẹ.
+   Không dùng animate-pulse của Tailwind: nó đổi opacity CẢ KHỐI (0 -> 1) nên chữ
+   cũng mờ theo, đọc rất mệt khi áp cho cả dòng. Đây chỉ đổi màu nền.
+   3.2s cho cảm giác thở chậm; nhanh hơn thì thành nhấp nháy gây rối. */
+@keyframes tho {
+  0%, 100% { background-color: color-mix(in oklab, var(--status-ok) 4%, transparent); }
+  50%      { background-color: color-mix(in oklab, var(--status-ok) 11%, transparent); }
+}
+.animate-tho { animation: tho 3.2s ease-in-out infinite; }
+
+/* Tôn trọng người tắt hiệu ứng chuyển động trong cài đặt hệ thống */
+@media (prefers-reduced-motion: reduce) {
+  .animate-tho { animation: none; }
+}

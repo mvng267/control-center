@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Images, Loader2 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, imgUrl } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ImageZoom } from './tool-card';
 
@@ -76,7 +76,8 @@ export function AnhPhien({ sid, onClose }: { sid: string; onClose: () => void })
                 dòng chữ kích thước. h-fit + shrink-0 để ô ôm đúng nội dung; ô đã cao
                 104px nên vùng chạm vượt 44px sẵn. */}
             {anh.map((a, k) => {
-              const src = `/api/toolimg/${sid}/${a.id}/${a.i}`;
+              // imgUrl gắn ?t= — <img> không gửi được header token (xem lib/api.ts)
+  const src = imgUrl(`/api/toolimg/${sid}/${a.id}/${a.i}`);
               return (
                 <button key={a.id + ':' + a.i + ':' + k} onClick={() => setZoom(src)}
                   data-testid="anh-o"

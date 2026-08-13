@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus } from 'lucide-react';
+import {
+  ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus,
+  Terminal, FileCode2, Zap, Brain,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
 import { Markdown } from './markdown';
@@ -668,15 +671,40 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           <EffortSwitch effort={effort} compact />
           <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">Enter</b> gửi</span>
           <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">Shift+Enter</b> xuống dòng</span>
-          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">/</b> lệnh</span>
-          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">@</b> file</span>
-          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">!</b> bash</span>
-          <span className="hidden sm:inline"><b className="font-semibold text-muted-foreground">#</b> ghi nhớ</span>
           {(h?.typing || h?.status === 'RUNNING') && (
             <span className="ml-auto text-status-error">
               <b className="font-semibold">Esc</b> dừng
             </span>
           )}
+        </div>
+
+        {/* HÀNG NÚT GỢI Ý — bấm được, hiện ở MỌI bề rộng.
+            Trước đây `/` `@` `!` `#` chỉ là chữ nhắc `hidden sm:inline`, nên trên
+            iPhone — nơi Vinh dùng chính — không thấy gì, mà cũng không gõ được vì
+            bàn phím ảo phải chuyển sang bảng ký hiệu mới có `/` và `@`.
+            Bấm nút = chèn ký tự vào ô nhập rồi focus, đúng như gõ tay: bảng gợi ý
+            lệnh/file tự bung theo. */}
+        <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5"
+          style={{ scrollbarWidth: 'none' }} data-testid="goi-y">
+          {[
+            { k: '/', nhan: 'lệnh', Icon: Terminal },
+            { k: '@', nhan: 'file', Icon: FileCode2 },
+            { k: '!', nhan: 'bash', Icon: Zap },
+            { k: '#', nhan: 'ghi nhớ', Icon: Brain },
+          ].map(({ k, nhan, Icon }) => (
+            <button key={k} type="button" data-testid={'goi-y-' + nhan}
+              onClick={() => {
+                // Thêm vào CUỐI chỗ đang gõ chứ không ghi đè — người dùng có thể đã
+                // gõ dở rồi mới nhớ ra muốn chèn file.
+                setText((t) => (t && !t.endsWith(' ') ? t + ' ' : t) + k);
+                inputRef.current?.focus();
+              }}
+              className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95">
+              <Icon className="size-3 opacity-70" />
+              <b className="font-semibold text-foreground/80">{k}</b>
+              <span className="font-sans">{nhan}</span>
+            </button>
+          ))}
         </div>
       </div>
     </div>

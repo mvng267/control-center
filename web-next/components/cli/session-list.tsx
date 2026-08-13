@@ -15,7 +15,7 @@ import { PageHeader } from '@/components/layout/app-shell';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { TaskBar } from './task-bar';
+import { ManTaoTask } from './man-tao-task';
 import { JobsPanel } from './jobs-panel';
 import { SessionCard } from './session-card';
 
@@ -103,6 +103,7 @@ export function SessionList({
   // Trên desktop luôn bật vì có chỗ.
   const [cheDoChon, setCheDoChon] = useState(false);
   const [gapNhom, setGapNhom] = useState<Set<string>>(new Set());
+  const [taoTask, setTaoTask] = useState(false);   // màn giao việc (toàn màn hình)
 
   useEffect(() => {
     try { setMoNhap(localStorage.getItem('cli-mo-nhap') === '1'); } catch {}
@@ -233,10 +234,11 @@ export function SessionList({
               <SlidersHorizontal className="size-3.5" />
               {stat === 'run' ? 'Đang chạy' : stat === 'idle' ? 'Đã nghỉ' : 'Lọc'}
             </Button>
-            {/* Trước đây focus vào Ô TÌM — sai chỗ. Giao việc mới nằm ở ô task dưới đáy. */}
+            {/* Mở HẲN màn giao việc. Trước đây chỉ focus vào thanh dẹt dưới đáy —
+                thanh đó cao 109px chiếm chỗ vĩnh viễn mà lúc cần lại quá chật. */}
             <Button size="sm" className="tap44 h-9 gap-1.5" data-testid="new-session"
-              onClick={() => document.querySelector<HTMLInputElement>('[data-testid=task-input]')?.focus()}>
-              <Plus className="size-3.5" /> Phiên mới
+              onClick={() => setTaoTask(true)}>
+              <Plus className="size-3.5" /> Giao việc
             </Button>
           </>
         }
@@ -403,7 +405,7 @@ export function SessionList({
                       )}
                     </div>
                     {!gap && (
-                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      <div className="flex flex-col gap-2">
                         {g.ss.map((s) => (
                           <SessionCard key={s.sid} s={s} truoc={ago} anDuAn
                             chon={sel.has(s.sid)} cheDoChon={cheDoChon}
@@ -423,8 +425,13 @@ export function SessionList({
               })}
             </div>
           ) : (
-            <div data-testid="session-grid"
-              className="grid gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
+            /* MỘT CỘT hàng ngang. Lưới 2-3 cột cũ bắt mắt phải quét zigzag, và mỗi
+               thẻ 131px nên desktop chỉ lọt 10 dòng. Dòng ngang hai tầng khoảng 68px
+               vừa dày gấp đôi, vừa đọc theo thứ tự trên xuống như log terminal.
+               Chú thích để NGOÀI dấu ngoặc nhọn: nhánh ternary chỉ nhận MỘT phần tử,
+               thêm một khối chú thích JSX nữa vào là thành hai phần tử, Turbopack
+               báo "Expected '</', got 'ident'". */
+            <div data-testid="session-grid" className="flex flex-col gap-2 p-3">
               {view.map((s) => (
                 <SessionCard key={s.sid} s={s} truoc={ago}
                   chon={sel.has(s.sid)} cheDoChon={cheDoChon}
@@ -491,7 +498,12 @@ export function SessionList({
           </div>
         </div>
       </div>
-      <TaskBar perm={perm} effort={effort} onOpen={onOpen} />
+      {/* Giao việc là một MÀN RIÊNG, không phải thanh dẹt chiếm 109px dưới đáy danh
+          sách. Bấm "Giao việc" ở đầu trang mới mở. */}
+      {taoTask && (
+        <ManTaoTask perm={perm} effort={effort}
+          onDong={() => setTaoTask(false)} onOpen={onOpen} />
+      )}
     </div>
   );
 }

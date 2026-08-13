@@ -36,7 +36,9 @@ export interface Session {
   tokDoc?: number;     // token đọc từ cache
   tokGhi?: number;     // token ghi vào cache
   luot?: number;       // số lượt hỏi-đáp
-  choDuyet?: boolean;  // đang dừng chờ duyệt kế hoạch
+  choDuyet?: boolean;  // đang ĐỨNG IM chờ người bấm (giữ boolean cho giao diện cũ)
+  cho?: string;        // lý do chờ: 'ke-hoach' (duyệt kế hoạch) | 'cau-hoi' (Claude hỏi)
+  dangChay?: string;   // lệnh đang chạy dở, vd "Bash(npm test)"
 }
 
 export interface Job {

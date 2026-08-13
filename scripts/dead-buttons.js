@@ -14,7 +14,11 @@
 const path = require('path');
 const pw = require(path.join(__dirname, '..', 'node_modules', 'playwright-core'));
 
-const URL = process.argv[2] || 'http://localhost:7799/';
+/* Nhận URL qua tham số dòng lệnh HOẶC biến DASH_URL. Trước đây chỉ đọc argv, mà
+   scripts/test-all.js lại truyền bằng DASH_URL — nên bộ này luôn quét server 7799
+   thay vì server tạm mà test-all vừa dựng. Không lộ ra vì máy Vinh gần như lúc nào
+   cũng có dashboard chạy sẵn ở 7799; tắt nó đi là bộ này ném ECONNREFUSED. */
+const URL = process.argv[2] || process.env.DASH_URL || 'http://localhost:7799/';
 const TABS = ['cli', 'hermes', 'agy', 'stats'];
 
 (async () => {
