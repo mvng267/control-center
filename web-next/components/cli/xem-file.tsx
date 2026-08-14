@@ -18,7 +18,7 @@ import { toast } from 'sonner';
    Desktop: hai cột — cây trái 240px, nội dung phải. */
 
 interface Tep { ok: boolean; noiDung?: string; soDong?: number; kichThuoc?: number; laNhiPhan?: boolean; quaLon?: boolean; error?: string }
-interface Cay { ok: boolean; root: string | null; files: string[] }
+interface Cay { ok: boolean; root: string | null; files: string[]; quaRong?: boolean }
 
 function co(n?: number) {
   if (!n) return '';
@@ -145,7 +145,16 @@ export function XemFile({ sid, onClose }: { sid: string; onClose: () => void }) 
             {!cay && <div className="flex items-center gap-2 p-3 text-[12px] text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" /> Đang quét thư mục…
             </div>}
-            {cay && !cay.files.length && (
+            {/* cwd = thư mục nhà: cây sẽ là 4000 file lẫn lộn Desktop/Documents/Library,
+                vừa vô dụng để đọc mã vừa phơi hết file cá nhân ra tailnet. Nói thẳng lý
+                do, đừng để người dùng nhìn cây trống rồi tưởng hỏng. */}
+            {cay?.quaRong && (
+              <p className="p-3 text-[12px] leading-relaxed text-muted-foreground" data-testid="file-qua-rong">
+                Phiên này chạy thẳng ở <b className="font-mono">{cay.root}</b> — cả thư mục nhà,
+                nên không mở cây file. Mở phiên nào chạy trong thư mục dự án để xem mã.
+              </p>
+            )}
+            {cay && !cay.quaRong && !cay.files.length && (
               <p className="p-3 text-[12px] text-muted-foreground">
                 {cay.root ? 'Không có file nào khớp.' : 'Phiên này không có thư mục làm việc.'}
               </p>

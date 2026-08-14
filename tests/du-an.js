@@ -409,6 +409,43 @@ async function snapshot() {
     }
   }
 
+  /* ---- cwd = thư mục NHÀ thì không mở file ----
+     Đo thật: 33 phiên có cwd = os.homedir(), nhóm cwd đông nhất trên máy này. Với
+     chúng "thư mục dự án" là cả nhà — cây ra 4000 file gồm Desktop/Documents/Library
+     và đọc được Desktop/Chatgpt/accounts_*.txt. Chốt chặn đường dẫn không giúp gì vì
+     mọi file đó ĐÚNG LÀ nằm trong cwd; cách duy nhất là từ chối mở gốc rộng quá. */
+  {
+    const snap2 = await snapshot();
+    const nha = (snap2.data.sessions || []).filter((s) => s.duAn && s.duAn.khoa === os.homedir());
+    if (!nha.length) {
+      ok('có phiên cwd = nhà để kiểm', true, '(máy này không có phiên nào chạy ở ~)');
+    } else {
+      const sid = nha[0].sid;
+      const t = await fetch(`${URL}/api/tree?sid=${sid}`, { headers: { 'X-Dash-Token': token } })
+        .then((r) => r.json()).catch(() => ({}));
+      ok('cwd = nhà: cây file trả rỗng kèm cờ quaRong',
+        t.quaRong === true && (t.files || []).length === 0,
+        `quaRong=${t.quaRong} files=${(t.files || []).length}`);
+
+      const f = await fetch(`${URL}/api/file?sid=${sid}&path=${encodeURIComponent('Desktop')}`,
+        { headers: { 'X-Dash-Token': token } });
+      const fb = await f.json().catch(() => ({}));
+      ok('cwd = nhà: không đọc được file nào',
+        f.status === 403 && !fb.noiDung, f.status + ' ' + (fb.error || ''));
+
+      // và phiên dự án BÌNH THƯỜNG vẫn phải mở được, không chặn quá tay
+      const thuong = (snap2.data.sessions || []).find((s) => s.duAn && s.duAn.conTonTai
+        && !s.duAn.laNhap && s.duAn.khoa !== os.homedir());
+      if (thuong) {
+        const t2 = await fetch(`${URL}/api/tree?sid=${thuong.sid}`, { headers: { 'X-Dash-Token': token } })
+          .then((r) => r.json()).catch(() => ({}));
+        ok('phiên dự án thường vẫn mở được cây file',
+          !t2.quaRong && (t2.files || []).length > 0,
+          `${(t2.files || []).length} file | ${thuong.duAn.ten}`);
+      }
+    }
+  }
+
   /* ---- /api/plan: CÙNG chốt chặn với /api/file ----
      Chỗ này từng tự viết luật riêng (resolve + startsWith + endsWith('.md')) và thủng
      y hệt — đã đo thật: symlink tên `x.md` trong ~/.claude/plans trỏ tới

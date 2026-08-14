@@ -743,6 +743,22 @@ function moFileAnToan(goc, duongXin) {
   return { that, st };
 }
 
+/* ---- cwd rộng tới mức "xem file" thành trình duyệt cả ổ đĩa ----
+   Đo thật trên máy này: 33 phiên có cwd = /Users/mvng, tức HOME — và đó là nhóm cwd
+   ĐÔNG NHẤT (hơn cả agy-proxy 30 và control 11). Với chúng, "thư mục dự án" là cả nhà:
+   cây liệt kê 4000 file (chạm trần) gồm Desktop 3243, Documents 414, Library 322, và
+   đọc được những thứ như Desktop/Chatgpt/accounts_*.txt.
+
+   Chốt chặn đường dẫn không giúp gì ở đây — mọi file đó ĐÚNG LÀ nằm trong cwd. Cách
+   duy nhất là từ chối mở cây khi gốc rộng quá. Chỉ chặn ĐÚNG home và các thư mục trên
+   nó; ~/Desktop/project/*, ~/.hermes/tools… vẫn mở bình thường, nên 33 phiên kia chỉ
+   mất panel xem file (thứ vốn vô dụng với 4000 file lẫn lộn), không mất gì khác. */
+function gocQuaRong(goc) {
+  const nha = os.homedir();
+  if (goc === nha || goc === path.dirname(nha) || goc === path.parse(goc).root) return true;
+  return false;
+}
+
 function findSessionFile(sid) {
   let dirs = [];
   try { dirs = fs.readdirSync(PROJECTS_DIR); } catch { return null; }
@@ -2587,6 +2603,9 @@ const server = http.createServer(async (req, res) => {
     const sid = String(url.searchParams.get('sid') || '');
     const root = sid ? sessionCwd(sid) : null;
     if (!root) return json(res, 200, { ok: true, root: null, files: [] });
+    if (gocQuaRong(root)) {
+      return json(res, 200, { ok: true, root: gonNha(root), files: [], quaRong: true });
+    }
     let ds;
     try { ds = quetFile(root); } catch { return json(res, 200, { ok: true, root, files: [] }); }
     return json(res, 200, { ok: true, root: gonNha(root), files: ds });
@@ -2598,6 +2617,10 @@ const server = http.createServer(async (req, res) => {
     const sid = String(url.searchParams.get('sid') || '');
     const root = sid ? sessionCwd(sid) : null;
     if (!root) return json(res, 400, { error: 'phiên không có thư mục làm việc' });
+    // cùng lý do với /api/tree: cwd = HOME thì "trong thư mục dự án" nghĩa là cả nhà
+    if (gocQuaRong(root)) {
+      return json(res, 403, { error: 'phiên này chạy ở thư mục nhà, không mở file' });
+    }
 
     const mo = moFileAnToan(root, url.searchParams.get('path'));
     if (mo.loi) return json(res, mo.ma, { error: mo.loi });
