@@ -82,13 +82,17 @@ web-next/          GIAO DIỆN CHÍNH — Next.js + shadcn/ui, kiểu Atlas
   app/ components/ lib/
   out/             bản build tĩnh (được commit)
 web/legacy/        giao diện cũ — đường lui, bật bằng NEW_UI=0
-tests/             ui-new (125, giao diện mới), e2e (147, bản cũ), push (19),
-                   push-browser, keyboard, safearea
-scripts/           test-all, verify, dead-buttons, make-icons, bench, check-procs
+bin/control.js     điểm vào khi cài bằng npm (--port, --version, --help)
+tests/             ui-new (171, giao diện mới), e2e (147, bản cũ), du-an (47),
+                   may-moi (19), push (19), push-browser, keyboard, safearea
+scripts/           test-all, verify, dead-buttons, khoi-dong-lai, make-icons,
+                   bench, check-procs, cap-nhat-debian.sh
 docs/
-  FEATURES.md      bảng kiểm 102 tính năng — dùng khi sửa lớn
+  CAI-DAT.md       cài trên Mac và Debian
+  FEATURES.md      bảng kiểm tính năng — dùng khi sửa lớn
   CLAUDE-DATA.md   cấu trúc ~/.claude, dashboard đọc/ghi gì
-RULES.md           quy tắc thiết kế + bẫy đã gặp
+CLAUDE.md          hướng dẫn cho Claude Code: kiến trúc, lệnh, bẫy đã gặp
+RULES.md           quy tắc thiết kế giao diện
 ```
 
 ### Sửa giao diện
