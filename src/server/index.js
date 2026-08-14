@@ -682,6 +682,67 @@ function quetFile(root) {
   return files;
 }
 
+/* ---- mở file để ĐỌC, sau khi qua hết chốt chặn ----
+   MỘT nơi duy nhất giữ luật, dùng chung cho /api/file và /api/plan. Hai chỗ đó từng
+   tự viết luật riêng và thủng CÙNG MỘT KIỂU: mỗi lần vá một nơi thì nơi kia vẫn hở.
+   Đã đo thật cả hai — symlink .md trong ~/.claude/plans trỏ ra ~/.ssh trả về nguyên
+   khoá riêng, y hệt lỗi vừa vá ở /api/file.
+
+   Bốn chốt, theo đúng thứ tự này:
+     1. resolve khử ../ rồi bắt buộc nằm trong goc
+     2. tên cấm — chạy TRƯỚC realpath để file cấm luôn trả 403 dù có tồn tại hay không
+        (nếu để sau, cặp 404/403 tự nó khai ra dự án nào đang giữ .env)
+     3. realpath giải symlink rồi kiểm LẠI cả hai điều trên
+     4. nlink — hard link không phải link nên realpath không bắt được */
+const CAM_TEN = [/id_rsa/i, /id_ecdsa/i, /id_ed25519/i, /credential/i, /secret/i,
+  /\.(pem|key|p12|pfx|keystore)$/i, /keychain/i];
+
+// Mọi file/thư mục ẩn đều cấm, không kể tên. Liệt kê từng cái là trò đuổi bắt không
+// bao giờ thắng — `.zsh_history` đã lọt qua danh sách liệt kê và trả về 6.130 ký tự
+// lịch sử shell. quetFile vốn đã bỏ file ẩn khỏi cây nên chặn đây không mất chức năng.
+function coPhanAn(d) {
+  return d.split(/[\\/]/).some((x) => x.startsWith('.') && x !== '.' && x !== '..');
+}
+function camTen(d) {
+  return coPhanAn(d) || CAM_TEN.some((re) => re.test(d));
+}
+
+function trongThuMuc(d, goc) {
+  return d === goc || d.startsWith(goc + path.sep);
+}
+
+/** Trả { ma, loi } nếu bị chặn, hoặc { that, st } nếu qua hết. */
+function moFileAnToan(goc, duongXin) {
+  const xin = path.resolve(goc, String(duongXin || ''));
+  if (!trongThuMuc(xin, goc)) return { ma: 400, loi: 'chỉ đọc được file trong thư mục cho phép' };
+  if (camTen(path.relative(goc, xin))) return { ma: 403, loi: 'file này không cho xem' };
+
+  /* goc cũng phải giải symlink: trên macOS /tmp là symlink sang /private/tmp, không
+     giải thì đá nhầm mọi file hợp lệ của phiên nháp trong /tmp/claude-*. */
+  let that, gocThat;
+  try {
+    that = fs.realpathSync(xin);
+    gocThat = fs.realpathSync(goc);
+  } catch { return { ma: 404, loi: 'không thấy file' }; }
+
+  if (!trongThuMuc(that, gocThat)) return { ma: 400, loi: 'file này là liên kết trỏ ra ngoài thư mục' };
+  // symlink tên vô hại trỏ vào file bí mật NGAY TRONG thư mục: realpath không bắt được
+  if (camTen(path.relative(gocThat, that))) return { ma: 403, loi: 'file này không cho xem' };
+
+  let st;
+  try { st = fs.statSync(that); } catch { return { ma: 404, loi: 'không thấy file' }; }
+  if (!st.isFile()) return { ma: 400, loi: 'không phải file' };
+
+  /* Hard link: tên thứ hai trỏ thẳng vào cùng inode nên đường dẫn thật vẫn nằm trong
+     thư mục — realpath vô dụng ở đây. Đo trước khi chặn: control + agy-proxy = 38.192
+     file, 0 file mã nguồn có nlink > 1; hai file duy nhất là binary esbuild trong
+     node_modules, vốn đã bị chặn vì là nhị phân.
+     Cho người sau: pnpm dựng node_modules bằng hard link — đổi sang pnpm phải xét lại. */
+  if (st.nlink > 1) return { ma: 403, loi: 'file này có nhiều liên kết cứng, không cho xem' };
+
+  return { that, st };
+}
+
 function findSessionFile(sid) {
   let dirs = [];
   try { dirs = fs.readdirSync(PROJECTS_DIR); } catch { return null; }
@@ -2538,75 +2599,12 @@ const server = http.createServer(async (req, res) => {
     const root = sid ? sessionCwd(sid) : null;
     if (!root) return json(res, 400, { error: 'phiên không có thư mục làm việc' });
 
-    /* 1) resolve khử ../ rồi bắt buộc nằm TRONG cwd của phiên.
-          CHƯA ĐỦ MỘT MÌNH: path.resolve chỉ xử lý CHUỖI, không chạm đĩa — một symlink
-          nằm trong dự án trỏ ra ngoài thì đường dẫn vẫn "nằm trong cwd" trong khi
-          readFileSync đi theo link ra tận đâu. Đã thử thật trước khi viết dòng này:
-          ln -s /etc/passwd ./x.txt rồi gọi ?path=x.txt -> đọc trọn /etc/passwd;
-          ln -s ~/.ssh ./d rồi ?path=d/id_ed25519_volvo -> ra nguyên KHOÁ RIÊNG.
-          Nên phải giải symlink bằng realpath rồi kiểm LẠI, và kiểm cả hai đường:
-          đường người dùng xin (chặn ../) lẫn đường thật trên đĩa (chặn symlink). */
-    const xin = path.resolve(root, String(url.searchParams.get('path') || ''));
-    const trongCwd = (d, goc) => d === goc || d.startsWith(goc + path.sep);
-    if (!trongCwd(xin, root)) {
-      return json(res, 400, { error: 'chỉ đọc được file trong thư mục dự án' });
-    }
+    const mo = moFileAnToan(root, url.searchParams.get('path'));
+    if (mo.loi) return json(res, mo.ma, { error: mo.loi });
+    const { that, st } = mo;
 
-    /* 2) Chặn thẳng file bí mật. KHÔNG dựa vào việc quetFile đã bỏ file ẩn: hàm đó
-          phục vụ gợi ý "@", ai sửa nó là chốt chặn này thủng lúc đó.
-          .git/config TỒN TẠI THẬT trong repo (đã kiểm), chứa URL remote.
-          Chạy TRƯỚC realpath: để tên cấm luôn trả 403 dù file có tồn tại hay không —
-          nếu để sau, `.env` ở repo không có file sẽ trả 404 còn repo có file trả 403,
-          tức là chính cặp mã lỗi đó khai ra dự án nào đang giữ .env. */
-    const CAM = [/id_rsa/i, /id_ecdsa/i, /id_ed25519/i, /credential/i, /secret/i,
-      /\.(pem|key|p12|pfx|keystore)$/i, /keychain/i];
-    /* MỌI file/thư mục ẩn đều cấm, không kể tên. quetFile đã bỏ hết file ẩn khỏi cây
-       nên chặn ở đây KHÔNG mất chức năng nào — chỉ khoá cái cửa sau: gõ tay đường dẫn.
-       Liệt kê từng tên (.env, .git, .ssh…) là trò đuổi bắt không bao giờ thắng: đã đo
-       thật, `.zsh_history` lọt qua danh sách cũ và trả về 6.130 ký tự lịch sử shell —
-       nơi mật khẩu và token hay bị dán thẳng vào dòng lệnh. Còn .bash_history,
-       .gnupg, .docker/config.json, .kube/config… thì chưa ai kịp nghĩ tới. */
-    const coPhanAn = (d) => d.split(/[\\/]/).some((x) => x.startsWith('.') && x !== '.' && x !== '..');
-    const camTen = (d) => coPhanAn(d) || CAM.some((re) => re.test(d));
-    if (camTen(path.relative(root, xin))) {
-      return json(res, 403, { error: 'file này không cho xem' });
-    }
-
-    /* 3) Giải symlink rồi kiểm LẠI cả hai điều trên. root cũng phải giải: trên macOS
-          /tmp là symlink tới /private/tmp, nên so đường-thật với root-chưa-giải sẽ đá
-          nhầm cả file hợp lệ của phiên nháp trong /tmp/claude-*. */
-    let that, gocThat;
-    try {
-      that = fs.realpathSync(xin);
-      gocThat = fs.realpathSync(root);
-    } catch { return json(res, 404, { error: 'không thấy file' }); }
-    if (!trongCwd(that, gocThat)) {
-      return json(res, 400, { error: 'file này là liên kết trỏ ra ngoài dự án' });
-    }
-    // symlink tên vô hại trỏ vào file bí mật NGAY TRONG dự án: realpath không bắt được
-    // (vẫn trong cwd), nên phải soi lại tên thật.
-    if (camTen(path.relative(gocThat, that))) {
-      return json(res, 403, { error: 'file này không cho xem' });
-    }
-
-    let st;
-    try { st = fs.statSync(that); } catch { return json(res, 404, { error: 'không thấy file' }); }
-    if (!st.isFile()) return json(res, 400, { error: 'không phải file' });
-
-    /* HARD LINK — lỗ còn lại sau khi bịt symlink, cũng đã bắn thử THẬT:
-         ln ~/.ssh/id_ed25519_volvo ./x.txt  ->  ?path=x.txt  trả nguyên khoá riêng.
-       realpath không cứu được vì hard link KHÔNG phải link: nó là tên thứ hai trỏ
-       thẳng vào cùng inode, nên đường dẫn thật vẫn nằm gọn trong dự án.
-       Chặn bằng số tên trỏ vào inode. Đo trước khi chặn để chắc không đá nhầm:
-       control + agy-proxy = 38.192 file, **0** file mã nguồn có nlink > 1; hai file
-       duy nhất là binary esbuild trong node_modules, vốn đã bị chặn vì là nhị phân.
-       Lưu ý cho người sau: pnpm dựng node_modules bằng hard link — đổi sang pnpm thì
-       phải xét lại chỗ này, không thì đọc file trong node_modules sẽ bị từ chối. */
-    if (st.nlink > 1) {
-      return json(res, 403, { error: 'file này có nhiều liên kết cứng, không cho xem' });
-    }
-    /* 4) Trần 512KB — đo thật: file lớn nhất dự án 420KB (web-next/package-lock.json),
-          không file mã nguồn nào vượt. Chặn file build khổng lồ mà không cắt gì cần đọc. */
+    /* Trần 512KB — đo thật: file lớn nhất dự án 420KB (web-next/package-lock.json),
+       không file mã nguồn nào vượt. Chặn file build khổng lồ mà không cắt gì cần đọc. */
     if (st.size > 512 * 1024) {
       return json(res, 200, { ok: false, quaLon: true, kichThuoc: st.size });
     }
@@ -2634,14 +2632,23 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  /* Dùng CHUNG moFileAnToan với /api/file. Trước đây chỗ này tự viết luật riêng
+     (resolve + startsWith + endsWith('.md')) và thủng y hệt — đã đo thật: symlink tên
+     `x.md` trong ~/.claude/plans trỏ tới ~/.ssh/id_ed25519 trả về nguyên khoá riêng,
+     trỏ tới ~/.zsh_history trả 6.130 ký tự, hard link cũng lọt. Đuôi `.md` không cứu
+     được gì vì tên symlink do người tấn công đặt.
+     Vá một nơi mà để nơi kia tự viết luật là kiểu lỗi này còn quay lại. */
   if (p === '/api/plan' && req.method === 'GET') {
     const THU_MUC = path.join(os.homedir(), '.claude', 'plans');
+    // đường dẫn kế hoạch là TUYỆT ĐỐI (Claude CLI ghi cả đường), đổi về tương đối để
+    // moFileAnToan resolve theo goc — nếu không thì resolve bỏ qua goc và mất chốt 1
     const xin = path.resolve(String(url.searchParams.get('path') || ''));
-    if (!xin.startsWith(THU_MUC + path.sep) || !xin.endsWith('.md')) {
-      return json(res, 400, { error: 'chỉ đọc được file kế hoạch' });
-    }
+    const mo = moFileAnToan(THU_MUC, path.relative(THU_MUC, xin));
+    if (mo.loi) return json(res, mo.ma, { error: 'chỉ đọc được file kế hoạch' });
+    if (!mo.that.endsWith('.md')) return json(res, 400, { error: 'chỉ đọc được file kế hoạch' });
+
     let noi;
-    try { noi = fs.readFileSync(xin, 'utf8'); }
+    try { noi = fs.readFileSync(mo.that, 'utf8'); }
     catch { return json(res, 404, { error: 'không thấy file kế hoạch' }); }
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end(noi);

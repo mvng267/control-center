@@ -409,6 +409,57 @@ async function snapshot() {
     }
   }
 
+  /* ---- /api/plan: CÙNG chốt chặn với /api/file ----
+     Chỗ này từng tự viết luật riêng (resolve + startsWith + endsWith('.md')) và thủng
+     y hệt — đã đo thật: symlink tên `x.md` trong ~/.claude/plans trỏ tới
+     ~/.ssh/id_ed25519_volvo trả về nguyên khoá riêng; trỏ tới ~/.zsh_history trả 6.130
+     ký tự; hard link cũng lọt. Đuôi `.md` không cứu được gì vì tên symlink do người
+     tấn công đặt. Bài cũ chỉ bắn `../` nên xanh suốt trong khi ba đường kia mở toang. */
+  {
+    const PLANS = path.join(os.homedir(), '.claude', 'plans');
+    if (!fs.existsSync(PLANS)) {
+      ok('có thư mục kế hoạch để kiểm', true, '(máy này chưa có ~/.claude/plans — bỏ qua)');
+    } else {
+      const docPlan = async (p) => {
+        const r = await fetch(`${URL}/api/plan?path=${encodeURIComponent(p)}`,
+          { headers: { 'X-Dash-Token': token } });
+        return { code: r.status, body: await r.text() };
+      };
+      const moi = path.join(os.homedir(), 'moi-plan-kiem.txt');
+      const rac = ['zz-kiem-link.md', 'zz-kiem-hl.md'].map((f) => path.join(PLANS, f));
+      const donPlan = () => {
+        for (const f of rac) { try { fs.unlinkSync(f); } catch {} }
+        try { fs.unlinkSync(moi); } catch {}
+      };
+      donPlan();
+      try {
+        // symlink .md trỏ ra ngoài — dùng file mồi, không đụng khoá thật
+        fs.writeFileSync(moi, 'BI-MAT-NGOAI-PLANS-' + 'z'.repeat(40) + '\n');
+        let coLink = false, coHl = false;
+        try { fs.symlinkSync(moi, rac[0]); coLink = true; } catch {}
+        try { fs.linkSync(moi, rac[1]); coHl = true; } catch {}
+
+        if (coLink) {
+          const r = await docPlan(rac[0]);
+          ok('/api/plan chặn symlink .md trỏ ra ngoài (đã THỦNG thật)',
+            !/BI-MAT/.test(r.body), r.code + ' ' + r.body.slice(0, 46));
+        }
+        if (coHl) {
+          const r = await docPlan(rac[1]);
+          ok('/api/plan chặn hard link .md (đã THỦNG thật)',
+            !/BI-MAT/.test(r.body), r.code + ' ' + r.body.slice(0, 46));
+        }
+        // và file kế hoạch thật vẫn phải đọc được
+        const that = fs.readdirSync(PLANS).filter((f) => f.endsWith('.md') && !f.startsWith('zz-kiem'))[0];
+        if (that) {
+          const r = await docPlan(path.join(PLANS, that));
+          ok('/api/plan vẫn đọc được file kế hoạch thật',
+            r.code === 200 && r.body.length > 20, r.code + ' ' + r.body.length + ' ký tự');
+        }
+      } finally { donPlan(); }
+    }
+  }
+
   const fails = results.filter((r) => !r.pass);
   console.log('\n==== DỰ ÁN: ' + (results.length - fails.length) + '/' + results.length + ' PASS ====');
   process.exit(fails.length ? 1 : 0);
