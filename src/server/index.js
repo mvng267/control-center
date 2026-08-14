@@ -2558,12 +2558,16 @@ const server = http.createServer(async (req, res) => {
           Chạy TRƯỚC realpath: để tên cấm luôn trả 403 dù file có tồn tại hay không —
           nếu để sau, `.env` ở repo không có file sẽ trả 404 còn repo có file trả 403,
           tức là chính cặp mã lỗi đó khai ra dự án nào đang giữ .env. */
-    const CAM = [/(^|[\\/])\.env/i, /(^|[\\/])\.git([\\/]|$)/i, /id_rsa/i, /id_ecdsa/i,
-      /id_ed25519/i, /(^|[\\/])\.npmrc$/i, /credential/i, /(^|[\\/])\.ssh([\\/]|$)/i,
-      /(^|[\\/])\.aws([\\/]|$)/i, /(^|[\\/])\.netrc$/i, /(^|[\\/])\.pgpass$/i,
-      /(^|[\\/])\.claude([\\/]|$)/i, /\.(pem|key|p12|pfx|keystore)$/i,
-      /(^|[\\/])\.htpasswd$/i, /secret/i];
-    const camTen = (d) => CAM.some((re) => re.test(d));
+    const CAM = [/id_rsa/i, /id_ecdsa/i, /id_ed25519/i, /credential/i, /secret/i,
+      /\.(pem|key|p12|pfx|keystore)$/i, /keychain/i];
+    /* MỌI file/thư mục ẩn đều cấm, không kể tên. quetFile đã bỏ hết file ẩn khỏi cây
+       nên chặn ở đây KHÔNG mất chức năng nào — chỉ khoá cái cửa sau: gõ tay đường dẫn.
+       Liệt kê từng tên (.env, .git, .ssh…) là trò đuổi bắt không bao giờ thắng: đã đo
+       thật, `.zsh_history` lọt qua danh sách cũ và trả về 6.130 ký tự lịch sử shell —
+       nơi mật khẩu và token hay bị dán thẳng vào dòng lệnh. Còn .bash_history,
+       .gnupg, .docker/config.json, .kube/config… thì chưa ai kịp nghĩ tới. */
+    const coPhanAn = (d) => d.split(/[\\/]/).some((x) => x.startsWith('.') && x !== '.' && x !== '..');
+    const camTen = (d) => coPhanAn(d) || CAM.some((re) => re.test(d));
     if (camTen(path.relative(root, xin))) {
       return json(res, 403, { error: 'file này không cho xem' });
     }

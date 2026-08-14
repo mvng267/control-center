@@ -305,6 +305,17 @@ async function snapshot() {
           r.code === 400 && !r.body.noiDung, r.code + ' ' + JSON.stringify(r.body).slice(0, 60));
       }
 
+      /* MỌI file ẩn phải bị chặn, không chỉ vài cái tên liệt kê sẵn. Đo thật: danh sách
+         liệt-kê-từng-tên để lọt `.zsh_history` — 6.130 ký tự lịch sử shell, nơi mật khẩu
+         và token hay bị dán thẳng vào dòng lệnh. Chặn cả nhóm thì không phải đuổi bắt.
+         Không mất chức năng: quetFile đã bỏ hết file ẩn khỏi cây từ trước. */
+      for (const an of ['.zsh_history', '.bash_history', '.gnupg/secring.gpg',
+        '.docker/config.json', '.kube/config', '.config/gh/hosts.yml']) {
+        const r = await doc(an);
+        ok('chặn file ẩn: ' + an, !r.body.noiDung && r.code === 403,
+          r.code + ' ' + (r.body.error || (r.body.noiDung || '').length + ' ký tự LỌT'));
+      }
+
       // File bí mật NẰM TRONG cwd — resolve không cứu được, phải có danh sách cấm.
       // .git/config tồn tại thật trong repo và chứa URL remote.
       for (const bim of ['.env', '.env.local', '.git/config', 'src/../.env', 'node_modules/../.git/config']) {
