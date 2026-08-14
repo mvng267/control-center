@@ -188,6 +188,32 @@ process.on('SIGINT', () => process.exit(130));
     'HTTP ' + sseSauDoiMa.status);
   sseSauDoiMa.body.cancel().catch(() => {});
 
+  /* ---- GÓI NPM phải tự đủ ----
+     Cài bằng `npm i -g` thì CHỈ có những thư mục liệt kê trong `files` của
+     package.json. Đã thủng thật một lần: icon PWA đọc từ `web-next/public`, mà gói
+     không có thư mục đó -> mọi icon trả 404, iPhone "Thêm vào Màn hình chính" ra ô
+     trắng. Chạy trên máy dev thì không bao giờ lộ vì ở đó có đủ cả hai thư mục.
+     Bài này soi `files` thay vì soi đĩa: đó mới là thứ quyết định gói có gì. */
+  {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const goi = pkg.files || [];
+    const coOut = goi.some((f) => f.replace(/\/$/, '') === 'web-next/out');
+    ok('package.json gói web-next/out (giao diện)', coOut, JSON.stringify(goi));
+
+    // Icon PHẢI nằm trong thư mục được gói, không chỉ trong web-next/public
+    const ICON = ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'icon.svg'];
+    const thieu = ICON.filter((f) => !fs.existsSync(path.join(__dirname, '..', 'web-next', 'out', f)));
+    ok('icon PWA có trong web-next/out (thứ npm gói)', thieu.length === 0,
+      thieu.length ? 'thiếu: ' + thieu.join(', ') : ICON.length + ' icon đủ');
+
+    // Và server phải phục vụ được chúng — kiểm qua HTTP, không chỉ kiểm file tồn tại
+    for (const f of ['/icon-192.png', '/apple-touch-icon.png']) {
+      const r = await fetch(URL + f, { headers: { 'X-Dash-Token': token3 } });
+      ok('server trả được ' + f, r.status === 200, 'HTTP ' + r.status);
+      r.body?.cancel().catch(() => {});
+    }
+  }
+
   tatServer();
   const fails = results.filter((r) => !r.pass);
   console.log('\n==== MÁY MỚI: ' + (results.length - fails.length) + '/' + results.length + ' PASS ====');

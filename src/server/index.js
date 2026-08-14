@@ -1905,9 +1905,14 @@ function failWait(ip) {
    NEW_UI=0 để quay về bản cũ tức thì nếu bản mới có vấn đề. */
 const LEGACY_DIR = path.join(__dirname, '..', '..', 'web', 'legacy');
 const NEXT_DIR = path.join(__dirname, '..', '..', 'web-next', 'out');
-// icon nguồn: web-next/public (được Next copy sang out khi build, nhưng đọc thẳng
-// public thì dùng được cả khi chưa build)
-const NEXT_PUBLIC = path.join(__dirname, '..', '..', 'web-next', 'public');
+/* Icon PWA: ưu tiên bản đã build trong `out`, lùi về `public` nếu chưa build.
+   Trước đây chỉ đọc `public` — mà gói npm KHÔNG có thư mục đó (`files` chỉ gói
+   `web-next/out`), nên cài bằng npm là mọi icon trả 404: iPhone "Thêm vào Màn hình
+   chính" ra ô trắng. Đã gặp thật trên Debian sau khi cài từ registry.
+   Thứ tự này đúng cho cả hai lối cài: bản clone git có cả hai thư mục, bản npm chỉ
+   có `out` — mà `out` thì luôn có icon vì Next copy sang lúc build. */
+const NEXT_PUBLIC_SRC = path.join(__dirname, '..', '..', 'web-next', 'public');
+const NEXT_PUBLIC = fs.existsSync(NEXT_PUBLIC_SRC) ? NEXT_PUBLIC_SRC : NEXT_DIR;
 const USE_NEW_UI = process.env.NEW_UI !== '0' && fs.existsSync(path.join(NEXT_DIR, 'index.html'));
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
                '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml',
