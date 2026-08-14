@@ -2531,40 +2531,73 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, root: gonNha(root), files: ds });
   }
 
-  /* Nội dung một file. BA lớp chặn, KHÔNG dựa vào danh sách quetFile trả về — người
+  /* Nội dung một file. BỐN lớp chặn, KHÔNG dựa vào danh sách quetFile trả về — người
      gọi tự đặt được path bất kỳ, không nhất thiết lấy từ cây. */
   if (p === '/api/file' && req.method === 'GET') {
     const sid = String(url.searchParams.get('sid') || '');
     const root = sid ? sessionCwd(sid) : null;
     if (!root) return json(res, 400, { error: 'phiên không có thư mục làm việc' });
 
-    // 1) resolve khử ../ rồi bắt buộc nằm TRONG cwd của phiên
+    /* 1) resolve khử ../ rồi bắt buộc nằm TRONG cwd của phiên.
+          CHƯA ĐỦ MỘT MÌNH: path.resolve chỉ xử lý CHUỖI, không chạm đĩa — một symlink
+          nằm trong dự án trỏ ra ngoài thì đường dẫn vẫn "nằm trong cwd" trong khi
+          readFileSync đi theo link ra tận đâu. Đã thử thật trước khi viết dòng này:
+          ln -s /etc/passwd ./x.txt rồi gọi ?path=x.txt -> đọc trọn /etc/passwd;
+          ln -s ~/.ssh ./d rồi ?path=d/id_ed25519_volvo -> ra nguyên KHOÁ RIÊNG.
+          Nên phải giải symlink bằng realpath rồi kiểm LẠI, và kiểm cả hai đường:
+          đường người dùng xin (chặn ../) lẫn đường thật trên đĩa (chặn symlink). */
     const xin = path.resolve(root, String(url.searchParams.get('path') || ''));
-    if (xin !== root && !xin.startsWith(root + path.sep)) {
+    const trongCwd = (d, goc) => d === goc || d.startsWith(goc + path.sep);
+    if (!trongCwd(xin, root)) {
       return json(res, 400, { error: 'chỉ đọc được file trong thư mục dự án' });
     }
 
     /* 2) Chặn thẳng file bí mật. KHÔNG dựa vào việc quetFile đã bỏ file ẩn: hàm đó
           phục vụ gợi ý "@", ai sửa nó là chốt chặn này thủng lúc đó.
-          .git/config TỒN TẠI THẬT trong repo (đã kiểm), chứa URL remote. */
-    const tuong = path.relative(root, xin);
-    const CAM = [/(^|[\\/])\.env/i, /(^|[\\/])\.git([\\/]|$)/i, /id_rsa/i,
-      /(^|[\\/])\.npmrc$/i, /credential/i, /(^|[\\/])\.ssh([\\/]|$)/i];
-    if (CAM.some((re) => re.test(tuong))) {
+          .git/config TỒN TẠI THẬT trong repo (đã kiểm), chứa URL remote.
+          Chạy TRƯỚC realpath: để tên cấm luôn trả 403 dù file có tồn tại hay không —
+          nếu để sau, `.env` ở repo không có file sẽ trả 404 còn repo có file trả 403,
+          tức là chính cặp mã lỗi đó khai ra dự án nào đang giữ .env. */
+    const CAM = [/(^|[\\/])\.env/i, /(^|[\\/])\.git([\\/]|$)/i, /id_rsa/i, /id_ecdsa/i,
+      /id_ed25519/i, /(^|[\\/])\.npmrc$/i, /credential/i, /(^|[\\/])\.ssh([\\/]|$)/i,
+      /(^|[\\/])\.aws([\\/]|$)/i, /(^|[\\/])\.netrc$/i, /(^|[\\/])\.pgpass$/i,
+      /(^|[\\/])\.claude([\\/]|$)/i, /\.(pem|key|p12|pfx|keystore)$/i,
+      /(^|[\\/])\.htpasswd$/i, /secret/i];
+    const camTen = (d) => CAM.some((re) => re.test(d));
+    if (camTen(path.relative(root, xin))) {
+      return json(res, 403, { error: 'file này không cho xem' });
+    }
+
+    /* 3) Giải symlink rồi kiểm LẠI cả hai điều trên. root cũng phải giải: trên macOS
+          /tmp là symlink tới /private/tmp, nên so đường-thật với root-chưa-giải sẽ đá
+          nhầm cả file hợp lệ của phiên nháp trong /tmp/claude-*. */
+    let that, gocThat;
+    try {
+      that = fs.realpathSync(xin);
+      gocThat = fs.realpathSync(root);
+    } catch { return json(res, 404, { error: 'không thấy file' }); }
+    if (!trongCwd(that, gocThat)) {
+      return json(res, 400, { error: 'file này là liên kết trỏ ra ngoài dự án' });
+    }
+    // symlink tên vô hại trỏ vào file bí mật NGAY TRONG dự án: realpath không bắt được
+    // (vẫn trong cwd), nên phải soi lại tên thật.
+    if (camTen(path.relative(gocThat, that))) {
       return json(res, 403, { error: 'file này không cho xem' });
     }
 
     let st;
-    try { st = fs.statSync(xin); } catch { return json(res, 404, { error: 'không thấy file' }); }
+    try { st = fs.statSync(that); } catch { return json(res, 404, { error: 'không thấy file' }); }
     if (!st.isFile()) return json(res, 400, { error: 'không phải file' });
-    /* 3) Trần 512KB — đo thật: file lớn nhất dự án 420KB (package-lock.json), không
-          file mã nguồn nào vượt. Chặn file build khổng lồ mà không cắt gì cần đọc. */
+    /* 4) Trần 512KB — đo thật: file lớn nhất dự án 420KB (web-next/package-lock.json),
+          không file mã nguồn nào vượt. Chặn file build khổng lồ mà không cắt gì cần đọc. */
     if (st.size > 512 * 1024) {
       return json(res, 200, { ok: false, quaLon: true, kichThuoc: st.size });
     }
 
     let buf;
-    try { buf = fs.readFileSync(xin); } catch { return json(res, 404, { error: 'không đọc được' }); }
+    // đọc đường ĐÃ giải symlink, cùng đường vừa được kiểm — đọc `xin` là mở lại đúng
+    // lỗ hổng vừa bịt (kiểm một đằng, đọc một nẻo)
+    try { buf = fs.readFileSync(that); } catch { return json(res, 404, { error: 'không đọc được' }); }
     /* File nhị phân (ảnh, .ico): báo rõ thay vì đổ byte rác ra màn hình.
        KHÔNG dùng buf.includes(0): src/server/index.js có đúng MỘT byte NUL viết thẳng
        trong mã (dấu nối khoá hook) nên bị bắt nhầm là nhị phân — đã gặp thật lúc kiểm.

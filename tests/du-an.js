@@ -313,6 +313,48 @@ async function snapshot() {
           r.code === 403 && !r.body.noiDung, r.code + ' ' + JSON.stringify(r.body).slice(0, 60));
       }
 
+      /* SYMLINK — lỗ hổng đã THỦNG THẬT một lần, không phải giả định.
+         path.resolve chỉ xử lý CHUỖI: một symlink nằm trong dự án trỏ ra ngoài thì
+         đường dẫn vẫn "nằm trong cwd" trong khi readFileSync đi theo link ra tận đâu.
+         Đo được lúc đó: `ln -s /etc/passwd ./x.txt` -> đọc trọn /etc/passwd, và
+         `ln -s ~/.ssh ./d` -> `d/id_ed25519_volvo` trả về nguyên KHOÁ SSH RIÊNG.
+         Bịt bằng realpath. Bài này giữ chỗ đó, tạo symlink thật rồi dọn. */
+      // Phải đặt symlink trong cwd CỦA PHIÊN đang thử, không phải cwd của test —
+      // hai thứ đó trùng nhau lúc chạy tay nhưng khác nhau khi test-all đổi phiên.
+      const goc = phien.duAn.khoa;
+      const links = [
+        ['sym-etc-passwd.txt', '/etc/passwd'],
+        ['sym-thu-muc-ssh', path.join(os.homedir(), '.ssh')],
+      ];
+      const daTao = [];
+      for (const [ten, dich] of links) {
+        const noi = path.join(goc, ten);
+        try { fs.unlinkSync(noi); } catch {}
+        try { fs.symlinkSync(dich, noi); daTao.push(noi); } catch {}
+      }
+      try {
+        if (daTao.length === links.length) {
+          const r1 = await doc('sym-etc-passwd.txt');
+          ok('symlink trỏ ra /etc/passwd bị chặn (đã THỦNG thật một lần)',
+            !!r1.body.error && !r1.body.noiDung,
+            r1.code + ' ' + (r1.body.error || (r1.body.noiDung || '').length + ' ký tự LỌT'));
+
+          // đọc qua symlink THƯ MỤC: từng lôi ra được khoá SSH riêng
+          let ten1 = '';
+          try { ten1 = fs.readdirSync(path.join(os.homedir(), '.ssh'))[0] || ''; } catch {}
+          if (ten1) {
+            const r2 = await doc('sym-thu-muc-ssh/' + ten1);
+            ok('symlink thư mục trỏ ra ~/.ssh bị chặn (từng lôi ra khoá riêng)',
+              !!r2.body.error && !r2.body.noiDung,
+              r2.code + ' ' + (r2.body.error || (r2.body.noiDung || '').length + ' ký tự LỌT'));
+          }
+        } else {
+          ok('tạo được symlink để kiểm', false, 'không tạo được symlink thử');
+        }
+      } finally {
+        for (const noi of daTao) { try { fs.unlinkSync(noi); } catch {} }
+      }
+
       // Còn phải ĐỌC ĐƯỢC file thường, không thì chặn quá tay thành vô dụng
       const bt = await doc('package.json');
       ok('vẫn đọc được file thường trong dự án',
