@@ -2,7 +2,7 @@
 
 import { ThemeProvider as NextThemes } from 'next-themes';
 
-// Mặc định TỐI: Vinh dùng dashboard ban đêm trên giường là chính.
+// Mặc định TỐI: dashboard hay dùng ban đêm trên giường.
 // Vẫn có đủ theme sáng để đổi bằng nút trên header.
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   return (

@@ -29,7 +29,7 @@ const ok = (name, pass, extra) => {
 };
 
 // Passcode phải KHÔNG tồn tại lúc bắt đầu, nếu không mọi màn đều bị màn khoá che.
-// Lưu lại bản cũ (nếu Vinh đang đặt mã thật) rồi trả về đúng như cũ ở cuối.
+// Lưu lại bản cũ (nếu người dùng đang đặt mã thật) rồi trả về đúng như cũ ở cuối.
 let passBackup = null;
 function gomPasscode() {
   try { passBackup = fs.readFileSync(PASS_FILE, 'utf8'); } catch { passBackup = null; }
@@ -111,28 +111,61 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       shell.w === 256 && shell.vien === '0px' && shell.muc === 32
       && shell.bo === '8px' && shell.head === 64, JSON.stringify(shell));
 
-    /* Nút tự cập nhật ở chân sidebar. Server tự nhận cài kiểu gì (npm -g hay clone
-       git) rồi chạy đúng lệnh — người bấm không phải nhớ máy nào cài kiểu nào, mà đó
-       là thứ hay quên nhất khi có hai máy.
-       Nút PHẢI cho biết đang ở bản nào: bấm cập nhật mà không biết mình đang đứng đâu
-       thì không đoán được nó sẽ làm gì. */
-    const nut = await page.evaluate(() => {
-      const e = document.querySelector('[data-testid=nut-cap-nhat]');
-      if (!e) return null;
-      return {
-        chu: (e.textContent || '').replace(/\s+/g, ' ').trim(),
-        tat: e.disabled,
+    /* MÀN CẤU HÌNH — mở từ ô tên ở chân sidebar.
+       KHÔNG làm thành tab thứ 6: thanh tab dưới ở 390px đã chật với 5 tab (xem bài
+       "5 tab không tràn ngang"). */
+    const oTen = (await page.locator('[data-testid=mo-cau-hinh]').innerText().catch(() => ''))
+      .replace(/\s+/g, ' ').trim();
+    /* Tên lấy từ tài khoản đang chạy server, KHÔNG viết cứng nữa — trước đây ai cài về
+       cũng thấy tên chủ máy dev trên giao diện của mình. Nên chỉ kiểm "có tên", không
+       kiểm tên cụ thể: máy khác chạy bài này sẽ ra tên khác. */
+    ok('chân sidebar hiện tên người dùng (không phải tên viết cứng)',
+      oTen.length >= 2, JSON.stringify(oTen));
+
+    await page.click('[data-testid=mo-cau-hinh]');
+    const moCH = await page.waitForSelector('[data-testid=man-cau-hinh]', { timeout: 10000 })
+      .then(() => true).catch(() => false);
+    ok('mở được màn cấu hình từ ô tên', moCH, String(moCH));
+
+    if (moCH) {
+      await page.waitForTimeout(600);
+      const ch = await page.evaluate(() => ({
+        cliKhoa: !!document.querySelector('[data-testid=cau-hinh-bat-cli]')?.disabled,
+        coCapNhat: !!document.querySelector('[data-testid=nut-cap-nhat]'),
         ban: document.querySelector('[data-testid=cap-nhat-ban]')?.textContent?.trim() || '',
-        // cây git bẩn -> nút bị chặn thì PHẢI kèm lý do, không để mờ câm
-        lyDo: !!document.querySelector('[data-testid=cap-nhat-ban-nhap]'),
-      };
-    });
-    ok('có nút tự cập nhật ở chân sidebar', !!nut && /cập nhật/i.test(nut.chu),
-      nut ? JSON.stringify(nut.chu) : 'không thấy nút');
-    ok('nút cập nhật cho biết đang ở bản nào', !!nut?.ban, nut?.ban || '(trống)');
-    // Bị chặn thì phải nói vì sao — mờ mà câm là người dùng tưởng hỏng
-    ok('nút bị chặn thì kèm lý do', !nut?.tat || nut.lyDo,
-      `tắt=${nut?.tat} lyDo=${nut?.lyDo}`);
+      }));
+      // 'cli' là lý do tồn tại của app — tắt được nó thì mở dashboard ra không còn gì
+      ok('tab Claude bị khoá, không tắt được', ch.cliKhoa, String(ch.cliKhoa));
+      /* Nút cập nhật gom vào đây (trước nằm rời ở chân sidebar): cấu hình và cập nhật
+         cùng là thứ thỉnh thoảng mới đụng. Phải cho biết đang ở bản nào — bấm cập nhật
+         mà không biết mình đứng đâu thì không đoán được nó sẽ làm gì. */
+      ok('màn cấu hình có nút cập nhật kèm số bản', ch.coCapNhat && !!ch.ban,
+        `capNhat=${ch.coCapNhat} bản=${ch.ban}`);
+
+      /* Tắt một tab thì nó phải biến khỏi thanh bên NGAY, không chờ tải lại trang.
+         Giao diện đổi ngay (cập nhật lạc quan) rồi mới gọi server — bấm công tắc mà ô
+         vuông đứng im tới khi mạng về thì người dùng tưởng bấm trượt rồi bấm lại.
+         Đã gặp thật: bản đầu chờ server nên Playwright báo "clicking did not change
+         its state". */
+      const truocTat = await page.locator('[data-testid=nav-stats]').count();
+      await page.uncheck('[data-testid=cau-hinh-bat-stats]');
+      await page.waitForTimeout(1200);
+      await page.click('[data-testid=cau-hinh-dong]');
+      await page.waitForTimeout(800);
+      const sauTat = await page.locator('[data-testid=nav-stats]').count();
+      ok('tắt tab thì tab biến khỏi thanh bên', truocTat === 1 && sauTat === 0,
+        `trước=${truocTat} sau=${sauTat}`);
+
+      // trả lại như cũ, không để bài sau chạy trên trạng thái đã đổi
+      await page.click('[data-testid=mo-cau-hinh]');
+      await page.waitForTimeout(500);
+      await page.check('[data-testid=cau-hinh-bat-stats]');
+      await page.waitForTimeout(1000);
+      await page.click('[data-testid=cau-hinh-dong]');
+      await page.waitForTimeout(800);
+      ok('bật lại thì tab hiện lại',
+        (await page.locator('[data-testid=nav-stats]').count()) === 1, '');
+    }
 
     // Chart: lưới nét đứt 4 8, KHÔNG có trục Y (Atlas không có)
     await page.click('[data-testid=nav-stats]');
@@ -206,7 +239,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
        - phông chữ đều (monospace) cho cả khối
        - ký tự đánh dấu ⏺ / ⎿ / > đúng như Claude CLI in ra
        - KHÔNG bong bóng bo tròn, KHÔNG nền màu cho câu chữ
-       Bản trước có avatar tròn + nhãn "Claude"/"Vinh" + bong bóng nền xanh; terminal
+       Bản trước có avatar tròn + nhãn "Claude"/tên người dùng + bong bóng nền xanh; terminal
        không có thứ nào trong đó nên đây là chỗ sai rõ nhất. */
     const cli = await page.evaluate(() => {
       const box = document.querySelector('[data-testid=chat-bubbles]');
@@ -608,7 +641,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     }
 
     /* NHIỀU câu hỏi -> xếp thành TAB NGANG như Claude CLI, mỗi lúc một câu.
-       Bản trước đổ hết xuống một cột dọc: đo với 3 câu (đúng bộ trong ảnh Vinh gửi)
+       Bản trước đổ hết xuống một cột dọc: đo với 3 câu (đúng bộ trong ảnh người dùng gửi)
        ra 623px — dài gần trọn màn điện thoại, cuộn mãi mới tới nút Gửi. */
     {
       const cx = await browser.newContext({ viewport: { width: 900, height: 900 } });
@@ -1138,13 +1171,16 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       /* /api/plan chỉ được đọc trong ~/.claude/plans. Kiểm bằng đường dẫn đã resolve
          chứ không phải chuỗi thô — nếu không thì `../../.ssh/id_rsa` lọt qua và
          dashboard thành công cụ đọc trộm cả đĩa. */
-      const chan = await pg.evaluate(async () => {
+      /* Truyền HOME vào chứ không viết cứng "/Users/<tên>": bài này từng chỉ chạy đúng
+         trên đúng một máy, máy khác thì đường dẫn không tồn tại nên 400 vì lý do SAI —
+         xanh mà không kiểm được gì. */
+      const chan = await pg.evaluate(async (nha) => {
         const thu = async (p) => (await fetch('/api/plan?path=' + encodeURIComponent(p))).status;
         return {
-          ssh: await thu('/Users/mvng/.ssh/id_rsa'),
-          cheo: await thu('/Users/mvng/.claude/plans/../../.zshrc'),
+          ssh: await thu(nha + '/.ssh/id_rsa'),
+          cheo: await thu(nha + '/.claude/plans/../../.zshrc'),
         };
-      });
+      }, os.homedir());
       ok('/api/plan chan doc file ngoai thu muc ke hoach',
         chan.ssh === 400 && chan.cheo === 400, JSON.stringify(chan));
 
@@ -1452,7 +1488,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.waitForTimeout(400);
 
       /* Esc trong o go = dung Claude, dung nhu terminal.
-         Dung phien GIA dang chay + chan /api/kill: khong duoc dung phien that cua Vinh. */
+         Dung phien GIA dang chay + chan /api/kill: khong duoc dung phien that cua nguoi dung. */
       let daKill = false;
       await pg.route('**/api/kill/**', async (r) => {
         daKill = true;
@@ -1486,7 +1522,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         ok('bong hoa Claude XOAY (khong dung yen)', a !== b, JSON.stringify(a + ' -> ' + b));
         const chu = await pg.locator('[data-testid=typing]').innerText();
         /* Chu doi theo thoi gian cho — giong Claude CLI, de biet no khong dung im.
-           Vinh chot giong suong sa ("De tao nghi ti", "Kho vcl, cho ti") nen KHONG
+           Da chot giong suong sa ("De tao nghi ti", "Kho vcl, cho ti") nen KHONG
            khop cung chuoi: chi doi hoi co chu tieng Viet + so giay. */
         ok('co dong tu + so giay troi',
           /[a-zà-ỹ]{3,}/i.test(chu) && /\d+s/.test(chu), JSON.stringify(chu.replace(/\n/g, ' ')));
@@ -1743,7 +1779,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     /* CUỘN LÊN ĐỌC LẠI thì chữ dưới mắt phải ĐỨNG YÊN qua các vòng poll.
        Server chỉ trả 30 tin gần nhất: mỗi lượt mới đến là tin cũ nhất bị đẩy ra khỏi
        mảng, khung co lại TỪ PHÍA TRÊN, mà scrollTop vẫn nguyên số cũ -> con trỏ cuộn
-       trỏ sang đoạn chữ khác. Vinh mô tả đúng triệu chứng: "kéo lên quá thì nó dính
+       trỏ sang đoạn chữ khác. Người dùng mô tả đúng triệu chứng: "kéo lên quá thì nó dính
        trên cùng màn hình" — dính ở top=0 trong khi nội dung bên dưới trượt đi.
        Đo trước khi sửa, phiên đang chạy, giữ nguyên 8 vòng: cao 2683 -> 2725 -> 2661,
        lượt đầu đổi 2 lần. Sau khi bù chênh lệch chiều cao: 8/8 vòng đứng yên. */
@@ -1841,7 +1877,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       ok('cay thu muc co file', soFile > 0, soFile + ' file');
 
       /* Bam mot file .js roi kiem CO SO DONG va noi dung — khong to mau cu phap (shiki
-         nang ~1MB, gap doi bundle, ma Vinh vao qua Tailscale). */
+         nang ~1MB, gap doi bundle, ma nguoi dung vao qua Tailscale). */
       await page.locator('[data-testid=file-item]').first().click();
       /* Cho den khi CO noi dung that, khong cho cung mot khoang thoi gian: file doc
          xong nhanh hay cham con tuy kich thuoc, cho cung 2s la bai nay do ngau nhien. */
@@ -1917,7 +1953,9 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     // Bỏ dấu câu bám quanh từ, nếu không "(ENOTFOUND)" bị loại vì có ngoặc.
     const cacCau = await page.locator('[data-testid=card-last]').allTextContents().catch(() => []);
     const tu = cacCau.slice(0, 12)
-      .flatMap((c) => c.replace(/^\s*(Vinh|Claude):\s*/, '').split(/\s+/))
+      // Tiền tố là "<tên người dùng>: " hoặc "Claude: " — tên nay lấy từ tài khoản
+      // đang chạy server nên KHÔNG viết cứng được, khớp theo hình dạng thay vì nội dung.
+      .flatMap((c) => c.replace(/^\s*[^:]{1,32}:\s*/, '').split(/\s+/))
       .map((w) => w.replace(/^[^\wÀ-ỹ]+|[^\wÀ-ỹ]+$/g, ''))
       .find((w) => w.length >= 6 && /^[\wÀ-ỹ]+$/.test(w));
     if (!tu) console.log('SKIP | tìm theo câu cuối (không có từ đủ dài để thử)');

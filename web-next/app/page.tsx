@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppShell, TABS, type TabId } from '@/components/layout/app-shell';
+import { ManCauHinh } from '@/components/layout/man-cau-hinh';
 import { usePullToRefresh, useSwipeTabs } from '@/lib/use-gestures';
 import { TokenGate } from '@/components/token-gate';
 import { AgyTab } from '@/components/agy/agy-tab';
@@ -27,6 +28,7 @@ export default function Page() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [taoMa, setTaoMa] = useState(false);
+  const [moCauHinh, setMoCauHinh] = useState(false);
   // n tăng mỗi lần bấm để bấm LẠI cùng một lối tắt vẫn áp lại được bộ lọc
   const [quick, setQuick] = useState<{ q: string; n: number }>({ q: '', n: 0 });
 
@@ -121,6 +123,7 @@ export default function Page() {
         anThanhTab={tab === 'cli' && !!openSid}
         onQuick={(q) => { setOpenSid(null); setQuick({ q, n: quick.n + 1 }); }}
         daDatMa={!!pass.st?.daDat}
+        onCauHinh={() => setMoCauHinh(true)}
         onLock={async () => {
           if (!pass.st?.daDat) { setTaoMa(true); return; }
           try { await api('/api/passcode/lock', { method: 'POST', body: '{}' }); } catch {}
@@ -135,6 +138,9 @@ export default function Page() {
         {tab === 'docker' && <DockerTab />}
         {tab === 'stats' && <StatsTab sessions={data?.sessions || []} />}
       </AppShell>
+
+      {/* Màn phủ toàn màn, nằm NGOÀI AppShell để thanh tab dưới không đè lên */}
+      {moCauHinh && <ManCauHinh onDong={() => setMoCauHinh(false)} />}
 
       {offline && (
         <div

@@ -25,5 +25,5 @@
     "setup": "npm i --no-save playwright-core"
   },
   "keywords": ["claude", "dashboard", "cli"],
-  "license": "UNLICENSED"
+  "license": "MIT"
 }

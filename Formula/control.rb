@@ -1,8 +1,11 @@
 # Formula Homebrew cho dashboard này.
 #
-# Cài (repo PRIVATE, tap qua SSH nên không cần mở công khai):
-#   brew tap mvng267/control git@github.com:mvng267/control-center.git
+# Cài:
+#   brew tap mvng267/control https://github.com/mvng267/control-center
 #   brew install --HEAD mvng267/control/control
+#
+# Hoặc cài bằng npm, không cần Homebrew:
+#   npm i -g claude-control-center && control
 #
 # Chạy nền, tự bật lại khi đăng nhập:
 #   brew services start control
@@ -13,19 +16,17 @@
 #   brew upgrade --fetch-HEAD mvng267/control/control
 #
 # Vì sao head-only, không có bản đóng gói:
-#   Đây là công cụ nội bộ, không phát hành version. `url` cố định bắt phải cắt tag và
-#   tính sha256 mỗi lần sửa — thừa. HEAD kéo thẳng nhánh main.
+#   `url` cố định bắt phải cắt tag và tính sha256 mỗi lần sửa. HEAD kéo thẳng nhánh
+#   main, hợp với nhịp phát hành của dự án này.
 class Control < Formula
   desc "Dashboard quản lý phiên Claude CLI, Hermes, agy-proxy và Docker"
   homepage "https://github.com/mvng267/control-center"
-  # using: :git là BẮT BUỘC với URL dạng git@ — thiếu nó Homebrew đoán strategy theo
-  # đuôi URL và trượt. Tap qua SSH nên repo giữ nguyên private.
-  head "git@github.com:mvng267/control-center.git", branch: "main", using: :git
-  license :cannot_represent # UNLICENSED — công cụ nội bộ, không phát hành
+  head "https://github.com/mvng267/control-center.git", branch: "main"
+  license "MIT"
 
   # Bắt buộc, KHÔNG :recommended: script chạy trỏ cứng vào node của Homebrew, mà
   # :recommended cho phép bỏ qua bằng --without-node -> trỏ vào đường dẫn không có gì.
-  # Máy Vinh mặc định dùng Node của Hermes (~/.local/bin/node) nên không thể trông chờ
+  # Máy dev mặc định có thể dùng Node của Hermes (~/.local/bin/node) nên không thể trông chờ
   # `node` trong PATH là bản đúng.
   depends_on "node"
 

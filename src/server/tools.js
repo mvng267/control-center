@@ -6,10 +6,10 @@ const os = require("os");
 
 /* Rút gọn $HOME thành "~" trong chữ hiện ra (KHÔNG đụng file .jsonl gốc).
    Log tool đầy đường dẫn tuyệt đối kiểu
-   "/Users/mvng/Desktop/project/control/web-next/components/cli/chat-view.tsx"
+   "/Users/ten/Desktop/project/control/web-next/components/cli/chat-view.tsx"
    — riêng phần $HOME đã 11 ký tự vô nghĩa lặp ở mọi dòng. Trên iPhone 390px một
    đường dẫn như thế nuốt trọn cả dòng, phần đáng đọc bị cắt mất bên phải.
-   Lấy os.homedir() chứ không viết cứng "/Users/mvng": server còn chạy trên Debian. */
+   Lấy os.homedir() chứ không viết cứng đường dẫn: server còn chạy trên Debian. */
 const NHA = os.homedir();
 function gonNhaTrongChu(s) {
   if (!s || !NHA || NHA === '/') return s;

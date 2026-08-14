@@ -6,6 +6,7 @@ import {
   Terminal, TriangleAlert, Zap, CircleHelp,
 } from 'lucide-react';
 import type { Session } from '@/lib/types';
+import { useCauHinh } from '@/lib/use-cauhinh';
 import { cn } from '@/lib/utils';
 
 /* Thẻ phiên — thay cho bảng ngang.
@@ -75,6 +76,7 @@ export function SessionCard({
   const tt = TRANG_THAI[s.status] || TRANG_THAI.IDLE;
   const dangChay = ['RUNNING', 'ACTIVE'].includes(s.status);
   const model = gonModel(s.model);
+  const cauHinh = useCauHinh();
 
   /* Chạm giữ 500ms = vào chế độ chọn. Phải huỷ hẹn giờ khi nhấc tay hoặc khi ngón
      trượt đi (người dùng đang cuộn danh sách, không phải muốn chọn). */
@@ -162,8 +164,8 @@ export function SessionCard({
       </div>
 
       {/* DÒNG 2: dự án — tách RIÊNG khỏi dòng tiêu đề để repo + nhánh không bị cắt.
-          Trước đây nhét chung dòng 1 và chặn ở 7rem, nên "volvo.dalianperfume.com"
-          hay "mvng267/control-center · main" gần như luôn bị truncate. */}
+          Trước đây nhét chung dòng 1 và chặn ở 7rem, nên tên miền dài
+          hay "chu-repo/ten-repo · main" gần như luôn bị truncate. */}
       {!anDuAn && (
         <div className="flex min-w-0 items-center gap-1.5 pl-4 text-[11.5px] text-muted-foreground"
           data-testid="card-project">
@@ -194,7 +196,7 @@ export function SessionCard({
               <CornerDownRight className="size-3 shrink-0 text-muted-foreground/40" />
               <p className="truncate text-[11.5px] leading-snug text-muted-foreground">
                 <span className={cn('font-medium', s.vaiCuoi === 'user' ? 'text-primary' : 'text-tool-accent')}>
-                  {s.vaiCuoi === 'user' ? 'Vinh: ' : 'Claude: '}
+                  {s.vaiCuoi === 'user' ? cauHinh.nguoiDung + ': ' : 'Claude: '}
                 </span>
                 {s.tinCuoi}
               </p>

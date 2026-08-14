@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 /* Xem file trong thư mục dự án của phiên — kiểu VSCode nhưng KHÔNG tô màu cú pháp.
-   Vinh vào qua Tailscale, mà shiki nặng ~1MB, gấp đôi bundle hiện tại (1.577KB) chỉ để
+   Người dùng vào qua Tailscale, mà shiki nặng ~1MB, gấp đôi bundle hiện tại (1.577KB) chỉ để
    đổi lấy màu chữ. Số dòng + font monospace là đủ đọc mã.
 
    iPhone: một cột — cây thư mục, bấm file thì trượt sang nội dung, có nút ← quay lại.

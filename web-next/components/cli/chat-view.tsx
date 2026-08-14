@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { SheetDuoi, MucSheet } from '@/components/ui/sheet-duoi';
+import { useCauHinh } from '@/lib/use-cauhinh';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -177,6 +178,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   const [sheet, setSheet] = useState(false);
   // Panel xem file phủ toàn màn — mở từ nút hàng 2 hoặc từ tên file trong thẻ tool
   const [moFile, setMoFile] = useState(false);
+  const cauHinh = useCauHinh();
   // Thẻ tool nào đang mở — giữ ở ĐÂY chứ không trong từng thẻ, xem chú thích ở
   // tool-card.tsx. Khoá là tool_use_id nên bền qua mọi lần dựng lại cây.
   const [openTools, setOpenTools] = useState<Set<string>>(new Set());
@@ -296,7 +298,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
     } else {
       /* ĐANG ĐỌC LẠI Ở TRÊN. Server chỉ trả 30 tin gần nhất, nên mỗi lượt mới đến là
          tin cũ NHẤT bị đẩy ra khỏi mảng: khung co lại từ phía trên, mà scrollTop vẫn
-         nguyên số cũ -> con trỏ cuộn trỏ sang đoạn chữ khác. Vinh mô tả đúng cái này:
+         nguyên số cũ -> con trỏ cuộn trỏ sang đoạn chữ khác. Người dùng mô tả đúng cái này:
          "kéo lên quá thì nó dính trên cùng màn hình" — dính ở top=0 trong khi nội dung
          bên dưới cứ trượt đi.
          Đo thật trên phiên đang chạy, cuộn lên đầu rồi giữ nguyên 8 vòng poll:
@@ -552,7 +554,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                             gap && '-rotate-90')} />
                           <span className={cn('shrink-0 font-medium',
                             m.role === 'user' ? 'text-primary' : 'text-tool-accent')}>
-                            {m.role === 'user' ? '❯ Vinh' : '⏺ Claude'}
+                            {m.role === 'user' ? '❯ ' + cauHinh.nguoiDung : '⏺ Claude'}
                           </span>
                           {m.ts && <span className="shrink-0 tabular-nums">{clock(m.ts)}</span>}
                           {!!soTool && <span className="shrink-0">· {soTool} thẻ</span>}
@@ -752,7 +754,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         {/* DÒNG TRẠNG THÁI dưới ô gõ — Claude CLI luôn in một dòng như vậy.
 
             Trước đây dòng này chỉ nhắc phím tắt và bị `hidden sm:flex` ẩn HẲN trên
-            điện thoại. Mà iPhone mới là nơi Vinh dùng chính, nên ở đó không thấy được
+            điện thoại. Mà iPhone mới là nơi dùng chính, nên ở đó không thấy được
             chế độ quyền lẫn mức nghĩ đang bật — hai thứ quyết định Claude có tự sửa
             file hay không. Chúng nằm tít trên header, lẫn giữa các nút icon.
 

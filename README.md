@@ -6,13 +6,35 @@ Tối ưu cho iPhone, truy cập qua Tailscale. Giao diện theo mẫu
 
 ---
 
-## Chạy
+> Dashboard đọc dữ liệu từ `~/.claude` của Claude CLI **trên chính máy chạy nó**. Cài
+> lên máy chưa dùng Claude CLI thì mở ra sẽ trống — đó không phải lỗi.
+
+## Cài
 
 ```bash
+npm i -g claude-control-center
+control                        # cổng 7799; đổi bằng --port 8080
+```
+
+Hoặc Homebrew:
+
+```bash
+brew tap mvng267/control https://github.com/mvng267/control-center
+brew install --HEAD mvng267/control/control
+brew services start control    # chạy nền, tự bật lại khi đăng nhập
+```
+
+Hoặc chạy thẳng từ mã nguồn:
+
+```bash
+git clone https://github.com/mvng267/control-center && cd control-center
 node src/server/index.js       # hoặc: npm start
 ```
 
-Mở `http://localhost:7799`. Backend **không cần cài gì cả** — Node thuần, zero dependency.
+Cần Node ≥ 18. Backend **không cần cài gì thêm** — Node thuần, zero dependency, và
+giao diện đã build sẵn trong repo.
+
+Mở `http://localhost:7799`.
 
 Lần chạy đầu server tự sinh **mã truy cập** và in ra:
 
@@ -115,6 +137,7 @@ chừng mà để sót thì xoá `~/.claude/dashboard-passcode.json`.
 |---|---|---|
 | `PORT` | `7799` | cổng |
 | `DASH_TOKEN` | tự sinh | mã truy cập (ghi đè file) |
+| `DASH_USER` | tên đăng nhập máy | tên hiện trên giao diện |
 | `AGY_DIR` | `~/Desktop/project/agy-proxy` | thư mục agy-proxy |
 | `HERMES_BIN` | `~/.hermes/.../hermes` | đường dẫn Hermes CLI |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | tự sinh | khoá Web Push |
@@ -143,3 +166,8 @@ chừng mà để sót thì xoá `~/.claude/dashboard-passcode.json`.
   **Không có nút xoá** container, image hay volume — dữ liệu thật nằm trong đó, bấm
   nhầm trên điện thoại là mất. Server tra bảng lệnh cứng, client không truyền cờ tự do.
 - Chi tiết dữ liệu: [docs/CLAUDE-DATA.md](docs/CLAUDE-DATA.md).
+- Sửa mã: đọc [CLAUDE.md](CLAUDE.md) trước — nó ghi lại các bẫy đã gặp thật.
+
+## Giấy phép
+
+[MIT](LICENSE)

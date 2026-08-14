@@ -53,6 +53,50 @@ function ghiJson(file, data, mode) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2), mode ? { mode } : undefined);
 }
 
+/* ---- cấu hình chung ----
+   Tên hiển thị: lấy từ tài khoản đang chạy server. Trước đây ghi cứng tên chủ máy dev
+   nên ai cài về cũng thấy tên người lạ trên giao diện của mình. DASH_USER để ghi đè
+   khi tên đăng nhập không phải tên muốn hiện (vd chạy trong container, user "node"). */
+function tenNguoiDung() {
+  const dat = (process.env.DASH_USER || '').trim();
+  if (dat) return dat.slice(0, 32);
+  try { return (os.userInfo().username || 'user').slice(0, 32); } catch { return 'user'; }
+}
+
+const CAUHINH_FILE = path.join(os.homedir(), '.claude', 'dashboard-cauhinh.json');
+// Tab 'cli' KHÔNG có ở đây: quản lý phiên Claude là lý do tồn tại của app, tắt nó đi
+// thì mở dashboard ra không còn gì.
+const TAB_TAT_DUOC = ['hermes', 'agy', 'docker', 'stats'];
+
+/* Tab nào DÙNG ĐƯỢC trên máy này. 'stats' chỉ đọc dữ liệu Claude nên luôn có. */
+function tabCoSan() {
+  const co = { cli: true, stats: true, hermes: false, agy: false, docker: false };
+  try { co.hermes = fs.existsSync(path.join(os.homedir(), '.hermes')); } catch {}
+  try { co.agy = fs.existsSync(AGY_DIR); } catch {}
+  /* Docker: chỉ kiểm socket có tồn tại, KHÔNG gọi `docker ps` — lệnh đó mất hơn một
+     giây khi daemon tắt, mà hàm này chạy trong tay xử lý request. Daemon tắt thì tab
+     vẫn mở được và tự báo lý do (xem docker-tab.tsx). */
+  try {
+    co.docker = fs.existsSync('/var/run/docker.sock')
+      || fs.existsSync(path.join(os.homedir(), '.docker', 'run', 'docker.sock'));
+  } catch {}
+  return co;
+}
+
+function docTabBat() {
+  const co = tabCoSan();
+  // chưa từng lưu -> bật đúng những tab máy có
+  const mac = {};
+  for (const id of TAB_TAT_DUOC) mac[id] = !!co[id];
+  let luu = null;
+  try { luu = JSON.parse(fs.readFileSync(CAUHINH_FILE, 'utf8')).tabBat; } catch {}
+  if (!luu || typeof luu !== 'object') return mac;
+  const ra = {};
+  // Khoá thiếu trong file (thêm tab mới sau này) rơi về mặc định, không thành undefined
+  for (const id of TAB_TAT_DUOC) ra[id] = id in luu ? !!luu[id] : mac[id];
+  return ra;
+}
+
 const PERM_FILE = path.join(os.homedir(), '.claude', 'dashboard-perm.json');
 // 'plan' = Claude trình bày kế hoạch rồi DỪNG chờ duyệt (không đụng file). Đây là cách
 // duyệt-trước-khi-làm khả thi duy nhất: CLI không có kênh uỷ quyền để dashboard bấm
@@ -192,7 +236,7 @@ function parseSessionFile(file) {
     aiTitle: '',   // Claude CLI tự sinh tiêu đề (dòng type=ai-title), lấy bản MỚI NHẤT
     /* Tên NGƯỜI DÙNG tự đặt trên Claude CLI (dòng type=custom-title). Trước đây bị bỏ
        qua hoàn toàn nên dashboard hiện tên máy sinh thay vì tên đã đặt — đếm thật:
-       1.236 dòng trên máy Debian ("EDMICRO SSO", "video-library"…). */
+       1.236 dòng trên máy Debian. */
     customTitle: '',
     firstUser: '', // dự phòng khi session chưa có ai-title: câu đầu của user
     model: '',     // model + mức nghĩ của lượt assistant mới nhất
@@ -258,7 +302,7 @@ function parseSessionFile(file) {
       // Vào / ra chế độ kế hoạch
       else if (a.type === 'plan_mode') note('ke-hoach', 'Bật chế độ lập kế hoạch', '');
       else if (a.type === 'plan_mode_exit') note('ke-hoach', 'Thoát chế độ lập kế hoạch', '');
-      // File Vinh kéo vào / dán vào khung chat
+      // File người dùng kéo vào / dán vào khung chat
       else if (a.type === 'file' && a.filename) {
         note('dinh-kem', 'Đính kèm ' + base(a.filename), '');
       }
@@ -405,7 +449,7 @@ function parseSessionFile(file) {
   }
   // tsMs: timestamp (ms) từng message — precompute 1 lần để đếm unread không tốn Date.parse mỗi tick
   /* Tiêu đề: tên NGƯỜI DÙNG đặt trên CLI thắng ai-title do máy sinh. Trước đây chỉ
-     đọc ai-title nên phiên Vinh đặt tên "video-library" vẫn hiện
+     đọc ai-title nên phiên người dùng tự đặt tên vẫn hiện
      "Kiểm tra job video và huỷ đồng bộ Dailymotion". */
   const title = customTitle || aiTitle
     || (firstUser ? firstUser.replace(/\s+/g, ' ').slice(0, 70) : '');
@@ -558,7 +602,7 @@ function sessionCwd(sid) {
 
 /* ---- thông tin dự án của một phiên ----
    Trước đây tên dự án được SUY từ tên thư mục ~/.claude/projects (cắt 2 đoạn cuối nối
-   bằng "/"), cho ra "agy/proxy", "dalianperfume/com" (mất chữ volvo), "plastic/".
+   bằng "/"), cho ra "agy/proxy", "perfume/com" (mất đoạn đầu), "plastic/".
    cwd là dữ liệu thật, có sẵn ở mọi phiên -> lấy thẳng. */
 
 // Thư mục nháp do chính Claude sinh ra cho phiên tạm. Kiểm TIỀN TỐ, không dùng
@@ -630,7 +674,7 @@ function duAnCho(cwd) {
   if (!cwd.duongDan) return { ...DU_AN_MOI, ten: '(không rõ)', khoa: '(unknown)' };
   const p = cwd.duongDan;
   /* Bỏ dấu cách/gạch chéo thừa ở CUỐI khi gom nhóm. Đã gặp thật:
-     ".../Van thong plastic" (repo mvng267/nhua-van-thong, 12 mục) và
+     ".../Van thong plastic" (repo có thật, 12 mục) và
      ".../Van thong plastic " (rỗng hoàn toàn) là hai thư mục có thật trên đĩa —
      macOS cho phép tên kết thúc bằng dấu cách — nhưng cùng MỘT dự án, chỉ là một lần
      gõ nhầm. Không chuẩn hoá thì danh sách lọc có hai mục trùng tên y hệt nhau. */
@@ -744,7 +788,7 @@ function moFileAnToan(goc, duongXin) {
 }
 
 /* ---- cwd rộng tới mức "xem file" thành trình duyệt cả ổ đĩa ----
-   Đo thật trên máy này: 33 phiên có cwd = /Users/mvng, tức HOME — và đó là nhóm cwd
+   Đo thật trên một máy: 33 phiên có cwd = thư mục HOME — và đó là nhóm cwd
    ĐÔNG NHẤT (hơn cả agy-proxy 30 và control 11). Với chúng, "thư mục dự án" là cả nhà:
    cây liệt kê 4000 file (chạm trần) gồm Desktop 3243, Documents 414, Library 322, và
    đọc được những thứ như Desktop/Chatgpt/accounts_*.txt.
@@ -2275,7 +2319,7 @@ const server = http.createServer(async (req, res) => {
     }
     for (const msg of parsed.msgs) {
       const when = msg.ts ? new Date(msg.ts).toLocaleString('vi-VN') : '';
-      L.push('## ' + (msg.role === 'user' ? 'Vinh' : 'Claude') + (when ? ' · ' + when : ''), '');
+      L.push('## ' + (msg.role === 'user' ? tenNguoiDung() : 'Claude') + (when ? ' · ' + when : ''), '');
       for (const part of (msg.parts || [])) {
         if (part.t === 'text') { L.push(part.text, ''); continue; }
         // Tool: tóm tắt + kết quả, cắt bớt để file không phình vô hạn.
@@ -2459,6 +2503,37 @@ const server = http.createServer(async (req, res) => {
      mã nằm. */
   const THU_MUC_MA = path.resolve(__dirname, '..', '..');
   const laBanNpm = /[\\/]node_modules[\\/]/.test(THU_MUC_MA);
+
+  /* ---- cấu hình chung: tên người dùng + tab nào bật ----
+     KHÔNG nhét vào /stream: dữ liệu này tĩnh, mà SSE đẩy snapshot mỗi 2 giây (đã đo
+     84KB/nhịp). Client gọi một lần lúc mở app.
+
+     `tabCo` là phát hiện THẬT trên máy, không phải thứ người dùng khai: ai cài từ npm
+     gần như chắc chắn không có Hermes hay agy-proxy, mà hai tab đó mở ra chỉ thấy lỗi.
+     Mặc định lần đầu = bật đúng những tab máy có. */
+  if (p === '/api/cauhinh' && req.method === 'GET') {
+    return json(res, 200, {
+      ok: true,
+      nguoiDung: tenNguoiDung(),
+      tabCo: tabCoSan(),
+      tabBat: docTabBat(),
+    });
+  }
+
+  if (p === '/api/cauhinh' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const xin = body && body.tabBat;
+    if (!xin || typeof xin !== 'object') return json(res, 400, { error: 'thiếu tabBat' });
+
+    /* Chỉ nhận đúng những khoá mình biết, giá trị ép về boolean — client gửi gì cũng
+       không nhét thêm được khoá lạ vào file cấu hình. */
+    const luu = {};
+    for (const id of TAB_TAT_DUOC) luu[id] = !!xin[id];
+    try { ghiJson(CAUHINH_FILE, { tabBat: luu }); }
+    catch (e) { return json(res, 500, { error: 'không ghi được cấu hình: ' + e.message }); }
+    return json(res, 200, { ok: true, tabBat: docTabBat() });
+  }
 
   if (p === '/api/capnhat/trangthai' && req.method === 'GET') {
     let banHienTai = '';

@@ -84,7 +84,7 @@ export function AskCard({
       </div>
 
       {/* TAB NGANG như Claude CLI: mỗi lúc chỉ hiện MỘT câu.
-          Bản trước đổ hết câu hỏi xuống một cột dọc — đo với 3 câu (đúng bộ Vinh gửi
+          Bản trước đổ hết câu hỏi xuống một cột dọc — đo với 3 câu (đúng bộ người dùng gửi
           ảnh) ra 623px, dài gần trọn màn điện thoại và không thấy được nút Gửi.
           Nhãn tab còn cho biết đang ở câu mấy trong bao nhiêu câu. */}
       {hoi.length > 1 && (

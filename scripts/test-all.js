@@ -7,7 +7,7 @@
    TimeoutError — nhìn như code hỏng trong khi chỉ là chạy sai môi trường.
 
    Nên: tự bật hai server ở hai cổng riêng (bản cũ NEW_UI=0, bản mới mặc định),
-   chạy đúng bộ vào đúng cổng, xong thì tắt cả hai. Không đụng server 7799 mà Vinh
+   chạy đúng bộ vào đúng cổng, xong thì tắt cả hai. Không đụng server 7799 mà người dùng
    đang dùng.
 */
 const { spawn, execFile } = require('child_process');

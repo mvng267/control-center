@@ -8,7 +8,7 @@ import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { NotifyToggle } from '@/components/notify-toggle';
-import { NutCapNhat } from './nut-cap-nhat';
+import { useCauHinh, chuDau } from '@/lib/use-cauhinh';
 import { cn } from '@/lib/utils';
 
 export type TabId = 'cli' | 'hermes' | 'agy' | 'docker' | 'stats';
@@ -38,7 +38,7 @@ function ThemeToggle() {
 }
 
 export function AppShell({
-  tab, onTab, badges, crumb, children, onQuick, daDatMa, onLock, anThanhTab,
+  tab, onTab, badges, crumb, children, onQuick, daDatMa, onLock, anThanhTab, onCauHinh,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
@@ -50,7 +50,14 @@ export function AppShell({
   onLock?: () => void;
   /** ẩn thanh tab dưới (đang đọc chat trên điện thoại) */
   anThanhTab?: boolean;
+  /** mở màn cấu hình (bấm vào ô tên ở chân sidebar) */
+  onCauHinh?: () => void;
 }) {
+  const cauHinh = useCauHinh();
+  /* Chỉ bày tab đang bật. 'cli' luôn có mặt — tắt nó thì mở dashboard ra không còn gì.
+     Người cài từ npm thường không có Hermes/agy-proxy, server tự tắt hai tab đó nên
+     họ không phải nhìn hai tab mở ra chỉ thấy lỗi. */
+  const tabsHien = TABS.filter((t) => t.id === 'cli' || cauHinh.tabBat[t.id] !== false);
   const active = TABS.find((t) => t.id === tab);
 
   return (
@@ -72,7 +79,7 @@ export function AppShell({
 
         <nav className="flex-1 overflow-y-auto px-2.5 pb-2">
           <div className="px-2.5 pb-1.5 pt-2 text-[12px] font-medium text-muted-foreground">Menu</div>
-          {TABS.map(({ id, label, icon: Icon }) => (
+          {tabsHien.map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => onTab(id)} data-testid={`nav-${id}`} data-active={tab === id}
               className={cn(
                 'flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[14px] transition-colors',
@@ -120,15 +127,18 @@ export function AppShell({
             {daDatMa ? <Lock className="size-4 shrink-0" /> : <ShieldPlus className="size-4 shrink-0" />}
             <span className="truncate">{daDatMa ? 'Khoá ngay' : 'Tạo mã khoá'}</span>
           </button>
-          <NutCapNhat />
         </div>
-        <div className="m-2.5 mt-0 flex items-center gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2">
+        {/* Tên lấy từ tài khoản đang chạy server (ghi đè bằng DASH_USER). Trước đây ghi
+            cứng tên chủ máy dev nên ai cài về cũng thấy tên người lạ trên máy mình. */}
+        <button onClick={onCauHinh} data-testid="mo-cau-hinh"
+          title="Cấu hình dashboard"
+          className="m-2.5 mt-0 flex items-center gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2 text-left transition-colors hover:bg-sidebar-accent/60">
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
-            V
+            {chuDau(cauHinh.nguoiDung)}
           </span>
-          <span className="flex-1 truncate text-[13px] font-medium">Vinh</span>
+          <span className="flex-1 truncate text-[13px] font-medium">{cauHinh.nguoiDung}</span>
           <MoreHorizontal className="size-4 shrink-0 text-muted-foreground" />
-        </div>
+        </button>
       </aside>
 
       {/* ---- CỘT PHẢI ---- */}
@@ -153,9 +163,13 @@ export function AppShell({
           <div className="ml-auto flex items-center gap-1">
             <NotifyToggle />
             <ThemeToggle />
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary md:hidden">
-              V
-            </span>
+            {/* Điện thoại: đây là lối DUY NHẤT vào màn cấu hình — sidebar (nơi có ô
+                tên bấm được) chỉ hiện từ md trở lên. Trước đây chỉ là chữ "V" chết. */}
+            <button onClick={onCauHinh} data-testid="mo-cau-hinh-mobile"
+              title="Cấu hình" aria-label="Cấu hình"
+              className="tap44 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary md:hidden">
+              {chuDau(cauHinh.nguoiDung)}
+            </button>
           </div>
         </header>
 
@@ -168,7 +182,7 @@ export function AppShell({
           className={cn('flex shrink-0 items-stretch border-t border-border bg-sidebar md:hidden [body.kb-open_&]:hidden',
             anThanhTab && 'hidden')}
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          {TABS.map(({ id, short, icon: Icon }) => (
+          {tabsHien.map(({ id, short, icon: Icon }) => (
             <button key={id} onClick={() => onTab(id)} data-testid={`tabbar-${id}`} data-active={tab === id}
               className={cn(
                 'relative flex min-h-[58px] flex-1 flex-col items-center justify-center gap-1 text-[10px] transition-colors',

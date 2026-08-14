@@ -10,7 +10,7 @@ import { ImageZoom } from './tool-card';
 
    Vì sao cần: khung chat chỉ đọc 30 tin CUỐI để payload nhẹ (25KB mỗi 2 giây khi
    phiên đang chạy). Ảnh cũ nằm ngoài cửa sổ nên không cách nào xem lại — đo trên
-   phiên 58MB thật: 128 ảnh, KHÔNG cái nào nằm trong 30 tin cuối. Vinh báo "chưa xem
+   phiên 58MB thật: 128 ảnh, KHÔNG cái nào nằm trong 30 tin cuối. Người dùng báo "chưa xem
    được ảnh" chính là chuyện này; ảnh không hỏng, chỉ là không với tới.
 
    Chỉ tải khi MỞ bảng (endpoint quét cả file, đo được 285ms trên file 58MB) — không

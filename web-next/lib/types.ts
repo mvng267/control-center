@@ -4,13 +4,13 @@ export type Status = 'RUNNING' | 'ACTIVE' | 'IDLE';
 
 /* Dự án của một phiên, dựng từ trường cwd trong chính file .jsonl.
    Trước đây tên dự án được SUY từ tên thư mục ~/.claude/projects nên ra "agy/proxy",
-   "dalianperfume/com" (mất chữ volvo), "plastic/". */
+   "perfume/com" (mất đoạn đầu), "plastic/". */
 // Không export: chỉ dùng làm kiểu của Session.duAn, không ai import tên này.
 interface DuAn {
   ten: string;        // tên thư mục thật: "agy-proxy"
   khoa: string;       // cwd đã chuẩn hoá — khoá gom nhóm và lọc, KHÔNG hiện ra
   duongDan: string;   // đã rút gọn: "~/Desktop/project/agy-proxy"
-  repo: string;       // "mvng267/agy-proxy", rỗng nếu không phải repo git
+  repo: string;       // "chu-repo/ten-repo", rỗng nếu không phải repo git
   nhanh: string;      // "main"
   conTonTai: boolean; // thư mục còn trên đĩa không (xoá rồi thì --resume trượt)
   laNhap: boolean;    // phiên nháp trong /tmp/claude-*

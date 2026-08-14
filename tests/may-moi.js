@@ -8,7 +8,7 @@
      - đặt mã khoá xong restart là mất, người dùng tưởng máy đang khoá mà thật ra không
 
    Bộ này tự dựng một HOME giả trống rỗng rồi chạy server thật trong đó, nên nó bọc
-   đúng tình huống "cài lên máy khác" mà không đụng gì tới ~/.claude thật của Vinh.
+   đúng tình huống "cài lên máy khác" mà không đụng gì tới ~/.claude thật của người dùng.
 
    Cách chạy:  node tests/may-moi.js
 */
@@ -31,6 +31,12 @@ const cho = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // HOME giả: thư mục tạm HOÀN TOÀN TRỐNG, đúng như máy vừa cài xong hệ điều hành
 const HOME_GIA = fs.mkdtempSync(path.join(os.tmpdir(), 'ctl-may-moi-'));
+
+/* Mã khoá dùng cho test, KHÔNG phải mã thật của ai. Trước đây viết thẳng một dãy số
+   rải rác 6 chỗ — đọc mã nguồn công khai dễ tưởng đó là mã mặc định của sản phẩm.
+   Giữ kiểu CHUỖI: bài "không lưu mã thô" gọi .includes() trên nó, số thì ném lỗi. */
+const MA_TEST = '48291';
+const MA_TEST_MOI = '73650';
 
 let proc = null;
 function batServer() {
@@ -88,7 +94,7 @@ process.on('SIGINT', () => process.exit(130));
   }
 
   // Đặt mã khoá — trường tên là `code`, không phải `pass`
-  const r1 = await api('/api/passcode/set', { method: 'POST', headers: H, body: JSON.stringify({ code: '123123' }) });
+  const r1 = await api('/api/passcode/set', { method: 'POST', headers: H, body: JSON.stringify({ code: MA_TEST }) });
   ok('đặt mã khoá trả về daDat: true', r1.body.ok === true && r1.body.daDat === true, JSON.stringify(r1.body));
 
   /* Quan trọng hơn cả câu trả lời: file có TỒN TẠI THẬT không. Trước khi sửa, server
@@ -103,7 +109,7 @@ process.on('SIGINT', () => process.exit(130));
     const noiDung = JSON.parse(fs.readFileSync(fPass, 'utf8'));
     // KHÔNG được lưu mã thô — chỉ salt + hash
     ok('không lưu mã thô, chỉ salt + hash',
-      !JSON.stringify(noiDung).includes('123123') && !!noiDung.salt && !!noiDung.hash);
+      !JSON.stringify(noiDung).includes(MA_TEST) && !!noiDung.salt && !!noiDung.hash);
   }
 
   // ---- KHỞI ĐỘNG LẠI: bài quan trọng nhất ----
@@ -116,7 +122,7 @@ process.on('SIGINT', () => process.exit(130));
 
   // Mã khoá phải còn, và phải khớp
   const dung = await api('/api/passcode/verify', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: '123123' }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: MA_TEST }),
   });
   ok('mã khoá còn sống sau khi khởi động lại', dung.body.ok === true, JSON.stringify(dung.body));
 
@@ -142,7 +148,7 @@ process.on('SIGINT', () => process.exit(130));
   const mo = await fetch(URL + '/api/passcode/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Dash-Token': token2 },
-    body: JSON.stringify({ code: '123123' }),
+    body: JSON.stringify({ code: MA_TEST }),
   });
   const cookie = (mo.headers.get('set-cookie') || '').split(';')[0];
   ok('mở khoá trả về cookie dashUnlock', /^dashUnlock=\S+/.test(cookie), cookie.slice(0, 24) + '…');
@@ -175,7 +181,7 @@ process.on('SIGINT', () => process.exit(130));
   await api('/api/passcode/set', {
     method: 'POST',
     headers: { 'X-Dash-Token': token3, 'Content-Type': 'application/json', Cookie: cookie },
-    body: JSON.stringify({ code: '456456', old: '123123' }),
+    body: JSON.stringify({ code: MA_TEST_MOI, old: MA_TEST }),
   });
   const sseSauDoiMa = await fetch(URL + '/stream?t=' + token3, { headers: { Cookie: cookie } });
   ok('đổi mã khoá thì cookie cũ MẤT hiệu lực', sseSauDoiMa.status === 423,

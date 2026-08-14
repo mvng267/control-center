@@ -19,7 +19,7 @@ import { toast } from 'sonner';
    PermSwitch/EffortSwitch).
 
    Dùng ĐÚNG tên rút gọn CLI nhận: `opus`/`sonnet`/`haiku`. Không ghi tên đầy đủ kèm
-   ngày (`claude-opus-4-...`) vì bản cài của Vinh nâng cấp thì chuỗi đó thành sai,
+   ngày (`claude-opus-4-...`) vì bản cài trên máy nâng cấp thì chuỗi đó thành sai,
    còn tên rút gọn luôn trỏ tới bản mới nhất theo cấu hình Claude đang có. */
 
 export const MODELS = [

@@ -4,8 +4,8 @@
 # Cách chạy (trên máy Debian, qua SSH):
 #   bash scripts/cap-nhat-debian.sh
 #
-# Cần sẵn: git, node >= 18. KHÔNG cần npm install — backend zero dependency và
-# web-next/out đã được commit sẵn trong repo.
+# Cần sẵn: git, node >= 18 (đã rà src/: API mới nhất dùng tới là fetch()).
+# KHÔNG cần npm install — backend zero dependency và web-next/out đã build sẵn trong repo.
 set -euo pipefail
 
 THU_MUC="${THU_MUC:-$HOME/control}"

@@ -2,7 +2,7 @@
 
    Vì sao có file này: trước đợt sửa, tên dự án được SUY từ tên thư mục
    ~/.claude/projects (cắt 2 đoạn cuối nối bằng "/"), cho ra "agy/proxy",
-   "dalianperfume/com" (mất chữ volvo), "plastic/", "6debb715b13d/scratchpad".
+   "perfume/com" (mất đoạn đầu), "plastic/", "6debb715b13d/scratchpad".
    Sai trên 14/20 thư mục mà KHÔNG một bài test nào phủ trường project — nên lỗi
    sống suốt. Mỗi bài dưới đây bọc đúng một cách sai đã đo được thật.
 
@@ -89,8 +89,8 @@ async function snapshot() {
   }
 
   /* Với phiên thư mục còn tồn tại, tên phải BẰNG ĐÚNG basename của đường dẫn.
-     Chặn kiểu sai "mất chữ": volvo.dalianperfume.com -> "dalianperfume/com",
-     "Van thong plastic" -> "thong/plastic". */
+     Chặn kiểu sai "mất chữ": tên có dấu chấm a.b.com -> "b/com",
+     tên có dấu cách "Van thong plastic" -> "thong/plastic". */
   {
     // duongDan đã rút gọn $HOME thành "~" để hiện lên màn hình -> bung lại trước khi so,
     // nếu không phiên chạy ngay tại home có duongDan="~" và basename ra "~".
@@ -98,7 +98,7 @@ async function snapshot() {
     // dẫn thật để hiện ra, kể cả bản gõ nhầm ".../Van thong plastic " có dấu cách cuối.
     const con = ss.filter((s) => s.duAn?.conTonTai && s.duAn.khoa?.startsWith('/'));
     const sai = con.filter((s) => path.basename(s.duAn.khoa) !== s.duAn.ten);
-    ok('tên dự án = basename của cwd (chặn mất chữ "volvo", "Van")', sai.length === 0,
+    ok('tên dự án = basename của cwd (chặn kiểu sai "mất chữ đầu")', sai.length === 0,
       sai.slice(0, 3).map((s) => s.duAn.ten + ' != ' + s.duAn.khoa).join(' ; '));
   }
 
@@ -206,7 +206,7 @@ async function snapshot() {
   }
 
   /* ---------- ĐỌC THÊM: hai nhánh, kiểm bằng phiên giả tự dựng ----------
-     Không thể chờ Vinh gõ để phiên thật dài ra, nên tự tạo một phiên trong
+     Không thể chờ người dùng gõ để phiên thật dài ra, nên tự tạo một phiên trong
      ~/.claude/projects rồi nối/ghi đè để ép đúng hai nhánh. Dọn sạch ở cuối. */
   {
     const dir = path.join(PROJECTS_DIR, '-private-tmp-inc-check');
@@ -370,7 +370,7 @@ async function snapshot() {
          `ln ~/.ssh/id_ed25519_<tên> ./x.txt` rồi ?path=x.txt trả nguyên khoá riêng.
          realpath không cứu được vì hard link không phải link — nó là tên thứ hai trỏ
          thẳng vào cùng inode nên đường thật vẫn nằm trong dự án. Chặn bằng nlink.
-         Dùng file MỒI tự tạo, không đụng khoá thật của Vinh. */
+         Dùng file MỒI tự tạo, không đụng khoá thật của người dùng. */
       const moi = path.join(os.homedir(), 'moi-kiem-hardlink.txt');
       const hl = path.join(goc, 'hl-kiem.txt');
       let taoHl = false;
