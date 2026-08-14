@@ -328,7 +328,7 @@ async function snapshot() {
          path.resolve chỉ xử lý CHUỖI: một symlink nằm trong dự án trỏ ra ngoài thì
          đường dẫn vẫn "nằm trong cwd" trong khi readFileSync đi theo link ra tận đâu.
          Đo được lúc đó: `ln -s /etc/passwd ./x.txt` -> đọc trọn /etc/passwd, và
-         `ln -s ~/.ssh ./d` -> `d/id_ed25519_volvo` trả về nguyên KHOÁ SSH RIÊNG.
+         `ln -s ~/.ssh ./d` -> `d/id_ed25519_<tên>` trả về nguyên KHOÁ SSH RIÊNG.
          Bịt bằng realpath. Bài này giữ chỗ đó, tạo symlink thật rồi dọn. */
       // Phải đặt symlink trong cwd CỦA PHIÊN đang thử, không phải cwd của test —
       // hai thứ đó trùng nhau lúc chạy tay nhưng khác nhau khi test-all đổi phiên.
@@ -367,7 +367,7 @@ async function snapshot() {
       }
 
       /* HARD LINK — lỗ còn lại sau khi bịt symlink, cũng THỦNG THẬT khi thử:
-         `ln ~/.ssh/id_ed25519_volvo ./x.txt` rồi ?path=x.txt trả nguyên khoá riêng.
+         `ln ~/.ssh/id_ed25519_<tên> ./x.txt` rồi ?path=x.txt trả nguyên khoá riêng.
          realpath không cứu được vì hard link không phải link — nó là tên thứ hai trỏ
          thẳng vào cùng inode nên đường thật vẫn nằm trong dự án. Chặn bằng nlink.
          Dùng file MỒI tự tạo, không đụng khoá thật của Vinh. */
@@ -449,7 +449,7 @@ async function snapshot() {
   /* ---- /api/plan: CÙNG chốt chặn với /api/file ----
      Chỗ này từng tự viết luật riêng (resolve + startsWith + endsWith('.md')) và thủng
      y hệt — đã đo thật: symlink tên `x.md` trong ~/.claude/plans trỏ tới
-     ~/.ssh/id_ed25519_volvo trả về nguyên khoá riêng; trỏ tới ~/.zsh_history trả 6.130
+     ~/.ssh/id_ed25519_<tên> trả về nguyên khoá riêng; trỏ tới ~/.zsh_history trả 6.130
      ký tự; hard link cũng lọt. Đuôi `.md` không cứu được gì vì tên symlink do người
      tấn công đặt. Bài cũ chỉ bắn `../` nên xanh suốt trong khi ba đường kia mở toang. */
   {

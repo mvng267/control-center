@@ -82,7 +82,21 @@ export function DockerTab() {
     finally { setBusy(null); }
   };
 
-  if (!r) return <div className="p-6 text-sm text-muted-foreground">Đang tải…</div>;
+  /* Đang tải cũng phải có PageHeader. Trước đây nhánh này trả về mỗi chữ "Đang tải…":
+     bấm sang tab Docker là tiêu đề biến mất rồi hiện lại — màn hình giật một nhịp.
+     Không phải chớp nhoáng: `docker system df` phải tính dung lượng toàn bộ image
+     (2.385GB trên máy này), lần đầu sau khi bật daemon mất hơn 1,6 giây — đủ lâu để
+     bài test "tab docker có phần đầu trang" bắt được lúc trống. */
+  if (!r) {
+    return (
+      <>
+        <PageHeader title="Docker" desc="Container đang chạy trên máy này." />
+        <div className="px-4 md:px-6">
+          <p className="py-8 text-center text-[13px] text-muted-foreground">Đang tải…</p>
+        </div>
+      </>
+    );
+  }
 
   /* Docker daemon TẮT — vẫn phải dựng khối Postgres. Trước đây nhánh này thoát sớm
      và bỏ luôn <PostgresPanel/>, nên tắt Docker là cả khối CSDL biến mất thay vì nói

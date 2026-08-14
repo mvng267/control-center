@@ -50,8 +50,18 @@ export function AgyTab() {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
+  /* Giữ PageHeader ở cả lúc đang tải — cùng lý do với tab Docker: trả về mỗi chữ
+     "Đang tải…" thì bấm sang tab là tiêu đề biến mất rồi hiện lại, màn hình giật một
+     nhịp. Ở đây gọi qua agy-proxy ngoài cổng 7788 nên còn dễ chậm hơn Docker. */
   if (!st) {
-    return <div className="p-6 text-sm text-muted-foreground">Đang tải…</div>;
+    return (
+      <>
+        <PageHeader title="Agy Proxy" desc="Trạng thái gateway, lưu lượng và sức khoẻ tài khoản." />
+        <div className="px-4 md:px-6">
+          <p className="py-8 text-center text-[13px] text-muted-foreground">Đang tải…</p>
+        </div>
+      </>
+    );
   }
 
   const usage = st.usage?.ok ? (st.usage as AgyUsage) : null;

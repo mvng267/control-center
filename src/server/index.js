@@ -1576,7 +1576,10 @@ function hostAllowed(req) {
 // đổi -> sinh khoá VAPID mới -> mọi đăng ký thông báo trên máy người dùng chết im lặng.
 const ROOT_DIR = path.join(__dirname, '..', '..');
 const PUSH_STATE_FILE = process.env.PUSH_STATE_FILE || path.join(ROOT_DIR, '.push-state.json');
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:claude@onluyen.edu.vn';
+/* VAPID_SUBJECT chỉ là địa chỉ liên hệ gửi kèm cho push service khi có sự cố — không
+   phải bí mật, nhưng cũng không nên đóng cứng email công ty vào mã. Đặt biến môi
+   trường VAPID_SUBJECT nếu muốn push service liên hệ được. */
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:dashboard@localhost';
 const b64u = buf => Buffer.from(buf).toString('base64url');
 
 // Keypair ưu tiên env VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY (base64url); không có thì
