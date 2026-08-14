@@ -8,6 +8,7 @@ import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { NotifyToggle } from '@/components/notify-toggle';
+import { NutCapNhat } from './nut-cap-nhat';
 import { cn } from '@/lib/utils';
 
 export type TabId = 'cli' | 'hermes' | 'agy' | 'docker' | 'stats';
@@ -119,6 +120,7 @@ export function AppShell({
             {daDatMa ? <Lock className="size-4 shrink-0" /> : <ShieldPlus className="size-4 shrink-0" />}
             <span className="truncate">{daDatMa ? 'Khoá ngay' : 'Tạo mã khoá'}</span>
           </button>
+          <NutCapNhat />
         </div>
         <div className="m-2.5 mt-0 flex items-center gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2">
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">

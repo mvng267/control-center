@@ -446,6 +446,40 @@ async function snapshot() {
     }
   }
 
+  /* ---- tự cập nhật: /api/capnhat ----
+     Hai cách cài -> hai lệnh cập nhật khác nhau (npm i -g / git pull). Server phải TỰ
+     nhận ra, vì người bấm nút trên điện thoại không nhìn thấy máy đang chạy kiểu nào. */
+  {
+    const r = await fetch(`${URL}/api/capnhat/trangthai`, { headers: { 'X-Dash-Token': token } });
+    const j = await r.json().catch(() => ({}));
+    ok('/api/capnhat/trangthai nhận ra kiểu cài',
+      r.status === 200 && (j.kieu === 'git' || j.kieu === 'npm'),
+      `${r.status} kiểu=${j.kieu} bản=${j.banHienTai}`);
+
+    if (j.kieu === 'git') {
+      ok('bản git: có mã commit và cờ sạch/bẩn',
+        !!j.git && typeof j.git.ma === 'string' && typeof j.git.sach === 'boolean',
+        JSON.stringify(j.git));
+
+      /* Cây có sửa chưa commit -> PHẢI từ chối. `git pull` lúc đó có thể xung đột
+         giữa chừng, để lại cây dở dang mà người bấm không hay vì họ đang ở điện thoại,
+         không nhìn thấy terminal. Chỉ kiểm khi cây đang bẩn thật. */
+      if (j.git && !j.git.sach) {
+        const c = await fetch(`${URL}/api/capnhat/chay`, {
+          method: 'POST', headers: { 'X-Dash-Token': token, 'Content-Type': 'application/json' }, body: '{}',
+        });
+        const cb = await c.json().catch(() => ({}));
+        ok('cây git bẩn: từ chối cập nhật, nói rõ file nào',
+          c.status === 500 && /chưa commit/.test(cb.error || ''),
+          c.status + ' ' + (cb.error || '').split('\n')[0].slice(0, 60));
+      }
+    }
+
+    // GET không được đổi trạng thái máy — chạy cập nhật phải là POST
+    const g = await fetch(`${URL}/api/capnhat/chay`, { headers: { 'X-Dash-Token': token } });
+    ok('/api/capnhat/chay không nhận GET', g.status === 404, 'HTTP ' + g.status);
+  }
+
   /* ---- /api/plan: CÙNG chốt chặn với /api/file ----
      Chỗ này từng tự viết luật riêng (resolve + startsWith + endsWith('.md')) và thủng
      y hệt — đã đo thật: symlink tên `x.md` trong ~/.claude/plans trỏ tới

@@ -1,9 +1,15 @@
 {
   "name": "claude-control-center",
   "version": "1.0.0",
-  "private": true,
   "description": "Dashboard quản lý Claude CLI sessions + Hermes chat + agy-proxy",
-  "engines": { "node": ">=22" },
+  "bin": { "control": "bin/control.js" },
+  "_files_ghichu": "Chỉ đóng gói thứ CHẠY được: src/ (server), bin/ (điểm vào), web-next/out/ (giao diện đã build). KHÔNG gói tests/ (105KB ui-new.js), scripts/, web/legacy/ (5.500 dòng, chỉ dùng khi NEW_UI=0 trên máy dev) — người cài bằng npm không chạy chúng bao giờ.",
+  "files": ["src/", "bin/", "web-next/out/", "README.md"],
+  "repository": { "type": "git", "url": "git+https://github.com/mvng267/control-center.git" },
+  "homepage": "https://github.com/mvng267/control-center#readme",
+  "bugs": { "url": "https://github.com/mvng267/control-center/issues" },
+  "_engines_ghichu": "Backend chỉ cần 18: đã rà toàn bộ src/, API mới nhất dùng tới là fetch() và AbortSignal.timeout (18 và 17.3). Đặt >=22 như trước là bắt nâng cấp thừa trên server. Build web-next thì cần >=20 (Next.js 16) nhưng việc đó chỉ làm trên máy dev, server chạy bản out/ đã build sẵn.",
+  "engines": { "node": ">=18" },
   "scripts": {
     "start": "node src/server/index.js",
     "test": "node tests/e2e.js",

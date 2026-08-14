@@ -111,6 +111,29 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       shell.w === 256 && shell.vien === '0px' && shell.muc === 32
       && shell.bo === '8px' && shell.head === 64, JSON.stringify(shell));
 
+    /* Nút tự cập nhật ở chân sidebar. Server tự nhận cài kiểu gì (npm -g hay clone
+       git) rồi chạy đúng lệnh — người bấm không phải nhớ máy nào cài kiểu nào, mà đó
+       là thứ hay quên nhất khi có hai máy.
+       Nút PHẢI cho biết đang ở bản nào: bấm cập nhật mà không biết mình đang đứng đâu
+       thì không đoán được nó sẽ làm gì. */
+    const nut = await page.evaluate(() => {
+      const e = document.querySelector('[data-testid=nut-cap-nhat]');
+      if (!e) return null;
+      return {
+        chu: (e.textContent || '').replace(/\s+/g, ' ').trim(),
+        tat: e.disabled,
+        ban: document.querySelector('[data-testid=cap-nhat-ban]')?.textContent?.trim() || '',
+        // cây git bẩn -> nút bị chặn thì PHẢI kèm lý do, không để mờ câm
+        lyDo: !!document.querySelector('[data-testid=cap-nhat-ban-nhap]'),
+      };
+    });
+    ok('có nút tự cập nhật ở chân sidebar', !!nut && /cập nhật/i.test(nut.chu),
+      nut ? JSON.stringify(nut.chu) : 'không thấy nút');
+    ok('nút cập nhật cho biết đang ở bản nào', !!nut?.ban, nut?.ban || '(trống)');
+    // Bị chặn thì phải nói vì sao — mờ mà câm là người dùng tưởng hỏng
+    ok('nút bị chặn thì kèm lý do', !nut?.tat || nut.lyDo,
+      `tắt=${nut?.tat} lyDo=${nut?.lyDo}`);
+
     // Chart: lưới nét đứt 4 8, KHÔNG có trục Y (Atlas không có)
     await page.click('[data-testid=nav-stats]');
     await page.waitForTimeout(2200);

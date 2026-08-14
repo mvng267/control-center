@@ -9,7 +9,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawn, execFile } = require('child_process');
+const { spawn, execFile, execSync } = require('child_process');
 const crypto = require('crypto');
 // Giải mã UTF-8 an toàn khi đọc từng đoạn: giữ byte lẻ ở ranh giới ký tự (xem docPhanThem)
 const { StringDecoder } = require('string_decoder');
@@ -758,6 +758,11 @@ function gocQuaRong(goc) {
   if (goc === nha || goc === path.dirname(nha) || goc === path.parse(goc).root) return true;
   return false;
 }
+
+/* Khoá một lần cập nhật tại một thời điểm. Bấm hai lần liên tiếp trên điện thoại là
+   chuyện thường (mạng chậm, tưởng chưa ăn) — hai `npm i -g` chạy chồng nhau thì bản
+   cài dở của tiến trình này đè lên tiến trình kia. */
+let dangCapNhat = false;
 
 function findSessionFile(sid) {
   let dirs = [];
@@ -2443,6 +2448,70 @@ const server = http.createServer(async (req, res) => {
     const rec = oneshots.get(m[1]);
     if (!rec) return json(res, 404, { error: 'not found' });
     return json(res, 200, { status: rec.status, output: rec.output });
+  }
+
+  /* ---- tự cập nhật dashboard ----
+     Hai cách cài -> hai cách cập nhật, phải tự nhận ra chứ không bắt người dùng nhớ:
+       - cài bằng `npm i -g claude-control-center` -> `npm i -g` bản mới
+       - clone git             -> `git pull --ff-only`
+     Nhận diện bằng đường dẫn thật của mã đang chạy: nằm trong node_modules/ nghĩa là
+     bản npm. Dùng __dirname chứ không phải cwd — cwd là nơi gõ lệnh, không phải nơi
+     mã nằm. */
+  const THU_MUC_MA = path.resolve(__dirname, '..', '..');
+  const laBanNpm = /[\\/]node_modules[\\/]/.test(THU_MUC_MA);
+
+  if (p === '/api/capnhat/trangthai' && req.method === 'GET') {
+    let banHienTai = '';
+    try { banHienTai = require(path.join(THU_MUC_MA, 'package.json')).version || ''; } catch {}
+    let git = null;
+    if (!laBanNpm) {
+      try {
+        const ma = execSync('git rev-parse --short HEAD', { cwd: THU_MUC_MA, encoding: 'utf8' }).trim();
+        const tin = execSync('git log -1 --format=%s', { cwd: THU_MUC_MA, encoding: 'utf8' }).trim();
+        const ban = execSync('git status --porcelain', { cwd: THU_MUC_MA, encoding: 'utf8' }).trim();
+        git = { ma, tin: tin.slice(0, 80), sach: !ban };
+      } catch {}
+    }
+    return json(res, 200, { ok: true, kieu: laBanNpm ? 'npm' : 'git', banHienTai, git, thuMuc: gonNha(THU_MUC_MA) });
+  }
+
+  /* Chạy cập nhật. POST chứ không GET: đây là hành động ĐỔI trạng thái máy, GET phải
+     an toàn để bấm lại được. Không nhận tham số nào từ client — lệnh cố định, người
+     gọi không chọn được chạy gì. */
+  if (p === '/api/capnhat/chay' && req.method === 'POST') {
+    if (dangCapNhat) return json(res, 409, { error: 'đang cập nhật rồi' });
+    dangCapNhat = true;
+
+    const xong = (ok, ra) => {
+      dangCapNhat = false;
+      return json(res, ok ? 200 : 500, { ok, ...ra });
+    };
+
+    if (laBanNpm) {
+      // -g: bản cài toàn cục. Không dùng shell -> không có chuyện chèn lệnh.
+      return execFile('npm', ['install', '-g', 'claude-control-center@latest'],
+        { timeout: 180000, maxBuffer: 8e6 }, (e, so, se) => {
+          if (e) return xong(false, { error: (se || e.message || '').slice(-600) });
+          return xong(true, { kieu: 'npm', ra: (so || '').slice(-600), canKhoiDongLai: true });
+        });
+    }
+
+    /* Bản git: KHÔNG kéo nếu có sửa tay chưa commit — `git pull` lúc đó có thể xung
+       đột giữa chừng, để lại cây làm việc dở dang mà người dùng không biết vì họ đang
+       bấm nút trên điện thoại, không nhìn thấy terminal. */
+    let ban = '';
+    try { ban = execSync('git status --porcelain', { cwd: THU_MUC_MA, encoding: 'utf8' }).trim(); } catch {}
+    if (ban) {
+      return xong(false, { error: 'có thay đổi chưa commit trên máy này, không kéo tự động:\n' + ban.slice(0, 400) });
+    }
+    return execFile('git', ['pull', '--ff-only'],
+      { cwd: THU_MUC_MA, timeout: 120000, maxBuffer: 8e6 }, (e, so, se) => {
+        if (e) return xong(false, { error: (se || e.message || '').slice(-600) });
+        const ra = (so || '').trim();
+        // "Already up to date." -> không cần khởi động lại, đỡ làm đứt phiên đang chạy
+        const coMoi = !/already up to date|đã cập nhật/i.test(ra);
+        return xong(true, { kieu: 'git', ra: ra.slice(-600), canKhoiDongLai: coMoi });
+      });
   }
 
   // ---- Hermes: stream hội thoại của orchestrator (read-only) ----
