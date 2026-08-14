@@ -17,8 +17,26 @@ npm i -g claude-control-center
 control                    # cổng 7799; đổi bằng --port 8080
 ```
 
+**Nếu báo lỗi quyền** (`EACCES`, "you do not have the permissions") — nghĩa là
+`npm root -g` trỏ vào thư mục hệ thống. Đừng dùng `sudo`: nó tạo file thuộc `root`
+trong thư mục của bạn, lần cập nhật sau lại vướng tiếp. Đổi sang thư mục nhà:
+
+```bash
+npm config set prefix ~/.local
+mkdir -p ~/.local/bin
+npm i -g claude-control-center
+```
+
+Kiểm `control` đã vào PATH chưa: `which control`. Chưa thấy thì thêm dòng này vào
+`~/.bashrc` (hoặc `~/.zshrc`) rồi mở terminal mới:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 Cập nhật: `npm i -g claude-control-center@latest`, hoặc bấm nút **Cập nhật** trong màn
-cấu hình (bấm vào ô tên ở chân thanh bên).
+cấu hình (bấm vào ô tên ở chân thanh bên) — server tự nhận ra cài bằng npm hay clone
+git rồi chạy đúng lệnh.
 
 ## Mac — qua Homebrew
 
@@ -60,41 +78,36 @@ log restart thì tưởng xong.
 
 ---
 
-## Debian (server)
+## Debian (server) — cài bằng npm
 
-Lần đầu:
+Toàn bộ phần này đã chạy thật trên Debian (Node v18.20.4), không phải viết theo trí nhớ.
+
+**1. Cài** — dùng `~/.local` để không cần `sudo`:
 
 ```bash
 ssh <tên>@<địa-chỉ-server>
-git clone https://github.com/mvng267/control-center.git ~/control
-cd ~/control
-node src/server/index.js          # chạy thử, Ctrl+C để dừng
+
+npm config set prefix ~/.local
+mkdir -p ~/.local/bin
+npm i -g claude-control-center
+
+~/.local/bin/control --version     # phải in ra số phiên bản
 ```
 
-Những lần sau, chỉ cần:
-
-```bash
-cd ~/control && bash scripts/cap-nhat-debian.sh
-```
-
-Script tự làm theo thứ tự: dừng bản cũ → `git pull` → kiểm cú pháp → khởi động lại →
-chờ server lên → kiểm endpoint mới đã nạp chưa. Dừng lại báo lỗi nếu có bước nào hỏng,
-và **không** kéo nếu trên máy còn thay đổi chưa commit (không nuốt mất công sửa tay).
-
-Chạy nền lâu dài thì dùng systemd — không phụ thuộc phiên SSH:
+**2. Chạy nền bằng systemd** — không phụ thuộc phiên SSH:
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cat > ~/.config/systemd/user/control.service <<'EOF'
+cat > ~/.config/systemd/user/control-center.service <<EOF
 [Unit]
 Description=Claude Control Center
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/node %h/control/src/server/index.js
-WorkingDirectory=%h/control
+Type=simple
+ExecStart=$(command -v node) $HOME/.local/lib/node_modules/claude-control-center/bin/control.js
 Environment=PORT=7799
-Restart=always
+Restart=on-failure
 RestartSec=3
 
 [Install]
@@ -102,14 +115,44 @@ WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable --now control
-loginctl enable-linger "$USER"   # chạy tiếp cả khi đã đăng xuất SSH
+systemctl --user enable --now control-center
+loginctl enable-linger "$USER"     # chạy tiếp cả khi đã đăng xuất SSH
 ```
 
-Kiểm: `systemctl --user status control` · log: `journalctl --user -u control -f`
+`ExecStart` gọi **thẳng file `.js` bằng `node`**, không gọi `~/.local/bin/control`.
+Lý do: systemd không nạp shell nên không có `PATH`, mà `control` chỉ là symlink trỏ
+tới một file `.js` — cần `node` chạy nó.
 
-`cap-nhat-debian.sh` tự nhận ra systemd và dùng `systemctl --user restart` thay vì
-giết tiến trình trần.
+**3. Kiểm**:
+
+```bash
+systemctl --user is-active control-center      # phải in "active"
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7799/   # 200
+journalctl --user -u control-center -f          # xem log
+```
+
+**Cập nhật** về sau — bấm nút **Cập nhật** trong màn cấu hình, hoặc:
+
+```bash
+npm i -g claude-control-center@latest
+systemctl --user restart control-center
+```
+
+### Nếu đang chạy bản clone git
+
+Gỡ trước cho khỏi hai bản tranh cổng 7799. Dữ liệu ở `~/.claude` **không** bị đụng —
+nhưng cứ sao lưu cho chắc:
+
+```bash
+cp -a ~/.claude/dashboard-*.json ~/dashboard-backup/   # mã truy cập, mã khoá, cấu hình
+
+systemctl --user stop control-center
+systemctl --user disable control-center
+rm -rf ~/control-center        # hoặc ~/control, tuỳ chỗ đã clone
+```
+
+Rồi làm lại từ bước 1. Cài xong, mã truy cập và mã khoá cũ vẫn dùng được vì chúng nằm
+ở `~/.claude`, không nằm trong thư mục mã.
 
 ---
 
@@ -159,7 +202,22 @@ curl -s -o /dev/null -w '%{http_code}\n' http://<ip>:7799/api/passcode/status
 cả hai đều kiểm bước này và báo lỗi thay vì im lặng.
 
 **Cổng 7799 đã bị chiếm**: `lsof -ti:7799 -sTCP:LISTEN` để xem pid.
-Đổi cổng thì đặt `PORT=7800`.
+Đổi cổng thì đặt `PORT=7800`. Trên Debian không có `lsof` thì dùng `ss -lntp | grep 7799`.
+
+**`npm i -g` báo lỗi quyền** — xem mục npm ở đầu trang: đổi `prefix` sang `~/.local`,
+đừng dùng `sudo`.
+
+**Gõ `control` báo "command not found"** sau khi cài xong — `~/.local/bin` chưa có
+trong `PATH`. Kiểm bằng `echo $PATH | tr ':' '\n' | grep local`. Thêm vào `~/.bashrc`
+rồi mở terminal mới. Cách chắc ăn không cần PATH: gõ thẳng
+`~/.local/bin/control`.
+
+**Icon trắng khi "Thêm vào Màn hình chính"** trên bản npm **1.0.0** — icon PWA trả 404
+vì gói thiếu thư mục chứa icon. Sửa ở **1.0.1**: `npm i -g claude-control-center@latest`.
+
+**Tab Hermes / Agy Proxy không thấy đâu** — đúng như thiết kế. Máy không có `~/.hermes`
+hay thư mục `agy-proxy` thì tab tự tắt, vì mở ra cũng chỉ thấy lỗi. Bật lại trong màn
+cấu hình (bấm ô tên ở chân thanh bên) nếu cài chúng sau.
 
 **Panel xem file báo "phiên này chạy ở thư mục nhà"** — đúng như thiết kế. Phiên chạy
 thẳng ở `~` thì "thư mục dự án" là cả thư mục nhà (4000 file lẫn Desktop, Documents,
