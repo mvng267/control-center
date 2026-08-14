@@ -355,6 +355,34 @@ async function snapshot() {
         for (const noi of daTao) { try { fs.unlinkSync(noi); } catch {} }
       }
 
+      /* HARD LINK — lỗ còn lại sau khi bịt symlink, cũng THỦNG THẬT khi thử:
+         `ln ~/.ssh/id_ed25519_volvo ./x.txt` rồi ?path=x.txt trả nguyên khoá riêng.
+         realpath không cứu được vì hard link không phải link — nó là tên thứ hai trỏ
+         thẳng vào cùng inode nên đường thật vẫn nằm trong dự án. Chặn bằng nlink.
+         Dùng file MỒI tự tạo, không đụng khoá thật của Vinh. */
+      const moi = path.join(os.homedir(), 'moi-kiem-hardlink.txt');
+      const hl = path.join(goc, 'hl-kiem.txt');
+      let taoHl = false;
+      try {
+        fs.writeFileSync(moi, 'BI-MAT-NGOAI-DU-AN-' + 'x'.repeat(50) + '\n');
+        try { fs.unlinkSync(hl); } catch {}
+        fs.linkSync(moi, hl);
+        taoHl = true;
+      } catch {}
+      try {
+        if (taoHl) {
+          const rh = await doc('hl-kiem.txt');
+          ok('hard link trỏ ra ngoài dự án bị chặn (đã THỦNG thật một lần)',
+            !!rh.body.error && !rh.body.noiDung,
+            rh.code + ' ' + (rh.body.error || (rh.body.noiDung || '').length + ' ký tự LỌT'));
+        } else {
+          ok('tạo được hard link để kiểm', false, 'không tạo được hard link thử');
+        }
+      } finally {
+        try { fs.unlinkSync(hl); } catch {}
+        try { fs.unlinkSync(moi); } catch {}
+      }
+
       // Còn phải ĐỌC ĐƯỢC file thường, không thì chặn quá tay thành vô dụng
       const bt = await doc('package.json');
       ok('vẫn đọc được file thường trong dự án',

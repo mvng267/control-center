@@ -2588,6 +2588,19 @@ const server = http.createServer(async (req, res) => {
     let st;
     try { st = fs.statSync(that); } catch { return json(res, 404, { error: 'không thấy file' }); }
     if (!st.isFile()) return json(res, 400, { error: 'không phải file' });
+
+    /* HARD LINK — lỗ còn lại sau khi bịt symlink, cũng đã bắn thử THẬT:
+         ln ~/.ssh/id_ed25519_volvo ./x.txt  ->  ?path=x.txt  trả nguyên khoá riêng.
+       realpath không cứu được vì hard link KHÔNG phải link: nó là tên thứ hai trỏ
+       thẳng vào cùng inode, nên đường dẫn thật vẫn nằm gọn trong dự án.
+       Chặn bằng số tên trỏ vào inode. Đo trước khi chặn để chắc không đá nhầm:
+       control + agy-proxy = 38.192 file, **0** file mã nguồn có nlink > 1; hai file
+       duy nhất là binary esbuild trong node_modules, vốn đã bị chặn vì là nhị phân.
+       Lưu ý cho người sau: pnpm dựng node_modules bằng hard link — đổi sang pnpm thì
+       phải xét lại chỗ này, không thì đọc file trong node_modules sẽ bị từ chối. */
+    if (st.nlink > 1) {
+      return json(res, 403, { error: 'file này có nhiều liên kết cứng, không cho xem' });
+    }
     /* 4) Trần 512KB — đo thật: file lớn nhất dự án 420KB (web-next/package-lock.json),
           không file mã nguồn nào vượt. Chặn file build khổng lồ mà không cắt gì cần đọc. */
     if (st.size > 512 * 1024) {
