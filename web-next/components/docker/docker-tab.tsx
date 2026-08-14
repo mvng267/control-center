@@ -84,15 +84,21 @@ export function DockerTab() {
 
   if (!r) return <div className="p-6 text-sm text-muted-foreground">Đang tải…</div>;
 
+  /* Docker daemon TẮT — vẫn phải dựng khối Postgres. Trước đây nhánh này thoát sớm
+     và bỏ luôn <PostgresPanel/>, nên tắt Docker là cả khối CSDL biến mất thay vì nói
+     "Postgres đang tắt". Người dùng nhìn vào tưởng dashboard hỏng, mà đúng ra đây là
+     lúc CẦN thấy nó nhất — để biết vì sao CSDL không lên.
+     Chính hai bài test "khối PostgreSQL luôn có mặt" bắt được cảnh này. */
   if (!r.ok) {
     return (
       <>
         <PageHeader title="Docker" desc="Container đang chạy trên máy này." />
-        <div className="px-4 md:px-6">
+        <div className="flex flex-col gap-4 px-4 pb-24 md:px-6 md:pb-6">
           <Card className="gap-0 p-6 text-center" data-testid="docker-loi">
             <Container className="mx-auto size-8 text-muted-foreground" />
             <p className="mt-3 text-[13px] text-muted-foreground">{r.error}</p>
           </Card>
+          <PostgresPanel />
         </div>
       </>
     );
