@@ -1717,6 +1717,42 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     ok('nhịp poll giãn ra 2s khi Claude rảnh (đỡ tốn pin)',
       lanGoi >= 2 && lanGoi <= 5, `${lanGoi} lần trong 6.2s`);
 
+    /* CUỘN LÊN ĐỌC LẠI thì chữ dưới mắt phải ĐỨNG YÊN qua các vòng poll.
+       Server chỉ trả 30 tin gần nhất: mỗi lượt mới đến là tin cũ nhất bị đẩy ra khỏi
+       mảng, khung co lại TỪ PHÍA TRÊN, mà scrollTop vẫn nguyên số cũ -> con trỏ cuộn
+       trỏ sang đoạn chữ khác. Vinh mô tả đúng triệu chứng: "kéo lên quá thì nó dính
+       trên cùng màn hình" — dính ở top=0 trong khi nội dung bên dưới trượt đi.
+       Đo trước khi sửa, phiên đang chạy, giữ nguyên 8 vòng: cao 2683 -> 2725 -> 2661,
+       lượt đầu đổi 2 lần. Sau khi bù chênh lệch chiều cao: 8/8 vòng đứng yên. */
+    await page.evaluate(() => { document.querySelector('[data-testid=chat-bubbles]').scrollTop = 120; });
+    await page.waitForTimeout(400);
+    const dauCuon = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid=chat-bubbles]');
+      return { top: Math.round(el.scrollTop), cao: Math.round(el.scrollHeight) };
+    });
+    await page.waitForTimeout(6500);   // ~3 vòng poll
+    const sauCuon = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid=chat-bubbles]');
+      return { top: Math.round(el.scrollTop), cao: Math.round(el.scrollHeight) };
+    });
+    /* Khung không đổi chiều cao -> scrollTop phải y nguyên. Khung có đổi (lượt mới về)
+       -> scrollTop phải dịch ĐÚNG bằng phần chênh, tức chữ dưới mắt không nhúc nhích. */
+    const chenh = sauCuon.cao - dauCuon.cao;
+    const lech = Math.abs((sauCuon.top - dauCuon.top) - chenh);
+    ok('cuộn lên đọc lại: chữ không trượt khi có tin mới về',
+      lech <= 2, `cao ${dauCuon.cao}->${sauCuon.cao} (chênh ${chenh}), top ${dauCuon.top}->${sauCuon.top}, lệch ${lech}px`);
+    // và vẫn phải cuộn xuống được đáy như thường
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-testid=chat-bubbles]');
+      el.scrollTop = el.scrollHeight;
+    });
+    await page.waitForTimeout(2600);
+    const oDay = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid=chat-bubbles]');
+      return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    });
+    ok('cuộn xuống đáy rồi thì vẫn tự bám tin mới', oDay, String(oDay));
+
     // 62: tạo job lặp/cron rồi HUỶ — kiểm cả endpoint xoá (trước đây không có, job chạy mãi)
     await page.click('[data-testid=chat-back]').catch(() => {});
     await page.waitForTimeout(1200);

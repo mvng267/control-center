@@ -285,9 +285,29 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
     return [];
   }, [h?.messages]);
 
+  /* Chiều cao khung ở lần vẽ trước — để bù lại phần bị cắt mất khi cửa sổ tin trượt. */
+  const caoTruoc = useRef(0);
+
   useEffect(() => {
     const el = boxRef.current;
-    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (atBottom.current) {
+      el.scrollTop = el.scrollHeight;
+    } else {
+      /* ĐANG ĐỌC LẠI Ở TRÊN. Server chỉ trả 30 tin gần nhất, nên mỗi lượt mới đến là
+         tin cũ NHẤT bị đẩy ra khỏi mảng: khung co lại từ phía trên, mà scrollTop vẫn
+         nguyên số cũ -> con trỏ cuộn trỏ sang đoạn chữ khác. Vinh mô tả đúng cái này:
+         "kéo lên quá thì nó dính trên cùng màn hình" — dính ở top=0 trong khi nội dung
+         bên dưới cứ trượt đi.
+         Đo thật trên phiên đang chạy, cuộn lên đầu rồi giữ nguyên 8 vòng poll:
+         cao 2683 -> 2725 -> 2661, lượt đầu đổi từ "Bash(Tìm PUB" sang "Read(paths.t"
+         sang "Read(updater" — 2/8 vòng trượt mất chỗ đang đọc.
+         Bù lại đúng phần chênh: khung cao thêm bao nhiêu thì đẩy scrollTop xuống bấy
+         nhiêu, chữ dưới mắt đứng yên. */
+      const chenh = el.scrollHeight - caoTruoc.current;
+      if (chenh && caoTruoc.current) el.scrollTop += chenh;
+    }
+    caoTruoc.current = el.scrollHeight;
     // Bám theo cả ĐỘ DÀI bản nháp: chữ chảy ra làm khung cao dần mà số lượt không
     // đổi, chỉ nghe groups.length thì con chữ mới trôi khỏi tầm nhìn.
   }, [groups.length, h?.typing, h?.nhap?.length]);
