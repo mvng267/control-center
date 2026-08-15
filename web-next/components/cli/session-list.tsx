@@ -254,7 +254,12 @@ export function SessionList({
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2 md:px-6">
+      {/* pb-24 trên điện thoại: nút tròn nổi cao 56px neo cách đáy 74px, mà thẻ thì
+          CUỘN QUA DƯỚI nó — thẻ nào trôi tới đó là nút `⋯` của nó bị nút nổi che.
+          Đo thật trên iPhone 390px: thẻ ở top=715px có nút ⋯ nằm gọn dưới nút nổi
+          (x 318–374), bấm vào là mở màn giao việc chứ không ra menu thẻ.
+          Chừa chỗ ở cuối vùng cuộn để cuộn hết vẫn đẩy được thẻ cuối lên khỏi nút. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-2 md:px-6 md:pb-4">
 
         {/* KHÔNG bọc khung bảng. Bản cũ nhốt tất cả trong một hộp `rounded-xl border
             bg-card`, thành ra hai lớp viền lồng nhau: viền hộp rồi tới viền từng thẻ.

@@ -1612,6 +1612,39 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       ok('the co hien cau cuoi (dang do viec gi)',
         !!d && d.coCauCuoi > 0, d ? d.coCauCuoi + '/' + d.so + ' the co cau cuoi' : '-');
 
+      /* NUT TRON NOI khong duoc de len nut `⋯` cua the nao.
+         No neo `fixed` o goc phai, con the thi CUON QUA DUOI no — the nao troi toi do
+         la nut menu cua the do bi che. Do that tren Debian qua Tailscale: the o
+         top=715px co nut ⋯ nam gon duoi nut noi (x 318-374), bam vao ra man giao viec
+         chu khong ra menu the. Sua bang cach chua cho o cuoi vung cuon (pb-24).
+         Kiem sau khi CUON XUONG DAY — luc do the cuoi moi sat nut nhat. */
+      await pg.evaluate(() => {
+        const el = document.querySelector('[data-testid=cli-list] .overflow-y-auto');
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+      await pg.waitForTimeout(900);
+      const deLen = await pg.evaluate(() => {
+        const fab = document.querySelector('[data-testid=new-session]');
+        /* KHONG dung offsetParent de xet "co hien khong": nut nay `position: fixed`,
+           ma offsetParent LUON tra null voi phan tu fixed — bai nay tung bao "khong co
+           nut noi" va xanh gia trong khi nut van nam do de len the that. Do bang
+           kich thuoc thuc te. */
+        const f = fab && fab.getBoundingClientRect();
+        if (!f || f.width === 0 || f.height === 0) return { bo: true };
+        const cham = [];
+        for (const e of document.querySelectorAll('[data-testid=row-menu]')) {
+          if (!e.offsetParent) continue;
+          const r = e.getBoundingClientRect();
+          if (r.bottom < 0 || r.top > innerHeight) continue;   // ngoai khung nhin
+          if (!(r.right < f.left || r.left > f.right || r.bottom < f.top || r.top > f.bottom))
+            cham.push(Math.round(r.top));
+        }
+        return { cham, fab: Math.round(f.top) };
+      });
+      ok('nut noi khong de len nut ⋯ cua the nao',
+        deLen.bo || deLen.cham.length === 0,
+        deLen.bo ? 'khong co nut noi' : `nut noi top=${deLen.fab}, the bi che: ${deLen.cham.join(',') || 'khong'}`);
+
       /* Phan dau trang khong duoc an het cho cua noi dung.
          Do that truoc khi sua: header 133px, the dau tien nam o 439px tren man 844px
          -> qua NUA man hinh chi de toi duoc phien dau. Sau khi gom hang: 60px / 288px.
