@@ -1725,12 +1725,20 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         'sel-row=' + (await pg.locator('[data-testid=sel-row]').count())
         + ' row-menu=' + (await pg.locator('[data-testid=row-menu]').count()));
 
-      // Sắp xếp: bảng cũ để ở tiêu đề cột, bỏ bảng thì phải còn chỗ khác
+      /* Sắp xếp: bảng cũ để ở tiêu đề cột, bỏ bảng thì phải còn chỗ khác.
+         Bốn nút sắp xếp GIỜ NẰM TRONG MENU (nút `mo-loc`), không còn bày phẳng thành
+         một hàng riêng — hàng đó ăn 43px vĩnh viễn cho thứ phần lớn thời gian để
+         nguyên "Mới nhất". Phải mở menu rồi mới bấm được. */
+      await pg.locator('[data-testid=mo-loc]').click();
+      await pg.waitForSelector('[data-testid=menu-loc]', { timeout: 10000 });
+      await pg.waitForTimeout(400);
       await pg.locator('[data-testid=sort-title]').click();
       await pg.waitForTimeout(700);
-      ok('doi sap xep tu thanh dieu khien cua luoi',
+      ok('doi sap xep tu menu loc',
         (await pg.locator('[data-testid=sort-title]').getAttribute('data-active')) === 'true',
         'data-active=' + (await pg.locator('[data-testid=sort-title]').getAttribute('data-active')));
+      await pg.locator('[data-testid=sheet-nen]').click().catch(() => {});
+      await pg.waitForTimeout(400);
       await mp.close();
     }
 
@@ -2001,12 +2009,18 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await page.waitForTimeout(500);
     }
 
-    // Nút sắp xếp theo dự án: SortKey đã khai báo 'project' nhưng KHÔNG có nút nào bấm được
+    /* Nút sắp xếp theo dự án: SortKey đã khai báo 'project' nhưng KHÔNG có nút nào
+       bấm được. Giờ nút nằm trong menu `mo-loc`, phải mở ra mới thấy trong DOM. */
+    await page.click('[data-testid=mo-loc]');
+    await page.waitForSelector('[data-testid=menu-loc]', { timeout: 10000 });
+    await page.waitForTimeout(400);
     const coNut = await page.locator('[data-testid=sort-project]').count();
     ok('có nút sắp xếp theo dự án (trước: khai báo rồi mà không bấm được)', coNut === 1);
 
     // Bấm vào -> gom nhóm theo dự án, đầu nhóm hiện repo hoặc đường dẫn
     await page.click('[data-testid=sort-project]');
+    await page.waitForTimeout(400);
+    await page.click('[data-testid=sheet-nen]').catch(() => {});
     await page.waitForTimeout(700);
     const g = await page.evaluate(() => ({
       nhom: document.querySelectorAll('[data-testid=nhom-du-an]').length,
@@ -2037,6 +2051,92 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     ok('bộ lọc dự án dùng đường dẫn làm khoá (không trộn dự án trùng tên)',
       opts.length > 0 && opts.every((v) => v.startsWith('/')),
       opts.slice(0, 2).join(' | '));
+
+    /* ---- BA BỘ LỌC TRONG MENU ----
+       Ba trường server ĐÃ trả từ lâu mà giao diện chưa đụng tới. Đáng giá nhất là
+       "ẩn thư mục đã xoá": đo trên máy này 24/136 phiên (18%) có thư mục gốc không
+       còn — nhắn vào rơi vào hư không, mà trước đây không có cách nào giấu đi. */
+    {
+      // về "Mới nhất" cho khỏi vướng gom nhóm của bài trước
+      await page.click('[data-testid=mo-loc]');
+      await page.waitForSelector('[data-testid=menu-loc]', { timeout: 10000 });
+      await page.waitForTimeout(300);
+      await page.click('[data-testid=sort-mtimeMs]');
+      await page.waitForTimeout(400);
+
+      const tongCua = (t) => +((t || '').match(/\/\s*(\d+)/)?.[1] || 0);
+      const truoc = tongCua(await page.locator('[data-testid=pagination-info]').textContent());
+
+      // số ghi trên nút = số phiên khớp, phải khớp với mức tổng tụt đi khi bật
+      const demXoa = +(await page.locator('[data-testid=loc-da-xoa]').innerText())
+        .trim().split(/\s+/).pop();
+      await page.click('[data-testid=loc-da-xoa]');
+      await page.waitForTimeout(500);
+      await page.click('[data-testid=sheet-nen]').catch(() => {});
+      await page.waitForTimeout(600);
+      const sau = tongCua(await page.locator('[data-testid=pagination-info]').textContent());
+
+      ok('ẩn phiên thư mục đã xoá: tổng tụt đúng bằng số ghi trên nút',
+        demXoa > 0 ? truoc - sau === demXoa : truoc === sau,
+        `${truoc} - ${demXoa} = ${sau}`);
+
+      // Bật lọc mà không có dấu hiệu gì thì ngồi nhìn danh sách thiếu phiên không hiểu vì sao
+      ok('có chấm báo đang bật lọc',
+        (await page.locator('[data-testid=loc-dang-bat]').count()) === 1,
+        'chấm=' + (await page.locator('[data-testid=loc-dang-bat]').count()));
+
+      /* Nhớ qua F5 — nhưng CHỈ những thứ an toàn. Tab và ô tìm cố ý KHÔNG nhớ: mở app
+         ra thấy danh sách đã lọc sẵn từ hôm qua thì tưởng mất phiên. */
+      await page.reload({ waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+      await page.waitForTimeout(2500);
+      ok('lọc "đã xoá" được nhớ qua F5',
+        (await page.locator('[data-testid=loc-dang-bat]').count()) === 1,
+        'chấm sau F5=' + (await page.locator('[data-testid=loc-dang-bat]').count()));
+
+      // tắt đi, trả trạng thái về như cũ cho các bài sau
+      await page.click('[data-testid=mo-loc]');
+      await page.waitForTimeout(400);
+      await page.click('[data-testid=loc-da-xoa]');
+      await page.waitForTimeout(400);
+      await page.click('[data-testid=sheet-nen]').catch(() => {});
+      await page.waitForTimeout(600);
+      ok('tắt lọc thì chấm biến mất',
+        (await page.locator('[data-testid=loc-dang-bat]').count()) === 0,
+        'chấm=' + (await page.locator('[data-testid=loc-dang-bat]').count()));
+    }
+
+    /* Bỏ dấu tiếng Việt: tiêu đề Claude đặt gần như luôn có dấu, mà gõ trên điện thoại
+       thì hay gõ không dấu — trước đây gõ "kiem tra" ra 0 kết quả dù phiên "Kiểm tra…"
+       đang nằm ngay trên màn hình. */
+    {
+      const coDau = await page.evaluate(() => {
+        const e = [...document.querySelectorAll('[data-testid=session-title]')]
+          .map((x) => (x.textContent || '').trim())
+          .find((t) => /[àáâãèéêìíòóôõùúýăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i.test(t));
+        return e || '';
+      });
+      const boDauJs = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/đ/g, 'd').replace(/Đ/g, 'D');
+      /* Từ khoá phải THỰC SỰ có dấu ở bản gốc, nếu không bài này không kiểm gì cả —
+         lần đầu viết, "Đếm từ 1 đến 12" không có từ nào ≥4 ký tự nên từ khoá ra chuỗi
+         RỖNG, tìm rỗng thì trả về hết và bài vẫn xanh. Chọn từ dài ≥3 và bắt buộc
+         khác chính nó sau khi bỏ dấu. */
+      const tu = !coDau ? '' : coDau.split(/\s+/)
+        .find((w) => w.length >= 3 && boDauJs(w) !== w);
+      if (!tu) {
+        ok('tìm không dấu ra phiên có dấu', true, '(không có phiên nào tên có dấu để thử)');
+      } else {
+        const goKhongDau = boDauJs(tu);
+        await page.fill('[data-testid=search-box]', goKhongDau);
+        await page.waitForTimeout(700);
+        const n = await page.locator('[data-testid=session-row]').count();
+        ok('tìm không dấu ra phiên có dấu', n > 0,
+          `gõ "${goKhongDau}" (gốc "${tu}") -> ${n} thẻ`);
+        await page.fill('[data-testid=search-box]', '');
+        await page.waitForTimeout(500);
+      }
+    }
 
     /* Tab Thống kê gom donut theo cùng trường project nên sai theo đúng một kiểu:
        lát "6debb715b13d/scratchpad", "cmdtest" (thư mục nháp do test sinh),

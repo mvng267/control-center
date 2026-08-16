@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Search, ChevronsUpDown, ChevronLeft, ChevronRight, Plus,
+  Search, ChevronLeft, ChevronRight, Plus, SlidersHorizontal, Check,
   MoreHorizontal, MessageSquare, Download, Square,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { ManTaoTask } from './man-tao-task';
 import { JobsPanel } from './jobs-panel';
 import { SessionCard } from './session-card';
+import { SheetDuoi } from '@/components/ui/sheet-duoi';
 
 function ago(ms: number) {
   const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
@@ -36,11 +37,30 @@ function gonSo(n: number) {
 }
 
 type SortKey = 'title' | 'project' | 'msgs' | 'mtimeMs';
+
+/* MỘT nguồn duy nhất cho danh sách kiểu sắp xếp — menu và dòng trạng thái cùng đọc
+   từ đây. Hai bản riêng là hai nơi lệch nhau lúc nào không biết. */
+const SAP_XEP: { k: SortKey; nhan: string }[] = [
+  { k: 'mtimeMs', nhan: 'Mới nhất' },
+  { k: 'project', nhan: 'Dự án' },
+  { k: 'title', nhan: 'Tên' },
+  { k: 'msgs', nhan: 'Tin nhắn' },
+];
 // Tên cũ là PAGE, và đúng cái tên đó gây ra lỗi phân trang: chỗ hiện "1 – 10 / 133"
 // dùng hằng PAGE thay vì biến perPage, nên chọn 50 dòng/trang vẫn nói "1 – 10".
 // Đổi tên để không ai lặp lại nhầm lẫn.
 const PAGE_MAC_DINH = 10;
 const KHOA_NHAP = '__nhap__';
+
+/* Bỏ dấu tiếng Việt trước khi so khớp. Tiêu đề do Claude tự đặt gần như luôn có dấu
+   ("Kiểm tra tiến độ"), mà gõ trên điện thoại thì hay gõ không dấu — trước đây gõ
+   "kiem tra" ra 0 kết quả dù phiên đó đang nằm ngay trên màn hình.
+   NFD tách dấu thành ký tự tổ hợp riêng rồi xoá chúng; `đ` không phải tổ hợp nên phải
+   thay tay. Dùng thư viện chuẩn của JS, không thêm package nào. */
+function boDau(s: string) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+}
 
 interface Nhom {
   khoa: string;
@@ -104,6 +124,11 @@ export function SessionList({
   const [cheDoChon, setCheDoChon] = useState(false);
   const [gapNhom, setGapNhom] = useState<Set<string>>(new Set());
   const [taoTask, setTaoTask] = useState(false);   // màn giao việc (toàn màn hình)
+  // Ba bộ lọc thêm, nằm trong menu ⇅ cùng với sắp xếp
+  const [locCho, setLocCho] = useState(false);
+  const [anDaXoa, setAnDaXoa] = useState(false);
+  const [locChuaDoc, setLocChuaDoc] = useState(false);
+  const [moMenu, setMoMenu] = useState(false);
 
   useEffect(() => {
     try { setMoNhap(localStorage.getItem('cli-mo-nhap') === '1'); } catch {}
@@ -112,6 +137,41 @@ export function SessionList({
     setMoNhap(v); setPage(0);
     try { localStorage.setItem('cli-mo-nhap', v ? '1' : '0'); } catch {}
   };
+
+  /* Nhớ lựa chọn qua localStorage — nhưng CHỈ những thứ an toàn khi khôi phục.
+     KHÔNG nhớ `stat` và `q`: mở app ra thấy danh sách đã lọc sẵn theo thứ đặt từ hôm
+     qua thì tưởng mất phiên, khó chịu hơn hẳn việc bấm lại một nút. Cùng lý do
+     `cli-mo-nhap` bao lâu nay chỉ nhớ đúng một thứ. */
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('cli-loc');
+      if (!raw) return;
+      const c = JSON.parse(raw);
+      if (c.sort?.k) setSort({ k: c.sort.k, dir: c.sort.dir === 1 ? 1 : -1 });
+      if (typeof c.proj === 'string') setProj(c.proj);
+      if ([10, 25, 50].includes(c.perPage)) setPerPage(c.perPage);
+      setLocCho(!!c.locCho);
+      setAnDaXoa(!!c.anDaXoa);
+      setLocChuaDoc(!!c.locChuaDoc);
+    } catch {}
+  }, []);
+
+  /* Ghi lại mỗi khi đổi. Bỏ qua lần chạy đầu để không đè cấu hình đã lưu bằng giá trị
+     mặc định trong khoảnh khắc trước khi useEffect ở trên kịp nạp. */
+  const daNap = useRef(false);
+  useEffect(() => {
+    if (!daNap.current) { daNap.current = true; return; }
+    try {
+      localStorage.setItem('cli-loc', JSON.stringify({
+        sort, proj, perPage, locCho, anDaXoa, locChuaDoc,
+      }));
+    } catch {}
+  }, [sort, proj, perPage, locCho, anDaXoa, locChuaDoc]);
+
+  // Bật/tắt một bộ lọc thì phải về trang 1 — đang ở trang 5 mà lọc còn 3 kết quả
+  // thì màn hình trống trơn, nhìn như hỏng.
+  const doiLoc = (dat: () => void) => { dat(); setPage(0); };
+  const soLocBat = (locCho ? 1 : 0) + (anDaXoa ? 1 : 0) + (locChuaDoc ? 1 : 0);
 
   // Bấm "Phiên đang chạy" ở sidebar -> áp bộ lọc luôn. Phụ thuộc quick.n (không phải
   // quick.q) để bấm lại lần nữa vẫn chạy dù giá trị không đổi.
@@ -149,7 +209,7 @@ export function SessionList({
   // Lọc theo tìm kiếm / dự án / trạng thái — CHƯA trừ nháp, để còn biết kết quả tìm
   // có rơi vào nhóm Nháp đang gập hay không.
   const hop = useMemo(() => {
-    const needle = q.trim().toLowerCase();
+    const needle = boDau(q.trim());
     const out = sessions.filter((s) => {
       const d = s.duAn;
       if (proj && (d?.khoa || s.project) !== proj) return false;
@@ -157,14 +217,27 @@ export function SessionList({
       if (stat === 'idle' && ['RUNNING', 'ACTIVE'].includes(s.status)) return false;
       // Tab "Việc nền" hiện JobsPanel, không hiện phiên nào
       if (stat === 'jobs') return false;
+
+      /* Ba bộ lọc thêm, đều dùng trường server ĐÃ trả mà giao diện chưa đụng tới.
+         `cho`: phiên đang ĐỨNG IM chờ bấm duyệt kế hoạch hoặc trả lời câu hỏi — thứ
+         cần tay người ngay, mà trước đây phải tự dò từng thẻ mới thấy.
+         `conTonTai === false`: thư mục gốc đã bị xoá nên nhắn vào rơi vào hư không.
+         Đo trên máy này: 24/136 phiên (18%) — gần một phần năm danh sách là rác
+         không dùng được, mà không có cách nào giấu đi. */
+      if (locCho && !s.cho) return false;
+      if (anDaXoa && d && d.conTonTai === false) return false;
+      if (locChuaDoc && !s.unread) return false;
+
       /* Ô tìm trước đây chỉ quét sid + project + title: gõ nội dung câu cuối hay tên
          repo đều ra 0 kết quả dù chữ đó đang hiện ngay trên thẻ.
          `dangChay` cũng phải có mặt: dòng 3 của thẻ hiện dangChay ĐÈ LÊN tinCuoi khi
          phiên đang chạy, nên thiếu nó thì gõ đúng chữ đang đọc được trên thẻ
-         ("Bash(npm test)") lại ra 0 kết quả — đúng lỗi mà bài này bọc. */
+         ("Bash(npm test)") lại ra 0 kết quả — đúng lỗi mà bài này bọc.
+         So khớp sau khi BỎ DẤU cả hai vế: tiêu đề Claude đặt thường có dấu, mà gõ
+         trên điện thoại thì hay gõ không dấu. */
       if (needle) {
-        const kho = [s.sid, s.project, s.title, s.tinCuoi, s.dangChay, d?.ten, d?.repo, d?.duongDan]
-          .filter(Boolean).join(' ').toLowerCase();
+        const kho = boDau([s.sid, s.project, s.title, s.tinCuoi, s.dangChay, d?.ten, d?.repo, d?.duongDan]
+          .filter(Boolean).join(' '));
         if (!kho.includes(needle)) return false;
       }
       return true;
@@ -181,7 +254,7 @@ export function SessionList({
       return String(A).localeCompare(String(B)) * sort.dir;
     });
     return out;
-  }, [sessions, q, proj, stat, sort]);
+  }, [sessions, q, proj, stat, sort, locCho, anDaXoa, locChuaDoc]);
 
   // Có kết quả tìm nằm trong nhóm Nháp đang gập -> TỰ BUNG. Gõ tìm mà ra 0 kết quả
   // trong khi phiên đó có thật thì khó hiểu hơn nhiều so với việc lộ mấy phiên nháp.
@@ -198,6 +271,19 @@ export function SessionList({
     () => (hienNhap ? hop : hop.filter((s) => !s.duAn?.laNhap)),
     [hop, hienNhap],
   );
+
+  /* Số ghi cạnh mỗi bộ lọc trong menu. Phải đếm trong ĐÚNG phạm vi đang hiển thị,
+     không đếm trên toàn bộ `sessions` — đo thật trên máy này: 24 phiên có thư mục đã
+     xoá, nhưng 23 trong số đó là phiên NHÁP đang bị nhóm Nháp giấu đi. Ghi "24" thì
+     người dùng bật lên chờ danh sách ngắn đi 24, thực tế tụt đúng 1. */
+  const demLoc = useMemo(() => {
+    const trong = hienNhap ? sessions : sessions.filter((s) => !s.duAn?.laNhap);
+    return {
+      cho: trong.filter((s) => s.cho).length,
+      daXoa: trong.filter((s) => s.duAn && s.duAn.conTonTai === false).length,
+      chuaDoc: trong.filter((s) => s.unread).length,
+    };
+  }, [sessions, hienNhap]);
   const soNhap = hop.length - hop.filter((s) => !s.duAn?.laNhap).length;
 
   const pages = Math.max(1, Math.ceil(rows.length / perPage));
@@ -211,18 +297,6 @@ export function SessionList({
      Lọc về một dự án cũng không gom: cả trang cùng một nhóm thì đầu nhóm là thừa. */
   const gomTheoNhom = !proj && sort.k === 'project';
   const nhomView = useMemo(() => (gomTheoNhom ? gomNhom(view) : []), [view, gomTheoNhom]);
-
-  /* Nút sắp xếp — bảng cũ để việc này ở tiêu đề cột, bỏ bảng thì phải có chỗ khác.
-     Bấm lại vào nút đang chọn để đảo chiều tăng/giảm. */
-  const sapXep = (k: SortKey, nhan: string) => (
-    <button data-testid={'sort-' + k} data-active={sort.k === k}
-      onClick={() => setSort((s) => ({ k, dir: s.k === k && s.dir === -1 ? 1 : -1 }))}
-      className={cn('tap44 flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] transition-colors',
-        sort.k === k ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-accent/50')}>
-      {nhan}
-      {sort.k === k && <ChevronsUpDown className="size-3 opacity-60" />}
-    </button>
-  );
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="cli-list">
@@ -285,6 +359,23 @@ export function SessionList({
               <option value="">Mọi dự án</option>
               {projects.map((p) => <option key={p.khoa} value={p.khoa}>{p.nhan}</option>)}
             </select>
+
+            {/* Nút mở menu sắp xếp + lọc. Trước đây bốn nút sắp xếp bày phẳng thành
+                MỘT HÀNG RIÊNG ăn 43px vĩnh viễn, trong khi phần lớn thời gian người
+                dùng để nguyên "Mới nhất". Gom vào menu, lấy chỗ đó cho danh sách. */}
+            <button type="button" data-testid="mo-loc" onClick={() => setMoMenu(true)}
+              title="Sắp xếp và lọc"
+              className="tap44 relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:text-foreground sm:h-9 sm:w-9">
+              <SlidersHorizontal className="size-4" />
+              {/* Chấm báo có lọc đang bật. Không có nó thì bật lọc rồi quên là ngồi
+                  nhìn danh sách trống mà không hiểu vì sao thiếu phiên. */}
+              {soLocBat > 0 && (
+                <span data-testid="loc-dang-bat"
+                  className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                  {soLocBat}
+                </span>
+              )}
+            </button>
           </div>
 
           {/* Việc nền giờ là MỘT TAB riêng, không còn là dải nhét giữa danh sách.
@@ -324,7 +415,11 @@ export function SessionList({
           {/* MỘT hàng, cuộn ngang nếu chật — không cho xuống dòng.
               Chữ "Sắp xếp" bỏ trên điện thoại: ba nút bên cạnh đã tự nói lên điều đó,
               giữ lại chỉ tổ đẩy hàng thành hai dòng. */}
-          <div className="flex items-center gap-2 overflow-x-auto"
+          {/* Hàng này ẩn hẳn trên điện thoại: "Chọn cả trang" vốn đã `sm:flex`, nên ở
+              390px nó chỉ còn mỗi chữ "Mới nhất ↓" mà vẫn ăn 26px. Muốn biết đang sắp
+              xếp theo gì thì mở menu — trong đó có dấu ✓. */}
+          <div className={cn('hidden items-center gap-2 overflow-x-auto sm:flex',
+            stat === 'jobs' && 'sm:hidden')}
             style={{ scrollbarWidth: 'none' }}>
             {/* "Chọn cả trang" ẨN HẲN trên điện thoại. Đo trên iPhone 390px: hàng này
                 ăn 45px nhưng chữ bị ẩn, nên chỉ còn MỘT Ô VUÔNG TRƠ TRỌI không ai hiểu
@@ -341,15 +436,12 @@ export function SessionList({
                 }} />
               <span>Chọn cả trang</span>
             </label>
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              <span className="hidden text-[12.5px] text-muted-foreground sm:inline">Sắp xếp</span>
-              {sapXep('mtimeMs', 'Mới nhất')}
-              {/* Nút này TRƯỚC ĐÂY KHÔNG TỒN TẠI dù SortKey đã khai báo 'project' —
-                  sắp xếp theo dự án là thứ khai báo rồi mà không bấm được. */}
-              {sapXep('project', 'Dự án')}
-              {sapXep('title', 'Tên')}
-              {sapXep('msgs', 'Tin nhắn')}
-            </div>
+            {/* Cho biết đang sắp xếp theo gì — bốn nút đã vào menu, không còn nhìn
+                thấy trạng thái nữa. Chỉ chữ, không bấm được: muốn đổi thì mở menu. */}
+            <span className="ml-auto shrink-0 text-[12px] text-muted-foreground" data-testid="sort-hien-tai">
+              {SAP_XEP.find((x) => x.k === sort.k)?.nhan}
+              {sort.dir === 1 ? ' ↑' : ' ↓'}
+            </span>
           </div>
 
           {/* LƯỚI THẺ — dùng CHUNG cho điện thoại và máy tính.
@@ -512,6 +604,57 @@ export function SessionList({
         <ManTaoTask perm={perm} effort={effort} model={model}
           onDong={() => setTaoTask(false)} onOpen={onOpen} />
       )}
+
+      {/* MENU SẮP XẾP + LỌC. Dùng sheet trượt đáy cho CẢ hai màn: trên điện thoại vì
+          ngón cái với tới, trên máy tính vì không đáng dựng thêm một Dialog riêng chỉ
+          để bày đúng bảy dòng này. */}
+      <SheetDuoi mo={moMenu} onDong={() => setMoMenu(false)} tieuDe="Sắp xếp và lọc"
+        testid="menu-loc">
+        <div className="px-3 pb-1 pt-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Sắp xếp
+        </div>
+        {SAP_XEP.map(({ k, nhan }) => (
+          <button key={k} type="button" data-testid={'sort-' + k} data-active={sort.k === k}
+            onClick={() => { setSort((s) => ({ k, dir: s.k === k && s.dir === -1 ? 1 : -1 })); setPage(0); }}
+            className="tap44 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-accent/60">
+            <Check className={cn('size-4 shrink-0', sort.k === k ? 'text-primary' : 'opacity-0')} />
+            <span className="flex-1 text-[13.5px]">{nhan}</span>
+            {/* Bấm lại mục đang chọn để đảo chiều — mũi tên cho biết chiều hiện tại */}
+            {sort.k === k && (
+              <span className="shrink-0 text-[12px] text-muted-foreground">
+                {sort.dir === 1 ? 'tăng ↑' : 'giảm ↓'}
+              </span>
+            )}
+          </button>
+        ))}
+
+        <div className="mt-1 border-t border-border px-3 pb-1 pt-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Lọc
+        </div>
+        {([
+          { id: 'cho', bat: locCho, dat: setLocCho, nhan: 'Chỉ phiên chờ tôi duyệt',
+            mo: 'Đang đứng chờ bấm duyệt kế hoạch hoặc trả lời câu hỏi', dem: demLoc.cho },
+          { id: 'da-xoa', bat: anDaXoa, dat: setAnDaXoa, nhan: 'Ẩn phiên thư mục đã xoá',
+            mo: 'Thư mục gốc không còn — nhắn vào rơi vào hư không', dem: demLoc.daXoa },
+          { id: 'chua-doc', bat: locChuaDoc, dat: setLocChuaDoc, nhan: 'Chỉ phiên chưa đọc',
+            mo: 'Có tin mới chưa xem', dem: demLoc.chuaDoc },
+        ]).map((x) => (
+          <button key={x.id} type="button" data-testid={'loc-' + x.id} data-active={x.bat}
+            onClick={() => doiLoc(() => x.dat(!x.bat))}
+            className="tap44 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-accent/60">
+            <span className={cn('flex size-4 shrink-0 items-center justify-center rounded border',
+              x.bat ? 'border-primary bg-primary text-primary-foreground' : 'border-border')}>
+              {x.bat && <Check className="size-3" />}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-[13.5px] font-medium">{x.nhan}</span>
+              <span className="truncate text-[11.5px] text-muted-foreground">{x.mo}</span>
+            </span>
+            {/* Số phiên khớp — biết trước bật lên còn lại bao nhiêu, đỡ bật rồi tắt */}
+            <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">{x.dem}</span>
+          </button>
+        ))}
+      </SheetDuoi>
     </div>
   );
 }
