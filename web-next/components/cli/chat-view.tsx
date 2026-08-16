@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus, Loader2, Plus,
-  Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree,
+  Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree, Maximize2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
@@ -185,6 +185,8 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   const [sheet, setSheet] = useState(false);
   // Panel xem file phủ toàn màn — mở từ nút hàng 2 hoặc từ tên file trong thẻ tool
   const [moFile, setMoFile] = useState(false);
+  // Màn soạn toàn màn cho những lần viết dài — ô nhập trong chat bị chặn trần 35% màn
+  const [moRong, setMoRong] = useState(false);
   const cauHinh = useCauHinh();
   // Thẻ tool nào đang mở — giữ ở ĐÂY chứ không trong từng thẻ, xem chú thích ở
   // tool-card.tsx. Khoá là tool_use_id nên bền qua mọi lần dựng lại cây.
@@ -744,18 +746,34 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                 e.preventDefault(); send();
               }
             }}
-            ref={(el) => {
-              inputRef.current = el;
-              if (!el) return;
-              el.style.height = 'auto';
-              el.style.height = Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.35)) + 'px';
-            }}
+            ref={(el) => { inputRef.current = el; }}
             placeholder="Nhắn cho Claude…"
             /* dark:bg-transparent BẮT BUỘC: component Textarea gốc có sẵn
                `dark:bg-input/30`, mà biến thể dark thắng `bg-transparent` thường —
                nên ở giao diện tối ô gõ vẫn nổi một mảng xám giữa khung mono, nhìn ra
-               ô nhập của app chứ không phải dòng lệnh. Terminal không có nền nào. */
-            className="max-h-[35dvh] min-h-11 resize-none border-0 bg-transparent px-0 py-2.5 font-mono text-[16px] shadow-none focus-visible:ring-0 dark:bg-transparent" />
+               ô nhập của app chứ không phải dòng lệnh. Terminal không có nền nào.
+
+               Chiều cao để CSS lo MỘT MÌNH. Textarea gốc đã có `field-sizing-content`
+               (tự co theo nội dung), mà trước đây còn một đoạn gán `style.height` bằng
+               tay trong ref — hai cơ chế cùng chạy trên một phần tử, đánh nhau.
+               Bỏ đoạn gán tay, chỉ giữ CSS.
+               Một mốc trần duy nhất `35dvh`: trước đây JS dùng `innerHeight*0.35` còn
+               CSS dùng `35dvh` — trên iOS hai số đó khác nhau khi thanh URL co giãn,
+               nên ô nhảy cỡ giữa lúc cuộn.
+               `overflow-y-auto` khai rõ thay vì dựa vào mặc định trình duyệt. */
+            className="max-h-[35dvh] min-h-11 resize-none overflow-y-auto border-0 bg-transparent px-0 py-2.5 font-mono text-[16px] shadow-none focus-visible:ring-0 dark:bg-transparent" />
+          {/* Nút MỞ RỘNG — chỉ hiện khi đã viết dài. Đo trên iPhone 390px: 6 dòng ăn
+              188px, 40 dòng chạm trần 295px (35% màn) và vùng đọc chat chỉ còn 411px.
+              Viết dài trong một ô 295px là khổ, mà bỏ trần thì ô nuốt hết màn hình.
+              Ngưỡng 200 ký tự ≈ 4-5 dòng trên 390px — đủ để không quấy khi nhắn ngắn. */}
+          {text.length > 200 && (
+            <Button size="icon" variant="ghost" onClick={() => setMoRong(true)}
+              title="Mở rộng để viết dài" aria-label="Mở rộng để viết dài"
+              className="tap44 size-8 shrink-0 rounded-lg text-muted-foreground transition-colors hover:text-foreground"
+              data-testid="chat-mo-rong">
+              <Maximize2 className="size-3.5" />
+            </Button>
+          )}
           {/* Nút gửi PHẲNG, không nền đặc. Terminal không có nút xanh nào cả — khối
               màu đặc trong khung mono trông như dán từ app khác vào. Chỉ tô màu chữ
               khi đã có gì để gửi; mờ đi chứ không biến mất, vì biến mất thì khung
@@ -872,6 +890,38 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
       {/* Panel xem file — phủ toàn màn (fixed inset-0), nằm ngoài khu nhập để bàn phím
           iPhone bật lên không đẩy nó lệch. */}
       {moFile && <XemFile sid={sid} onClose={() => setMoFile(false)} />}
+
+      {/* MÀN SOẠN TOÀN MÀN — cho những lần viết dài. Ô nhập trong khung chat bị chặn
+          trần 35% màn (nếu không thì nó nuốt hết chỗ đọc chat), nên viết vài chục dòng
+          trong đó rất khổ. Ở đây ô gõ chiếm trọn chiều cao còn lại.
+          Cùng lối ManTaoTask: fixed inset-0, nút đóng rõ ràng, Esc thoát. */}
+      {moRong && (
+        <div className="fixed inset-0 z-[100] flex flex-col bg-background" data-testid="man-soan">
+          <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}>
+            <Button variant="ghost" size="icon" className="tap44 size-9" data-testid="soan-dong"
+              title="Xong" aria-label="Xong" onClick={() => setMoRong(false)}>
+              <ArrowLeft className="size-4" />
+            </Button>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] font-semibold">Soạn tin nhắn</span>
+              <span className="block truncate text-[11px] text-muted-foreground" data-testid="soan-dem">
+                {text.length.toLocaleString('vi-VN')} ký tự · {text.split('\n').length} dòng
+              </span>
+            </span>
+            <Button size="sm" className="tap44 h-9 gap-1.5 px-4" data-testid="soan-gui"
+              disabled={!text.trim() && !att.length}
+              onClick={() => { setMoRong(false); send(); }}>
+              <Send className="size-3.5" /> Gửi
+            </Button>
+          </div>
+          <textarea value={text} autoFocus data-testid="soan-input"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setMoRong(false); }}
+            placeholder="Viết dài thoải mái…"
+            className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 font-mono text-[16px] outline-none md:text-[14px]" />
+        </div>
+      )}
     </div>
   );
 }

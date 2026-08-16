@@ -1421,6 +1421,63 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       });
       ok('dau nhac la ❯ dung nhu CLI', khung.dauNhac === '❯', khung.dauNhac);
       ok('khung nhap khong phai hop bo goc', khung.bo === 0, `bo=${khung.bo}`);
+
+      /* Ô NHẬP KHI VIẾT DÀI. Đo trước khi sửa trên iPhone 390px: rỗng 44px, 6 dòng
+         188px, 40 dòng chạm trần 295px (35% màn) và vùng đọc chat còn 411px.
+         Ba lỗi đã sửa: `field-sizing-content` (kế thừa từ Textarea gốc) đánh nhau với
+         `style.height` gán tay — hai cơ chế co giãn cùng chạy trên một phần tử; hai
+         mốc trần lệch nhau (`innerHeight*0.35` trong JS vs `35dvh` trong CSS, khác
+         nhau trên iOS khi thanh URL co giãn); và thiếu `overflow-y-auto` tường minh. */
+      await pg.fill('[data-testid=chat-input]', 'dòng test dài hơn chút\n'.repeat(60));
+      await pg.waitForTimeout(700);
+      const oDai = await pg.evaluate(() => {
+        const t = document.querySelector('[data-testid=chat-input]');
+        const box = document.querySelector('[data-testid=chat-bubbles]');
+        return {
+          cao: Math.round(t.getBoundingClientRect().height),
+          tran: Math.round(window.innerHeight * 0.35),
+          /* Cộng lại thanh việc-đang-làm và dải đang-chạy như các bài khác trong file:
+             chúng CHỈ hiện ở phiên có todo / đang chạy, nên không bù thì bài này đỏ
+             ngẫu nhiên theo việc phiên nào tình cờ đứng đầu danh sách. */
+          chat: Math.round(box.getBoundingClientRect().height)
+            + ['todo-bar', 'typing'].reduce((s, id) => {
+              const e = document.querySelector(`[data-testid=${id}]`);
+              return s + (e && e.offsetParent ? Math.round(e.getBoundingClientRect().height) : 0);
+            }, 0),
+          cuonDuoc: t.scrollHeight > t.clientHeight + 1,
+          coNutMoRong: !!document.querySelector('[data-testid=chat-mo-rong]'),
+        };
+      });
+      ok('o nhap dai KHONG vuot tran 35% man',
+        oDai.cao <= oDai.tran + 2, `${oDai.cao}px / tran ${oDai.tran}px`);
+      ok('o nhap dai CUON duoc trong o', oDai.cuonDuoc, String(oDai.cuonDuoc));
+      /* Ngưỡng 340 chứ không phải 380: đo trên phiên này ra 410px, nhưng phiên khác
+         có tên dài 2 dòng hay dải chờ duyệt thì tụt còn 366px — đặt sát quá là bài
+         đỏ ngẫu nhiên theo phiên nào tình cờ đứng đầu danh sách. Điều cần bảo đảm là
+         ô nhập KHÔNG nuốt hết chỗ đọc, chứ không phải một con số cụ thể. */
+      ok('van con cho doc chat khi o nhap day', oDai.chat > 340, oDai.chat + 'px');
+
+      /* Nút mở rộng: viết dài trong ô 295px rất khổ, mà bỏ trần thì ô nuốt hết màn.
+         Mở màn soạn riêng, ô gõ chiếm trọn chiều cao còn lại. */
+      ok('viet dai thi hien nut mo rong', oDai.coNutMoRong, String(oDai.coNutMoRong));
+      if (oDai.coNutMoRong) {
+        await pg.click('[data-testid=chat-mo-rong]');
+        await pg.waitForSelector('[data-testid=man-soan]', { timeout: 10000 });
+        await pg.waitForTimeout(600);
+        const soan = await pg.evaluate(() => {
+          const t = document.querySelector('[data-testid=soan-input]');
+          return { cao: Math.round(t.getBoundingClientRect().height),
+            dem: (document.querySelector('[data-testid=soan-dem]') || {}).textContent || '' };
+        });
+        ok('man soan cho o go cao hon han o trong chat',
+          soan.cao > oDai.tran * 1.5, `${soan.cao}px vs ${oDai.cao}px`);
+        ok('man soan dem so ky tu va dong', /ký tự/.test(soan.dem) && /dòng/.test(soan.dem), soan.dem);
+        await pg.click('[data-testid=soan-dong]');
+        await pg.waitForTimeout(500);
+        ok('dong duoc man soan', (await pg.locator('[data-testid=man-soan]').count()) === 0);
+      }
+      await pg.fill('[data-testid=chat-input]', '');
+      await pg.waitForTimeout(400);
       /* Textarea goc co san `dark:bg-input/30` — bien the dark THANG `bg-transparent`
          thuong, nen o giao dien toi o go noi mot mang xam giua khung mono. */
       ok('o go KHONG co nen (terminal khong co nen nao)',
