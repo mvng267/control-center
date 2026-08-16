@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Download, Coins, Pencil, Cpu, X, MoreHorizontal, ImagePlus, Loader2, Braces, ClipboardCopy, FileText, Images } from 'lucide-react';
+import { Download, Coins, Pencil, Gauge, X, MoreHorizontal, ImagePlus, Loader2, Braces, ClipboardCopy, FileText, Images } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -11,8 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { AnhPhien } from './anh-phien';
-
-const MODELS = ['opus', 'sonnet', 'haiku'];
+import { EffortSwitch } from './effort-switch';
 
 export interface Attachment { path: string; name: string; thumb: string }
 
@@ -96,16 +95,18 @@ export function AttachButton({ onAttach, render }: {
 }
 
 export function ChatToolbar({
-  sid, title, model, usage, onTitle, onModel,
+  sid, title, model, effort, usage, onTitle, onModel,
 }: {
   sid: string;
   title: string;
   model: string | null;
+  /** mức nghĩ đang có hiệu lực cho phiên này */
+  effort?: string;
   usage?: { turns: number; inTok: number; outTok: number; cacheRead: number; cacheWrite: number } | null;
   onTitle: (t: string) => void;
   onModel: (m: string | null) => void;
 }) {
-  const [dlg, setDlg] = useState<null | 'rename' | 'model' | 'cost' | 'export' | 'summary' | 'anh'>(null);
+  const [dlg, setDlg] = useState<null | 'rename' | 'effort' | 'cost' | 'export' | 'summary' | 'anh'>(null);
   const [summary, setSummary] = useState('');
   const [name, setName] = useState('');
 
@@ -127,19 +128,8 @@ export function ChatToolbar({
     } catch { toast.error('Đổi tên thất bại'); }
   };
 
-  const setM = async (m: string) => {
-    try {
-      const r = await api<{ model: string | null }>('/api/model/' + sid, {
-        method: 'POST', body: JSON.stringify({ model: m }),
-      });
-      onModel(r.model);
-      setDlg(null);
-      toast.success(r.model ? 'Phiên này dùng ' + r.model : 'Phiên này dùng model mặc định');
-    } catch { toast.error('Không đổi được model'); }
-  };
-
   const acts = [
-    { id: 'model', icon: Cpu, label: 'Model cho phiên này', run: () => setDlg('model'), on: !!model },
+    { id: 'effort', icon: Gauge, label: 'Mức suy nghĩ', run: () => setDlg('effort'), on: !!effort },
     { id: 'cost', icon: Coins, label: 'Token đã dùng', run: () => setDlg('cost') },
     { id: 'rename', icon: Pencil, label: 'Đổi tên phiên', run: () => { setName(title); setDlg('rename'); } },
     /* Ảnh CẢ PHIÊN — khung chat chỉ đọc 30 tin cuối nên ảnh cũ không với tới được.
@@ -261,21 +251,20 @@ export function ChatToolbar({
         </Dialog>
       )}
 
-      {dlg === 'model' && (
+      {/* MỨC NGHĨ chuyển vào đây, đổi chỗ cho model — model giờ nằm ở hàng nút chính
+          vì nó ảnh hưởng chất lượng nhiều hơn và cần liếc thấy khi đang nhắn.
+          Dùng thẳng EffortSwitch chứ không vẽ lại hàng nút riêng: trước đây model ở
+          đây là dialog với mấy nút phẳng, trong khi ngoài kia là dropdown — cùng một
+          loại lựa chọn mà hai kiểu bày. */}
+      {dlg === 'effort' && (
         <Dialog open onOpenChange={() => setDlg(null)}>
-          <DialogContent className="max-w-[380px]">
-            <DialogHeader><DialogTitle>Model cho phiên này</DialogTitle></DialogHeader>
+          <DialogContent className="max-w-[380px]" data-testid="effort-dialog">
+            <DialogHeader><DialogTitle>Mức suy nghĩ cho phiên này</DialogTitle></DialogHeader>
             <p className="text-[12px] leading-relaxed text-muted-foreground">
-              Chỉ áp dụng cho phiên này. Chọn “Mặc định” để dùng lại model chung.
+              Chỉ áp dụng cho phiên này. Chọn “Tự động” để dùng lại mức chung —
+              hoặc mức Claude CLI đang đặt sẵn nếu có.
             </p>
-            <div className="flex flex-wrap gap-2">
-              {MODELS.concat(['default']).map((m) => (
-                <Button key={m} size="sm" variant={model === m ? 'default' : 'outline'}
-                  onClick={() => setM(m === 'default' ? '' : m)}>
-                  {m === 'default' ? 'Mặc định' : m}
-                </Button>
-              ))}
-            </div>
+            <EffortSwitch effort={effort} sid={sid} />
           </DialogContent>
         </Dialog>
       )}

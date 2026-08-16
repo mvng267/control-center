@@ -1373,20 +1373,35 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       ok('co hang 2 duoi o go (nut chuc nang + che do)',
         (await pg.locator('[data-testid=goi-y]').count()) === 1);
 
-      /* Che do quyen + muc nghi nam trong HANG 2 duoi o go — hai thu quyet dinh
-         Claude co tu sua file hay khong, phai luon nhin thay.
+      /* Che do quyen + MODEL nam trong HANG 2 duoi o go — hai thu quyet dinh Claude
+         co tu sua file hay khong va tra loi bang model nao, phai luon nhin thay.
          Truoc day o header va bi `hidden sm:flex` an han tren dien thoai; roi chuyen
          xuong dong `input-hint` rieng; gio gop vao hang 2 va GHIM BEN PHAI
-         (shrink-0) nen khong bao gio bi cuon mat khi hang chat. */
+         (shrink-0) nen khong bao gio bi cuon mat khi hang chat.
+
+         Cho MUC NGHI da doi cho MODEL: model anh huong chat luong nhieu hon, lai la
+         thu can liec thay ngay khi dang nhan. Muc nghi chuyen vao menu ⋯ — van doi
+         duoc, chi khong chiem cho hang chinh. */
       const trongDong = await pg.evaluate(() => {
         const h = document.querySelector('[data-testid=goi-y]');
         return {
           perm: !!h?.querySelector('[data-testid=chat-perm]'),
-          effort: !!h?.querySelector('[data-testid=effort-btn]'),
+          model: !!h?.querySelector('[data-testid=chat-model-btn]'),
+          // muc nghi KHONG con o hang 2 nua
+          effortHang2: !!h?.querySelector('[data-testid=effort-btn]'),
         };
       });
-      ok('che do quyen + muc nghi nam trong hang 2',
-        trongDong.perm && trongDong.effort, JSON.stringify(trongDong));
+      ok('che do quyen + model nam trong hang 2',
+        trongDong.perm && trongDong.model && !trongDong.effortHang2,
+        JSON.stringify(trongDong));
+
+      // ...va muc nghi phai VAO menu ⋯, khong bi mat han
+      await pg.click('[data-testid=chat-more]');
+      await pg.waitForTimeout(600);
+      const coEffort = await pg.locator('[data-testid=m-effort]').count();
+      ok('muc nghi chuyen vao menu ⋯ (khong bi mat)', coEffort === 1, 'm-effort=' + coEffort);
+      await pg.keyboard.press('Escape');
+      await pg.waitForTimeout(400);
 
       /* Khung nhap KHONG duoc la hop bo goc — dau nhac `❯`/`!`/`#` la thu bao che do,
          giong dong nhap cua Claude CLI.

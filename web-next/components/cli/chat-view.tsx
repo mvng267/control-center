@@ -10,7 +10,7 @@ import { ToolCard, type ToolPart } from './tool-card';
 import { Markdown } from './markdown';
 import { ChatToolbar, AttachBar, AttachButton, taiAnhLen, type Attachment } from './chat-toolbar';
 import { PermSwitch } from './perm-switch';
-import { EffortSwitch } from './effort-switch';
+import { ModelSwitch } from './model-switch';
 import { TodoBar } from './todo-bar';
 import { SlashHint, useSlash } from './slash-hint';
 import { MentionHint, useMention } from './mention-hint';
@@ -61,7 +61,14 @@ interface History {
   dangChay?: string;           // lệnh đang chạy dở, vd "Bash(npm test)"
   usage: Usage | null;
   duAn?: DuAnChat;   // dự án của phiên: tên thư mục thật, repo, nhánh, còn tồn tại không
-  effort?: string;   // mức nghĩ của lượt gần nhất
+  effort?: string;   // mức nghĩ của lượt gần nhất (đọc từ .jsonl)
+  /* Quyền + mức nghĩ, cùng lối hai-trường như model:
+     `perm`/`effortDat` = phiên này ĐẶT RIÊNG (null = theo mặc định chung);
+     `*HieuLuc` = giá trị THẬT sẽ dùng, đã hoà phiên > cấu hình CLI > mặc định. */
+  perm?: string | null;
+  permHieuLuc?: string;
+  effortDat?: string | null;
+  effortHieuLuc?: string;
   nhap?: string;   // chữ đang chảy ra của lượt hiện tại (bản nháp từ stdout)
 }
 
@@ -417,7 +424,8 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           {/* Chế độ quyền + mức nghĩ chuyển XUỐNG dòng trạng thái dưới ô gõ, đúng chỗ
               Claude CLI in chúng. Để trên này thì lẫn giữa các nút icon, và trên iPhone
               còn bị đẩy khuất. */}
-          <ChatToolbar sid={sid} title={h?.title || ''} model={h?.model ?? null} usage={h?.usage}
+          <ChatToolbar sid={sid} title={h?.title || ''} model={h?.model ?? null}
+            effort={h?.effortHieuLuc} usage={h?.usage}
             onTitle={(t) => setH((x) => (x ? { ...x, title: t } : x))}
             onModel={(mo) => setH((x) => (x ? { ...x, model: mo } : x))} />
         </div>
@@ -823,9 +831,20 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
 
           {/* Ghim phải — không cuộn mất. `ml-auto` cho trường hợp điện thoại: bên
               trái chỉ còn một nút nhỏ, không có khối flex-1 nào đẩy hộ. */}
+          {/* Ghim phải: QUYỀN và MODEL. Trước đây là quyền + mức nghĩ, còn model thì
+              nằm trong menu ⋯ dạng dialog — cùng một loại lựa chọn mà hai kiểu bày.
+              Vinh chốt đổi mức nghĩ lấy model: model ảnh hưởng chất lượng nhiều hơn,
+              lại là thứ cần liếc thấy ngay khi đang nhắn. Mức nghĩ chuyển vào menu ⋯,
+              vẫn đổi được, chỉ không chiếm chỗ hàng chính.
+              Cả hai nhận `sid` nên chỉ đổi cho ĐÚNG phiên này. */}
           <div className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground/70">
-            <PermSwitch perm={perm} compact testid="chat-perm" />
-            <EffortSwitch effort={effort} compact />
+            <PermSwitch perm={h?.permHieuLuc} compact testid="chat-perm" sid={sid} />
+            {/* `model` (đặt riêng cho phiên) chứ KHÔNG phải `modelDaChay`: cái sau là
+                tên đầy đủ đọc từ .jsonl ("claude-opus-5", "kr/claude-sonnet-4.5") —
+                không khớp danh sách rút gọn opus/sonnet/haiku nên nút luôn rơi về
+                "Theo cấu hình", trông như chưa đặt gì trong khi vừa đặt xong.
+                Tên model đang chạy thật đã hiện ở đầu trang rồi. */}
+            <ModelSwitch model={h?.model ?? ''} compact testid="chat-model-btn" sid={sid} />
           </div>
         </div>
 
