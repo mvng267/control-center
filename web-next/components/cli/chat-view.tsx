@@ -352,14 +352,17 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
     }
   };
 
-  // /api/approve nhận body.note (index.js:1258) — gõ sẵn gì trong ô nhập thì gửi kèm
-  // làm lưu ý cho lượt duyệt, khỏi phải duyệt xong rồi nhắn bổ sung.
-  const approve = async () => {
-    const note = text.trim();
+  /* /api/approve nhận body.note — ghi chú được ghép thẳng vào prompt duyệt, khỏi phải
+     duyệt xong rồi nhắn bổ sung.
+     Ghi chú giờ đến từ ô soạn TRONG thẻ kế hoạch. Trước đây nó lấy từ ô nhập chính,
+     mà chẳng chỗ nào nói cho người dùng biết điều đó — nút "Góp ý" chỉ .focus() vào ô
+     rồi thôi. Vẫn nhận chữ đang gõ dở ở ô chính làm phương án lùi. */
+  const approve = async (gopY?: string) => {
+    const note = (gopY ?? '').trim() || text.trim();
     try {
       await api('/api/approve/' + sid, { method: 'POST', body: JSON.stringify(note ? { note } : {}) });
-      if (note) setText('');
-      toast.success('Đã duyệt — Claude đang thực hiện');
+      if (note && note === text.trim()) setText('');
+      toast.success(note ? 'Đã duyệt kèm góp ý — Claude đang làm' : 'Đã duyệt — Claude đang thực hiện');
       navigator.vibrate?.(30);
     } catch { toast.error('Không duyệt được'); }
   };
@@ -594,8 +597,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                     </div>
                   ) : p.t === 'tool' && p.ke ? (
                     <div key={p.id || i} className="my-1">
-                      <PlanCard ke={p.ke} keFile={p.keFile} daDuyet={!h?.awaiting} onDuyet={approve}
-                        onSua={() => document.querySelector<HTMLTextAreaElement>('[data-testid=chat-input]')?.focus()} />
+                      <PlanCard ke={p.ke} keFile={p.keFile} daDuyet={!h?.awaiting} onDuyet={approve} />
                     </div>
                   ) : p.t === 'tool' ? (
                     <ToolCard key={p.id || i} part={p} sid={sid}
@@ -659,14 +661,24 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           data-testid="chat-error">{h.error}</div>
       )}
 
+      {/* Dải chờ duyệt neo ở đáy. GIỮ LẠI dù thẻ kế hoạch cũng có nút duyệt: kế hoạch
+          dài hàng chục nghìn ký tự nên thẻ trôi lên mất, không có dải này thì phải
+          cuộn ngược đi tìm mới bấm được.
+          Nhưng bỏ hai chỗ trùng lặp vô nghĩa: nhãn từng là "Duyệt & chạy" trong khi
+          thẻ ghi "Duyệt & làm" (cùng một hành động, hai tên), và nút "Sửa" chỉ
+          .focus() vào ô nhập mà không nói gì — giờ việc góp ý nằm hẳn trong thẻ, nên
+          thay bằng nút cuộn TỚI thẻ đó. */}
       {h?.awaiting && (
         <div className="mx-4 mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded-[10px] border border-primary/35 bg-primary/10 px-3 py-2 text-[12.5px]"
           data-testid="chat-approve">
           <span className="min-w-0 flex-1">Claude đã trình bày kế hoạch và đang chờ duyệt.</span>
-          <Button size="sm" className="h-[34px]" onClick={approve}><Check className="size-3.5" /> Duyệt &amp; chạy</Button>
-          <Button size="sm" variant="outline" className="h-[34px]"
-            onClick={() => document.querySelector<HTMLInputElement>('[data-testid=chat-input]')?.focus()}>
-            <Pencil className="size-3.5" /> Sửa
+          <Button size="sm" className="h-[34px]" onClick={() => approve()}>
+            <Check className="size-3.5" /> Duyệt &amp; làm
+          </Button>
+          <Button size="sm" variant="outline" className="h-[34px]" data-testid="chat-xem-ke-hoach"
+            onClick={() => document.querySelector('[data-testid=plan-card]')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+            <Pencil className="size-3.5" /> Xem &amp; góp ý
           </Button>
         </div>
       )}

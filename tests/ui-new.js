@@ -1168,6 +1168,31 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         (await pg.locator('[data-testid=plan-approve]').count()) === 1
         && (await pg.locator('[data-testid=plan-file]').count()) === 1);
 
+      /* Nút "Góp ý" phải MỞ Ô SOẠN ngay trong thẻ. Trước đây nó chỉ gọi .focus() vào
+         ô nhập chính rồi thôi — người dùng phải tự đoán rằng gõ vào đó rồi bấm Duyệt
+         thì chữ đó thành ghi chú. Server vốn ĐÃ nhận body.note và ghép vào prompt
+         duyệt từ lâu, chỉ giao diện không nói ra. */
+      await pg.locator('[data-testid=plan-edit]').click();
+      await pg.waitForTimeout(600);
+      const oGopY = await pg.locator('[data-testid=plan-note]').count();
+      ok('bam "Gop y" -> mo o soan NGAY TRONG the (truoc: chi focus, khong noi gi)',
+        oGopY === 1, 'plan-note=' + oGopY);
+
+      /* Bản đầy đủ phải đọc được TRONG APP. Trước đây là thẻ <a target="_blank"> trỏ
+         /api/plan, mà endpoint đó trả text/plain — kế hoạch 15.000 ký tự hiện ra dạng
+         chữ thô, không tiêu đề, không xuống dòng hợp lý. */
+      await pg.locator('[data-testid=plan-file]').click();
+      await pg.waitForTimeout(800);
+      const moDayDu = await pg.locator('[data-testid=plan-full]').count();
+      ok('bam "Xem day du" -> mo man doc trong app (khong phai tab moi)',
+        moDayDu === 1, 'plan-full=' + moDayDu);
+      if (moDayDu) {
+        await pg.locator('[data-testid=plan-full-dong]').click();
+        await pg.waitForTimeout(400);
+        ok('dong duoc man xem day du',
+          (await pg.locator('[data-testid=plan-full]').count()) === 0);
+      }
+
       /* /api/plan chỉ được đọc trong ~/.claude/plans. Kiểm bằng đường dẫn đã resolve
          chứ không phải chuỗi thô — nếu không thì `../../.ssh/id_rsa` lọt qua và
          dashboard thành công cụ đọc trộm cả đĩa. */
