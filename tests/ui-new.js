@@ -1786,6 +1786,22 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await pg.waitForTimeout(500);
       const chon = await pg.locator('[data-testid=mode-seg-creative]').getAttribute('data-active');
       ok('chọn được chế độ cuối cùng sau khi cuộn', chon === 'true', 'data-active=' + chon);
+
+      /* BA CÔNG TẮC phải cao BẰNG NHAU. Chúng nằm cùng một hàng flex ở màn này, nên
+         lệch là nhìn thấy ngay. Đã lệch thật: ModelSwitch để `h-10` trong khi Perm và
+         Effort `h-8` — chênh 8px, hậu quả của việc chép thành ba file riêng (trùng
+         nhau 75-80%). Giờ cả ba gọi chung cong-tac.tsx nên không còn chỗ để lệch. */
+      const caoNut = await pg.evaluate(() => {
+        const ra = {};
+        for (const id of ['model-btn', 'perm-btn', 'effort-btn']) {
+          const e = document.querySelector(`[data-testid=${id}]`);
+          if (e && e.offsetParent) ra[id] = Math.round(e.getBoundingClientRect().height);
+        }
+        return ra;
+      });
+      const ds = Object.values(caoNut);
+      ok('ba công tắc cao bằng nhau (trước: model lệch 8px)',
+        ds.length >= 2 && new Set(ds).size === 1, JSON.stringify(caoNut));
       await mp.close();
     }
 
