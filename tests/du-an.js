@@ -394,11 +394,21 @@ async function snapshot() {
         try { fs.unlinkSync(moi); } catch {}
       }
 
-      // Còn phải ĐỌC ĐƯỢC file thường, không thì chặn quá tay thành vô dụng
-      const bt = await doc('package.json');
-      ok('vẫn đọc được file thường trong dự án',
-        bt.code === 200 && typeof bt.body.noiDung === 'string' && bt.body.soDong > 0,
-        bt.code + ' ' + (bt.body.soDong || 0) + ' dòng');
+      /* Còn phải ĐỌC ĐƯỢC file thường, không thì chặn quá tay thành vô dụng.
+         KHÔNG gõ cứng 'package.json': phiên đứng đầu danh sách đổi theo thời gian, và
+         không phải dự án nào cũng là dự án Node — đã đỏ một lần khi phiên đầu rơi vào
+         một trang web tĩnh. Hỏi /api/tree lấy một file có thật rồi mới đọc. */
+      const cay = await fetch(`${URL}/api/tree?sid=${encodeURIComponent(phien.sid)}`,
+        { headers: { 'X-Dash-Token': token } }).then((r) => r.json()).catch(() => ({}));
+      const fileThat = (cay.files || []).find((f) => /\.(js|ts|tsx|json|md|txt|css|html)$/i.test(f));
+      if (!fileThat) {
+        ok('vẫn đọc được file thường trong dự án', false, 'cây không có file văn bản nào');
+      } else {
+        const bt = await doc(fileThat);
+        ok('vẫn đọc được file thường trong dự án',
+          bt.code === 200 && typeof bt.body.noiDung === 'string' && bt.body.soDong > 0,
+          `${fileThat} -> ${bt.code} ${bt.body.soDong || 0} dòng`);
+      }
 
       // Phiên không có cwd -> không đọc gì hết, không rơi về thư mục nào khác
       const khong = await fetch(`${URL}/api/file?sid=khong-co-that&path=package.json`,
@@ -443,6 +453,70 @@ async function snapshot() {
           !t2.quaRong && (t2.files || []).length > 0,
           `${(t2.files || []).length} file | ${thuong.duAn.ten}`);
       }
+    }
+  }
+
+  /* ---- quyền + mức nghĩ RIÊNG TỪNG PHIÊN ----
+     Trước đây cả hai là biến TOÀN CỤC (một `permMode`, một `effort` cho cả server),
+     nên đổi ở phiên A là phiên B, C, cả task mới, cả loop/cron đổi theo ngay. Model
+     đã sửa bài này từ lâu; đây là làm nốt cho hai cái còn lại.
+     Và giá trị hiển thị phải hoà từ CẤU HÌNH CLI THẬT, không phải file riêng của
+     dashboard — đo lúc viết: CLI dùng effortLevel "high" mà dashboard hiện "Tự động". */
+  {
+    const snap3 = await snapshot();
+    const dsP = (snap3.data.sessions || []).filter((s) => s.duAn && s.duAn.conTonTai);
+    if (dsP.length < 2) {
+      ok('có đủ 2 phiên để kiểm tách cấu hình', false, 'chỉ có ' + dsP.length + ' phiên');
+    } else {
+      const A = dsP[0].sid, Bp = dsP[1].sid;
+      const H2 = { 'X-Dash-Token': token, 'Content-Type': 'application/json' };
+      const su = (u) => fetch(URL + u, { headers: { 'X-Dash-Token': token } }).then((r) => r.json());
+
+      // đọc cấu hình CLI thật để so
+      let cliEffort = '';
+      try {
+        const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'settings.json'), 'utf8'));
+        cliEffort = cfg.effortLevel || '';
+      } catch {}
+      const h0 = await su('/api/history/' + A);
+      if (cliEffort) {
+        ok('mức nghĩ hiển thị khớp cấu hình THẬT của Claude CLI',
+          h0.effortHieuLuc === cliEffort, `CLI=${cliEffort} dashboard=${h0.effortHieuLuc}`);
+      }
+
+      // đặt riêng cho A, B phải không đổi
+      await fetch(`${URL}/api/perm/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ mode: 'plan' }) });
+      await fetch(`${URL}/api/effort/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ effort: 'max' }) });
+      const hA = await su('/api/history/' + A);
+      const hB = await su('/api/history/' + Bp);
+      ok('đặt quyền cho phiên A thì phiên B KHÔNG đổi theo',
+        hA.permHieuLuc === 'plan' && hB.permHieuLuc !== 'plan',
+        `A=${hA.permHieuLuc} B=${hB.permHieuLuc}`);
+      ok('đặt mức nghĩ cho phiên A thì phiên B KHÔNG đổi theo',
+        hA.effortHieuLuc === 'max' && hB.effortHieuLuc !== 'max',
+        `A=${hA.effortHieuLuc} B=${hB.effortHieuLuc}`);
+
+      /* KHÔNG được ghi vào file cấu hình của Claude CLI. settings.json đang giữ các
+         quy tắc quyền đã duyệt + hook + plugin; ghi hỏng là người dùng mất hết. */
+      const fCLI = path.join(os.homedir(), '.claude', 'settings.json');
+      let moiSua = 999;
+      try { moiSua = (Date.now() - fs.statSync(fCLI).mtimeMs) / 1000; } catch {}
+      ok('KHÔNG ghi vào settings.json của Claude CLI',
+        moiSua > 30, Math.round(moiSua) + 's kể từ lần sửa cuối');
+
+      // xoá cài đặt riêng -> quay về mặc định chung
+      await fetch(`${URL}/api/perm/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ mode: '' }) });
+      await fetch(`${URL}/api/effort/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ effort: '' }) });
+      const hA2 = await su('/api/history/' + A);
+      ok('xoá cài đặt riêng thì quay về mặc định chung',
+        hA2.perm === null && hA2.effortDat === null && !!hA2.permHieuLuc,
+        `đặt riêng=[${hA2.perm},${hA2.effortDat}] hiệu lực=${hA2.permHieuLuc}/${hA2.effortHieuLuc}`);
+
+      // giá trị lạ phải bị từ chối
+      const xau = await fetch(`${URL}/api/perm/${A}`, {
+        method: 'POST', headers: H2, body: JSON.stringify({ mode: 'linh-tinh' }),
+      });
+      ok('từ chối chế độ quyền không hợp lệ', xau.status === 400, 'HTTP ' + xau.status);
     }
   }
 

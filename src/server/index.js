@@ -107,9 +107,12 @@ try {
   const saved = JSON.parse(fs.readFileSync(PERM_FILE, 'utf8'));
   if (PERM_MODES.indexOf(saved.mode) >= 0) permMode = saved.mode;
 } catch {}
-// Cờ --permission-mode cho mọi lần spawn ('default' = để CLI tự quyết, không truyền cờ)
-function permArgs() {
-  return permMode === 'default' ? [] : ['--permission-mode', permMode];
+/* Cờ --permission-mode cho mọi lần spawn ('default' = để CLI tự quyết, không truyền cờ).
+   Nhận sid để lấy cài đặt RIÊNG của phiên đó; không có sid thì rơi về mặc định chung.
+   permFor() khai báo phía dưới (cùng chỗ với modelFor) — hoisting lo phần đó. */
+function permArgs(sid) {
+  const m = permFor(sid);
+  return m === 'default' ? [] : ['--permission-mode', m];
 }
 
 /* Mức suy nghĩ (--effort). CLI nhận low|medium|high|xhigh|max; càng cao Claude càng
@@ -122,8 +125,9 @@ try {
   const saved = JSON.parse(fs.readFileSync(PERM_FILE, 'utf8'));
   if (EFFORTS.indexOf(saved.effort) >= 0) effort = saved.effort;
 } catch {}
-function effortArgs() {
-  return effort ? ['--effort', effort] : [];
+function effortArgs(sid) {
+  const v = effortFor(sid);
+  return v ? ['--effort', v] : [];
 }
 // Model đã chọn cũng nằm trong file này — xem chú thích ở khai báo currentModel
 try {
@@ -549,7 +553,81 @@ function setSessionModel(sid, model) {
   try { ghiJson(MODELS_FILE, t); } catch { return false; }
   return true;
 }
-function modelFor(sid) { return loadModels()[sid] || currentModel || null; }
+function modelFor(sid) { return loadModels()[sid] || currentModel || cauHinhCLI().model || null; }
+
+/* ---- đọc cấu hình THẬT của Claude CLI ----
+   Dashboard vốn chỉ đọc file riêng của nó (dashboard-perm.json), nên hiển thị chẳng
+   liên quan gì tới thứ CLI đang chạy. Đo được lúc viết: CLI dùng effortLevel "high"
+   và model "kr/claude-sonnet-4.5", trong khi dashboard hiện "Tự động" / "Theo cấu
+   hình" — sai cả hai.
+
+   CHỈ ĐỌC, không bao giờ ghi. settings.json đang giữ 17 quy tắc quyền đã duyệt, một
+   hook PreToolUse và danh sách plugin; ghi hỏng giữa chừng là người dùng mất hết,
+   Claude hỏi quyền lại từ đầu. Còn ~/.claude.json thì CLI ghi liên tục (đo: sửa 0 giờ
+   trước, 5 bản backup tự sinh, 51KB) — ghi vào đó là đua ghi với CLI, đúng loại lỗi
+   mà CLAUDE.md đã dặn về file .jsonl.
+
+   Nhớ tạm 5 giây: hàm này bị gọi mỗi nhịp SSE (2 giây/lần) cho từng phiên, đọc đĩa
+   thẳng thì tốn vô ích vì cấu hình gần như không đổi. */
+const CLI_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
+const CLI_JSON = path.join(os.homedir(), '.claude.json');
+let cliCache = null;
+let cliCacheAt = 0;
+
+function cauHinhCLI() {
+  if (cliCache && Date.now() - cliCacheAt < 5000) return cliCache;
+  const ra = { effort: '', perm: '', model: '' };
+  try {
+    const s = JSON.parse(fs.readFileSync(CLI_SETTINGS, 'utf8'));
+    if (EFFORTS.indexOf(s.effortLevel) >= 0) ra.effort = s.effortLevel;
+    const dm = s.permissions && s.permissions.defaultMode;
+    if (PERM_MODES.indexOf(dm) >= 0) ra.perm = dm;
+  } catch {}
+  /* ~/.claude.json có thể vài chục MB (chứa cả lịch sử) — đọc cả file chỉ để lấy một
+     khoá là phí. Nhưng JSON.parse cần nguyên văn bản, nên chặn theo kích thước:
+     quá 8MB thì bỏ qua model, thà thiếu một nhãn còn hơn treo event loop. */
+  try {
+    if (fs.statSync(CLI_JSON).size <= 8 * 1024 * 1024) {
+      const j = JSON.parse(fs.readFileSync(CLI_JSON, 'utf8'));
+      if (typeof j.model === 'string') ra.model = j.model;
+    }
+  } catch {}
+  cliCache = ra;
+  cliCacheAt = Date.now();
+  return ra;
+}
+
+/* ---- quyền + mức nghĩ riêng từng phiên ----
+   Trước đây cả hai là biến TOÀN CỤC: đổi ở phiên A thì phiên B, C, cả task mới, cả
+   loop/cron đổi theo ngay. Model đã sửa bài này từ trước (xem modelFor ở trên) — đây
+   là làm nốt cho hai cái còn lại, theo đúng khuôn đó.
+
+   Thứ tự ưu tiên: phiên đặt riêng > cấu hình CLI thật > mặc định của dashboard. */
+const PHIEN_FILE = path.join(os.homedir(), '.claude', 'dashboard-phien.json');
+let phienCfg = null;
+function loadPhien() {
+  if (phienCfg) return phienCfg;
+  try { phienCfg = JSON.parse(fs.readFileSync(PHIEN_FILE, 'utf8')); } catch { phienCfg = {}; }
+  return phienCfg;
+}
+function datPhien(sid, khoa, gia) {
+  const t = loadPhien();
+  const o = t[sid] || (t[sid] = {});
+  if (gia) o[khoa] = gia; else delete o[khoa];
+  if (!Object.keys(o).length) delete t[sid];   // hết cài đặt riêng thì bỏ hẳn khoá
+  try { ghiJson(PHIEN_FILE, t); } catch { return false; }
+  return true;
+}
+// sid rỗng (lệnh một phát chưa gắn phiên nào) -> rơi thẳng về mặc định chung
+function permFor(sid) {
+  const r = sid && loadPhien()[sid];
+  return (r && r.perm) || cauHinhCLI().perm || permMode;
+}
+function effortFor(sid) {
+  const r = sid && loadPhien()[sid];
+  const v = (r && r.effort) || effort || cauHinhCLI().effort;
+  return v || '';
+}
 
 // Nhãn cho thông báo đẩy: ưu tiên tiêu đề, không có mới rơi về ID
 // (thông báo "Claude 7e31e9e3 đã trả lời xong" đọc xong vẫn không biết là phiên nào)
@@ -1092,7 +1170,7 @@ function parseInterval(s) {
 // Chạy 1 lượt của loop/cron job: mỗi lượt là 1 session claude mới
 function runJob(job) {
   const sid = crypto.randomUUID();
-  const args = ['-p', job.prompt, '--session-id', sid].concat(permArgs(), effortArgs());
+  const args = ['-p', job.prompt, '--session-id', sid].concat(permArgs(sid), effortArgs(sid));
   if (currentModel) args.push('--model', currentModel);
   spawnClaude(args, sid, { task: job.prompt, project: '(job:' + job.id + ')' });
   job.runs++;
@@ -2090,7 +2168,7 @@ const server = http.createServer(async (req, res) => {
     const task = (body.task || '').trim();
     if (!task) return json(res, 400, { error: 'task required' });
     const sid = crypto.randomUUID();
-    const args = ['-p', task, '--session-id', sid].concat(permArgs(), effortArgs());
+    const args = ['-p', task, '--session-id', sid].concat(permArgs(sid), effortArgs(sid));
     if (currentModel) args.push('--model', currentModel); // model đã set qua /model
     spawnClaude(args, sid, { task, project: '(new)' });
     return json(res, 200, { ok: true, sid });
@@ -2109,7 +2187,7 @@ const server = http.createServer(async (req, res) => {
        stdout dạng chữ thường, đổi sang JSON là vỡ hết chỗ đọc kết quả. */
     const cargs = ['-p', msg, '--resume', sid,
       '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-    ].concat(permArgs(), effortArgs());
+    ].concat(permArgs(sid), effortArgs(sid));
     const mdl = modelFor(sid);              // model riêng phiên > model toàn cục
     if (mdl) cargs.push('--model', mdl);
     spawnClaude(cargs, sid, { task: msg, stream: true });
@@ -2186,6 +2264,17 @@ const server = http.createServer(async (req, res) => {
       model: loadModels()[sid] || null,
       modelDaChay: (parsed && parsed.model) || null,
       effort: parsed ? parsed.effort : '',
+      /* Quyền và mức nghĩ, cùng lối hai-trường như model ở trên:
+         - `perm` / `effortDat` = thứ phiên này ĐẶT RIÊNG (null = chưa đặt, đang theo
+           mặc định chung). Giao diện dùng để biết có đang ghi đè không.
+         - `*HieuLuc` = giá trị THẬT sẽ dùng khi spawn, đã hoà ba tầng
+           (phiên > cấu hình CLI thật > mặc định dashboard).
+         Trước đây giao diện đọc giá trị TOÀN CỤC từ SSE nên mọi phiên hiện y hệt nhau,
+         và không khớp với thứ Claude CLI đang thật sự chạy. */
+      perm: (loadPhien()[sid] || {}).perm || null,
+      permHieuLuc: permFor(sid),
+      effortDat: (loadPhien()[sid] || {}).effort || null,
+      effortHieuLuc: effortFor(sid),
       /* Bản nháp đang chảy ra từ stdout của lượt hiện tại.
          .jsonl chỉ được ghi KHI LƯỢT XONG, nên nếu chỉ đọc file thì màn hình đứng im
          hàng chục giây rồi bung ra một cục. Có cái này thì chữ hiện dần như terminal.
@@ -2205,6 +2294,30 @@ const server = http.createServer(async (req, res) => {
     const mv = String(body.model || '').trim();
     if (!setSessionModel(sid, mv)) return json(res, 500, { error: 'không ghi được file model' });
     return json(res, 200, { ok: true, model: mv || null, effective: modelFor(sid) });
+  }
+
+  /* ---- quyền + mức nghĩ riêng cho 1 phiên (để trống = dùng lại mặc định chung) ----
+     Cùng khuôn với /api/model/:sid ngay trên. Route KHÔNG có sid vẫn giữ nguyên: nó
+     là mặc định cho phiên mới và cho loop/cron — những thứ chưa có sid lúc người dùng
+     đặt cấu hình. */
+  if ((m = p.match(/^\/api\/perm\/([\w-]+)$/)) && req.method === 'POST') {
+    const sid = m[1];
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const mode = String(body.mode || '');
+    if (mode && PERM_MODES.indexOf(mode) < 0) return json(res, 400, { error: 'mode không hợp lệ' });
+    if (!datPhien(sid, 'perm', mode)) return json(res, 500, { error: 'không ghi được cấu hình phiên' });
+    return json(res, 200, { ok: true, mode: mode || null, effective: permFor(sid) });
+  }
+
+  if ((m = p.match(/^\/api\/effort\/([\w-]+)$/)) && req.method === 'POST') {
+    const sid = m[1];
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const v = String(body.effort || '');
+    if (v && EFFORTS.indexOf(v) < 0) return json(res, 400, { error: 'mức không hợp lệ' });
+    if (!datPhien(sid, 'effort', v)) return json(res, 500, { error: 'không ghi được cấu hình phiên' });
+    return json(res, 200, { ok: true, effort: v || null, effective: effortFor(sid) });
   }
 
   // ---- nhận ảnh từ điện thoại: lưu ra file rồi trả đường dẫn để chèn vào prompt.
@@ -2266,7 +2379,7 @@ const server = http.createServer(async (req, res) => {
       ? 'Duyệt kế hoạch, làm luôn. Lưu ý thêm: ' + note
       : 'Duyệt kế hoạch. Thực hiện đúng như đã trình bày.';
     // ép acceptEdits cho lượt này, bất kể công tắc đang ở chế độ nào — người dùng vừa duyệt rồi
-    const aargs = ['-p', msg, '--resume', sid, '--permission-mode', 'acceptEdits'].concat(effortArgs());
+    const aargs = ['-p', msg, '--resume', sid, '--permission-mode', 'acceptEdits'].concat(effortArgs(sid));
     const amdl = modelFor(sid);
     if (amdl) aargs.push('--model', amdl);
     spawnClaude(aargs, sid, { task: msg });
@@ -2628,7 +2741,7 @@ const server = http.createServer(async (req, res) => {
     const cmd = String(body.cmd || '').trim();
     if (!cmd.startsWith('/')) return json(res, 400, { ok: false, error: 'phải là lệnh slash' });
     const cwd = body.sid ? (sessionCwd(String(body.sid)) || os.homedir()) : os.homedir();
-    const args = ['-p', cmd].concat(permArgs(), effortArgs());
+    const args = ['-p', cmd].concat(permArgs(body.sid), effortArgs(body.sid));
     execFile('claude', args, { cwd, maxBuffer: 4 * 1024 * 1024, timeout: 60000, env: process.env },
       (err, stdout, stderr) => {
         const out = ((stdout || '') + (stderr || '')).trim();
