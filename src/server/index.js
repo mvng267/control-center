@@ -252,6 +252,10 @@ function parseSessionFile(file) {
     // "hook + nội dung lỗi" -> part đã hiện. Phải sống qua các lần đọc thêm, nếu
     // không mỗi lần đọc đuôi lại đẻ ra một dòng lỗi mới cho cùng một lỗi cũ.
     hookDaThay: new Map(),
+    /* tool_use_id -> agent con (Task/Agent). Phải sống qua các lần đọc thêm vì
+       notification báo xong nằm cách lúc phóng khá xa: đo trên 88 agent thật,
+       trung vị 3,9 phút — thừa sức rơi sang lần đọc sau. */
+    agents: new Map(),
   };
   const { msgs, toolIndex, usage } = S;
   let { aiTitle, customTitle, firstUser, model, effort } = S;
@@ -364,6 +368,27 @@ function parseSessionFile(file) {
       continue;
     }
 
+    /* Agent con BÁO XONG. Đây là nguồn trạng thái DUY NHẤT đáng tin: tool_result của
+       Task về ngay lúc phóng với nội dung "Async agent launched successfully", nên
+       "có tool_result" KHÔNG có nghĩa là đã xong — đo thật 83/83 lần gọi đều có
+       tool_result trong khi phần lớn mới chỉ vừa khởi động.
+       Kết quả thật quay lại bằng dòng queue-operation kèm <task-notification>, có sẵn
+       <status> và <summary>. Đếm trên 155 file .jsonl: 287 notification, status gồm
+       completed 237, failed 23, stopped 15, killed 6.
+       Chỉ lấy 'enqueue' — 'remove' là lúc thông báo được tiêu thụ, cùng một sự kiện. */
+    if (obj.type === 'queue-operation' && obj.operation === 'enqueue'
+        && typeof obj.content === 'string' && obj.content.indexOf('<task-notification>') >= 0) {
+      const lay = (t) => (obj.content.match(new RegExp('<' + t + '>([^<]*)</' + t + '>')) || [, ''])[1].trim();
+      const tuid = lay('tool-use-id');
+      const a = tuid && S.agents.get(tuid);
+      if (a) {
+        a.trangThai = lay('status') || 'completed';
+        a.tomTat = clampText(lay('summary'), 300);
+        a.xongTs = obj.timestamp || null;
+      }
+      continue;
+    }
+
     if (obj.type !== 'user' && obj.type !== 'assistant') continue;
     /* Model + mức nghĩ của phiên: mỗi dòng assistant ghi sẵn, lấy dòng MỚI NHẤT.
        Đếm trên 8.000 dòng đầu phiên control: 2.734 dòng có message.model, 2.732 có
@@ -412,6 +437,21 @@ function parseSessionFile(file) {
           if (b.name === 'ExitPlanMode') {
             part.ke = extractKeHoach(b.input);
             part.keFile = extractFileKeHoach(b.input);
+          }
+          /* Agent con vừa được phóng. Ghi vào sổ riêng để danh sách phiên biết
+             "phiên này đang có 2 agent chạy" mà không phải lục lại toàn bộ msgs. */
+          if ((b.name === 'Task' || b.name === 'Agent') && b.id) {
+            const inp = b.input || {};
+            S.agents.set(b.id, {
+              id: b.id,
+              ten: String(inp.description || '').slice(0, 80),
+              loai: String(inp.subagent_type || '').slice(0, 40),
+              nen: !!inp.run_in_background,
+              batDau: obj.timestamp || null,
+              trangThai: 'dang-chay',   // đổi khi gặp task-notification ở trên
+              tomTat: '',
+              xongTs: null,
+            });
           }
           parts.push(part);
           if (b.id) toolIndex.set(b.id, part);
@@ -494,8 +534,25 @@ function parseSessionFile(file) {
     return (t.disp || t.name || '') + (t.summary ? '(' + t.summary + ')' : '');
   })();
 
+  /* Agent con của phiên. Cái nào chưa có notification thì VỀ NGUYÊN TẮC là đang chạy,
+     nhưng agent bị cắt giữa chừng (đóng terminal, phiên chết) cũng không bao giờ có
+     notification — nên nếu tin thẳng, dashboard sẽ hiện agent "đang chạy" suốt nhiều
+     ngày. Đo trên máy này: 29 agent chưa có notification, TẤT CẢ đều già hơn 24 giờ,
+     0 cái trẻ hơn 1 giờ.
+     Ngưỡng 30 phút = gấp hơn 2 lần agent lâu nhất từng đo (88 agent đã xong: trung vị
+     3,9 phút, p90 6,9, dài nhất 13,5). Quá ngưỡng thì coi là đứt, không phải đang chạy. */
+  const NGUONG_TREO = 30 * 60 * 1000;
+  const gio = Date.now();
+  const agents = [...S.agents.values()].map(a => {
+    if (a.trangThai !== 'dang-chay') return a;
+    const tuoi = gio - (Date.parse(a.batDau) || gio);
+    return tuoi > NGUONG_TREO ? { ...a, trangThai: 'dut' } : a;
+  });
+  const agentChay = agents.filter(a => a.trangThai === 'dang-chay').length;
+
   const data = {
     msgs, mtimeMs: st.mtimeMs, title, planFile, usage, model, effort, cho, dangChay,
+    agents, agentChay,
     tsMs: msgs.map(m => Date.parse(m.ts) || 0),
   };
   // Ghi lại giá trị đã cập nhật trong vòng lặp để lần đọc thêm sau nối tiếp đúng.
@@ -993,6 +1050,14 @@ async function listSessions() {
         cho: parsed.cho || (parsed.planFile ? 'ke-hoach' : ''),
         // lệnh Claude đang chạy dở (tool chưa có kết quả) — chỉ có nghĩa khi RUNNING
         dangChay: parsed.dangChay || '',
+        /* Agent con đang chạy. CHỈ gửi số đếm + tên vài cái đầu, không gửi cả danh
+           sách: đếm thật 128 lần gọi Task trên máy này, nhồi hết vào mỗi nhịp SSE
+           (2 giây/lần, 155 phiên) là phí băng thông cho thứ hầu như không đổi.
+           Danh sách đầy đủ nằm ở /api/history khi mở phiên ra xem. */
+        agentChay: parsed.agentChay || 0,
+        agentTen: (parsed.agents || [])
+          .filter(a => a.trangThai === 'dang-chay').slice(0, 3)
+          .map(a => a.ten || a.loai || 'agent'),
       });
     }
   }
@@ -2283,6 +2348,10 @@ const server = http.createServer(async (req, res) => {
       // Lệnh đang chạy dở (tool chưa có kết quả) — dải "đang chạy" hiện nó để biết
       // Claude kẹt ở đâu mà không phải cuộn lên tìm.
       dangChay: parsed ? (parsed.dangChay || '') : '',
+      /* Agent con của phiên — danh sách ĐẦY ĐỦ (SSE chỉ gửi số đếm).
+         Cắt 20 cái gần nhất: một phiên dài có thể phóng hàng chục agent, mà thứ đáng
+         xem là mấy cái vừa chạy. Đảo ngược để mới nhất lên đầu. */
+      agents: parsed ? (parsed.agents || []).slice(-20).reverse() : [],
     });
   }
 

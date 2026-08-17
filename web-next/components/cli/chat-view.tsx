@@ -70,6 +70,23 @@ interface History {
   effortDat?: string | null;
   effortHieuLuc?: string;
   nhap?: string;   // chữ đang chảy ra của lượt hiện tại (bản nháp từ stdout)
+  agents?: AgentCon[];   // agent con của phiên, 20 cái gần nhất, mới nhất đầu
+}
+
+/* Agent con (Task/Agent) Claude tự phóng.
+   `trangThai` lấy thẳng từ <status> của task-notification trong .jsonl — không suy
+   đoán. Đo trên 155 file: completed 237, failed 23, stopped 15, killed 6.
+   'dang-chay' và 'dut' là hai giá trị server tự đặt: chưa có notification thì đang
+   chạy, trừ khi đã quá 30 phút (agent lâu nhất từng đo là 13,5 phút) -> coi như đứt. */
+interface AgentCon {
+  id: string;
+  ten: string;
+  loai: string;      // subagent_type — có agent không khai, để rỗng
+  nen: boolean;      // chạy nền hay đồng bộ
+  batDau: string | null;
+  trangThai: string;
+  tomTat: string;
+  xongTs: string | null;
 }
 
 /** claude-opus-5 -> Opus. Tên đầy đủ dài gấp ba mà không thêm thông tin nào ở mức
@@ -675,7 +692,8 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           typing=false nên KHÔNG có nút dừng nào, mà bấm Gửi lại nhận 409 "session is
           busy". Bản legacy dùng status nên vẫn xử lý được (export.js:453). */}
       {(h?.typing || h?.status === 'RUNNING') && (
-        <DangChay onStop={stop} lenh={h?.dangChay} />
+        <DangChay onStop={stop} lenh={h?.dangChay}
+              agents={(h?.agents || []).filter((a) => a.trangThai === 'dang-chay')} />
       )}
 
       {h?.error && (

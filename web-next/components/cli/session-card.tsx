@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import {
   MessageSquare, Coins, CornerDownRight, ClipboardList, Cpu,
-  Terminal, TriangleAlert, Zap, CircleHelp,
+  Terminal, TriangleAlert, Zap, CircleHelp, Bot,
 } from 'lucide-react';
 import type { Session } from '@/lib/types';
 import { useCauHinh } from '@/lib/use-cauhinh';
@@ -225,6 +225,18 @@ export function SessionCard({
             title={(s.model || '') + (s.effort ? ' · mức nghĩ ' + s.effort : '')}>
             <Cpu className="size-3 shrink-0 opacity-60" />
             <span className="truncate">{model}{s.effort ? '·' + s.effort : ''}</span>
+          </span>
+        )}
+        {/* Agent con đang chạy. Claude phóng subagent thì phiên vẫn nhìn như đang
+            im — thanh "đang chạy" ở dòng 3 chỉ hiện tool của lượt chính, không thấy
+            agent nào. Đo thật: agent chạy trung vị 3,9 phút, có cái 13,5 phút — cả
+            quãng đó thẻ trông như phiên đã dừng. */}
+        {!!s.agentChay && (
+          <span className="inline-flex min-w-0 items-center gap-1 text-status-ok"
+            data-testid="card-agent"
+            title={s.agentTen?.length ? 'Agent đang chạy: ' + s.agentTen.join(', ') : undefined}>
+            <Bot className="size-3 shrink-0 animate-pulse" />
+            {s.agentChay} agent
           </span>
         )}
         {/* Nhịp token — server chỉ gửi cho phiên ĐANG CHẠY, phiên nghỉ thì đường

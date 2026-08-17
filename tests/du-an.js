@@ -279,6 +279,102 @@ async function snapshot() {
     }
   }
 
+  /* ---------- Agent con: trạng thái đọc từ .jsonl ----------
+     Claude phóng subagent rồi NGỒI CHỜ. Suốt lúc đó phiên nhìn như đã dừng: lượt
+     chính không có tool nào chạy nên dải "đang chạy" trống. Đo trên 155 file thật:
+     128 lần gọi Task, agent chạy trung vị 3,9 phút, dài nhất 13,5.
+
+     Cái bẫy chính: tool_result của Task về NGAY lúc phóng với nội dung "Async agent
+     launched successfully" — nên "đã có tool_result" KHÔNG có nghĩa là agent xong.
+     Đo được 83/83 lần gọi đều có tool_result trong khi phần lớn mới vừa khởi động.
+     Trạng thái thật nằm ở dòng queue-operation kèm <task-notification>. */
+  {
+    const dir = path.join(PROJECTS_DIR, '-private-tmp-agent-check');
+    const sid = '77777777-8888-4999-8aaa-bbbbbbbbbbbb';
+    const f = path.join(dir, sid + '.jsonl');
+    const lay = async () => (await snapshot()).data.sessions.find((s) => s.sid === sid);
+    const lich = () => fetch(URL + '/api/history/' + sid,
+      { headers: { 'X-Dash-Token': token } }).then((r) => r.json());
+
+    // dòng phóng một agent; ts truyền vào để ép nhánh "đang chạy" vs "đứt"
+    const dongPhong = (id, ten, ts) => JSON.stringify({
+      type: 'assistant', timestamp: new Date(ts).toISOString(),
+      cwd: '/private/tmp/agent-check',
+      message: { model: 'claude-opus-5', usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: 'tool_use', id, name: 'Task',
+          input: { description: ten, subagent_type: 'Explore', run_in_background: true } }] },
+    }) + '\n';
+    // tool_result "đã phóng" — về ngay, KHÔNG phải kết quả
+    const dongPhongXong = (id, ts) => JSON.stringify({
+      type: 'user', timestamp: new Date(ts + 500).toISOString(),
+      cwd: '/private/tmp/agent-check',
+      message: { content: [{ type: 'tool_result', tool_use_id: id,
+        content: [{ type: 'text', text: 'Async agent launched successfully.' }] }] },
+    }) + '\n';
+    // notification báo xong thật
+    const dongNoti = (id, tt, tom, ts) => JSON.stringify({
+      type: 'queue-operation', operation: 'enqueue',
+      timestamp: new Date(ts).toISOString(), sessionId: sid,
+      content: `<task-notification>\n<task-id>x1</task-id>\n<tool-use-id>${id}</tool-use-id>\n`
+        + `<status>${tt}</status>\n<summary>${tom}</summary>\n</task-notification>`,
+    }) + '\n';
+
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const gio = Date.now();
+
+      // nhánh 1: vừa phóng, CHƯA có notification -> đang chạy
+      fs.writeFileSync(f, dongPhong('toolu_a1', 'Rà soát mã', gio - 60000)
+        + dongPhongXong('toolu_a1', gio - 60000));
+      await new Promise((r) => setTimeout(r, 250));
+      const a = await lay();
+      ok('agent vừa phóng -> đếm là ĐANG CHẠY (dù tool_result đã về)',
+        !!a && a.agentChay === 1, a ? a.agentChay + ' agent' : 'không thấy phiên');
+      ok('SSE gửi kèm tên agent đang chạy',
+        !!a && Array.isArray(a.agentTen) && a.agentTen[0] === 'Rà soát mã',
+        a ? JSON.stringify(a.agentTen) : '—');
+
+      // nhánh 2: notification về -> hết đang chạy, giữ trạng thái thật
+      fs.appendFileSync(f, dongNoti('toolu_a1', 'completed', 'Xong việc rà soát', gio - 30000));
+      await new Promise((r) => setTimeout(r, 250));
+      const b = await lay();
+      ok('có task-notification -> KHÔNG còn tính là đang chạy',
+        !!b && b.agentChay === 0, b ? b.agentChay + ' agent' : 'không thấy');
+      const h = await lich();
+      const ag = (h.agents || [])[0];
+      ok('/api/history trả trạng thái + tóm tắt thật của agent',
+        !!ag && ag.trangThai === 'completed' && /Xong việc/.test(ag.tomTat || ''),
+        ag ? ag.trangThai + ' | ' + (ag.tomTat || '').slice(0, 30) : 'không có agent');
+
+      /* nhánh 3: trạng thái LỖI phải giữ nguyên, không quy về "xong".
+         Đo trên dữ liệu thật: ngoài completed(237) còn failed(23), stopped(15),
+         killed(6) — gộp hết thành "xong" là giấu mất agent chết. */
+      fs.appendFileSync(f, dongPhong('toolu_a2', 'Việc hỏng', gio - 50000)
+        + dongNoti('toolu_a2', 'failed', 'Agent chết giữa chừng', gio - 20000));
+      await new Promise((r) => setTimeout(r, 250));
+      const h2 = await lich();
+      const loi = (h2.agents || []).find((x) => x.ten === 'Việc hỏng');
+      ok('agent lỗi giữ nguyên trạng thái "failed", không quy về xong',
+        !!loi && loi.trangThai === 'failed', loi ? loi.trangThai : 'không thấy');
+
+      /* nhánh 4: agent MỒ CÔI — phóng rồi phiên chết, notification không bao giờ về.
+         Đo thật: 29 agent kiểu này trên máy, TẤT CẢ già hơn 24 giờ, 0 cái trẻ hơn 1
+         giờ. Không có ngưỡng thì dashboard hiện "đang chạy" suốt nhiều ngày.
+         Ngưỡng 30 phút = gấp hơn 2 lần agent lâu nhất từng đo (13,5 phút). */
+      fs.appendFileSync(f, dongPhong('toolu_a3', 'Agent bỏ quên', gio - 3 * 3600 * 1000));
+      await new Promise((r) => setTimeout(r, 250));
+      const c = await lay();
+      ok('agent quá 30 phút chưa báo -> coi là ĐỨT, không đếm là đang chạy',
+        !!c && c.agentChay === 0, c ? c.agentChay + ' agent đang chạy' : 'không thấy');
+      const h3 = await lich();
+      const mc = (h3.agents || []).find((x) => x.ten === 'Agent bỏ quên');
+      ok('agent mồ côi được đánh dấu "dut" để phân biệt với đang chạy',
+        !!mc && mc.trangThai === 'dut', mc ? mc.trangThai : 'không thấy');
+    } finally {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  }
+
   /* ---------- Chốt chặn đường dẫn của /api/file ----------
      Đây là endpoint DUY NHẤT trong app đọc file tuỳ ý theo đường dẫn gửi từ ngoài vào.
      Thủng nó là dashboard thành công cụ đọc trộm cả đĩa — mà máy này mở trên tailnet.

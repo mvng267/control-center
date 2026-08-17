@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Square } from 'lucide-react';
+import { Square, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -49,7 +49,14 @@ export function HoaClaude({ chay }: { chay: boolean }) {
   );
 }
 
-export function DangChay({ onStop, lenh }: { onStop: () => void; lenh?: string }) {
+export function DangChay({ onStop, lenh, agents }: {
+  onStop: () => void; lenh?: string;
+  /* Agent con đang chạy. Claude phóng subagent rồi NGỒI CHỜ nó — lúc đó không có
+     tool nào chạy ở lượt chính, nên `lenh` rỗng và dải này chỉ đếm giây câm. Đo
+     thật: agent chạy trung vị 3,9 phút, dài nhất 13,5 — cả quãng đó không biết
+     đang chờ cái gì. */
+  agents?: { ten: string; loai: string }[];
+}) {
   const [pha, setPha] = useState(0);
   const [giay, setGiay] = useState(0);
 
@@ -93,6 +100,16 @@ export function DangChay({ onStop, lenh }: { onStop: () => void; lenh?: string }
           {lenh}
         </div>
       )}
+      {/* Agent con đang chạy — mỗi cái một dòng, hiện tên việc nó đang làm */}
+      {agents?.map((a, i) => (
+        <div key={i} data-testid="dang-chay-agent"
+          className="flex min-w-0 items-center gap-1.5 pl-[calc(1ch+0.5rem)] text-[11.5px] text-status-ok/85"
+          title={a.loai ? a.ten + ' (' + a.loai + ')' : a.ten}>
+          <Bot className="size-3 shrink-0 animate-pulse" />
+          <span className="truncate">{a.ten || a.loai || 'agent'}</span>
+          {!!a.loai && <span className="shrink-0 text-muted-foreground/55">{a.loai}</span>}
+        </div>
+      ))}
     </div>
   );
 }

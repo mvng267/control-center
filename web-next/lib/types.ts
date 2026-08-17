@@ -39,6 +39,11 @@ export interface Session {
   choDuyet?: boolean;  // đang ĐỨNG IM chờ người bấm (giữ boolean cho giao diện cũ)
   cho?: string;        // lý do chờ: 'ke-hoach' (duyệt kế hoạch) | 'cau-hoi' (Claude hỏi)
   dangChay?: string;   // lệnh đang chạy dở, vd "Bash(npm test)"
+  /* Agent con (Task/Agent) ĐANG chạy. SSE chỉ gửi số đếm + tên 3 cái đầu — danh sách
+     đầy đủ lấy ở /api/history khi mở phiên (128 agent trên máy này, gửi hết mỗi 2
+     giây cho 155 phiên là phí). */
+  agentChay?: number;
+  agentTen?: string[];
   /* Nhịp token 20 mốc gần nhất (CHÊNH LỆCH giữa hai nhịp SSE, không phải số tổng).
      Server CHỈ gửi cho phiên đang chạy — phiên nghỉ token không đổi nên đường vẽ ra
      phẳng lì, gửi đi chỉ tốn băng thông. */
