@@ -321,6 +321,22 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
     return [];
   }, [h?.messages]);
 
+  /* Kế hoạch ĐANG chờ duyệt — để nhấc ra khỏi luồng cuộn, ghim cạnh dải "đang chạy".
+     Trước đây thẻ kế hoạch nằm trong luồng nên cuộn một đoạn là mất, trong khi dải
+     đang chạy (có nút Dừng) luôn nổi — ngược thứ tự cần thiết: kế hoạch mới là thứ
+     đang chờ tay người, còn dải kia chỉ báo tiến trình.
+     Quét ngược cùng lối `todos` ở trên. */
+  const planCho = useMemo(() => {
+    if (!h?.awaiting) return null;
+    const ms = h?.messages || [];
+    for (let i = ms.length - 1; i >= 0; i--) {
+      for (const p of ms[i].parts || []) {
+        if (p.t === 'tool' && p.ke) return { id: p.id, ke: p.ke, keFile: p.keFile };
+      }
+    }
+    return null;
+  }, [h?.messages, h?.awaiting]);
+
   /* Chiều cao khung ở lần vẽ trước — để bù lại phần bị cắt mất khi cửa sổ tin trượt. */
   const caoTruoc = useRef(0);
 
@@ -461,7 +477,12 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             390px: để flex-wrap thì nó tách thành 2 dòng, ăn 39px và đẩy khung chat
             từ 688px xuống 593px. Nội dung ở đây là phụ đề, không đáng đổi lấy gần
             100px vùng đọc. */}
-        <div className="flex min-w-0 items-center gap-x-2.5 overflow-x-auto whitespace-nowrap pl-10 text-[11.5px] text-muted-foreground"
+        {/* mask mờ dần mép phải = dấu hiệu "còn nữa, vuốt sang". Thanh cuộn bị ẩn
+            (scrollbarWidth none) nên trước đây không có gì báo là dòng này cuộn được:
+            đo ở 390px, sau pl-10 chỉ còn ~310px cho 6 mục nên gần như luôn tràn.
+            Dùng mask thay vì thêm phần tử gradient — không đẻ thêm DOM, và khi không
+            tràn thì phần mờ rơi vào khoảng trống nên không ai thấy. */}
+        <div className="flex min-w-0 items-center gap-x-2.5 overflow-x-auto whitespace-nowrap pl-10 text-[11.5px] text-muted-foreground [mask-image:linear-gradient(to_right,black_calc(100%-20px),transparent)]"
           style={{ scrollbarWidth: 'none' }}
           data-testid="chat-meta">
           {h?.duAn && (
@@ -578,7 +599,15 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               ) : (
               <div data-testid="msg-wrap" data-role={m.role}
                 data-gap={gapLuot.has(m.tsDau || m.ts || '')}
-                className="flex w-full flex-col border-t border-border/50 pt-1.5">
+                /* Lượt của MÌNH dính ở đầu khung khi cuộn qua. Phiên dài thì câu hỏi
+                   trôi mất từ lâu, đọc giữa chừng không còn nhớ đang hỏi gì — mà cuộn
+                   ngược lên tìm thì mất chỗ đang đọc. Sticky giữ nó trên đầu tới khi
+                   câu hỏi TIẾP THEO đẩy đi, như mục lục trượt.
+                   Nền đục + z-10 là bắt buộc, thiếu thì chữ bên dưới trôi xuyên qua.
+                   Chỉ áp cho lượt user: lượt Claude thường cao hơn cả màn hình, dính
+                   lại thì che mất phần đang đọc. */
+                className={cn('flex w-full flex-col border-t border-border/50 pt-1.5',
+                  m.role === 'user' && 'sticky top-0 z-10 bg-card')}>
                 {/* DÒNG TIÊU ĐỀ LƯỢT — vùng bấm gập DUY NHẤT.
                     Không cho bấm cả lượt: bên trong đã có 5 thứ bấm được (thẻ tool,
                     bảng chọn, thẻ kế hoạch, nút chép, dòng ghi chú), bấm cả khối thì
@@ -651,9 +680,14 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                         onGui={(t) => send(t)} />
                     </div>
                   ) : p.t === 'tool' && p.ke ? (
+                    /* Kế hoạch ĐANG chờ duyệt được vẽ riêng ở dưới (ghim cạnh dải đang
+                       chạy) nên bỏ qua ở đây, tránh hiện hai lần cùng một thẻ. Kế hoạch
+                       CŨ vẫn giữ trong luồng để đọc lại mạch hội thoại. */
+                    planCho && planCho.id === p.id ? null : (
                     <div key={p.id || i} className="my-1">
                       <PlanCard ke={p.ke} keFile={p.keFile} daDuyet={!h?.awaiting} onDuyet={approve} />
                     </div>
+                    )
                   ) : p.t === 'tool' ? (
                     <ToolCard key={p.id || i} part={p} sid={sid}
                       open={openTools.has(p.id)} onToggle={toggleTool} />
@@ -704,6 +738,15 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           </div>
         )}
       </div>
+
+      {/* Kế hoạch chờ duyệt — GHIM ở đây, ngay trên dải đang chạy và ô nhập, thay vì
+          để trôi trong luồng cuộn. Đây là thứ đang chờ tay người nên phải luôn thấy;
+          cuộn lên đọc lại đoạn cũ mà mất nút Duyệt thì phải cuộn xuống tìm lại. */}
+      {planCho && (
+        <div className="mx-3 mb-1.5 shrink-0" data-testid="plan-ghim">
+          <PlanCard ke={planCho.ke} keFile={planCho.keFile} daDuyet={false} onDuyet={approve} />
+        </div>
+      )}
 
       {/* Nút dừng dựa vào STATUS, không phải `typing`. `typing = procs.has(sid)` chỉ
           đúng khi chính dashboard spawn Claude — phiên chạy từ terminal ngoài thì

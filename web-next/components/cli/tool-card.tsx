@@ -234,8 +234,11 @@ export function ToolCard({ part, sid, open, onToggle }: {
         </div>
       </div>
 
+      {/* min-w-0: thiếu nó thì khối này nở theo NỘI DUNG của <pre> bên trong (mặc định
+          flex/grid item là min-width:auto), nên dòng kết quả dài đẩy cả thẻ rộng ra và
+          làm khung chat cuộn ngang thay vì chỉ <pre> cuộn. Rõ nhất ở 390px. */}
       {open && (
-        <div className="pl-[18px]">
+        <div className="min-w-0 pl-[18px]">
           {soTodo ? (
             <div className="mt-1 flex flex-col gap-0.5">
               {part.todos!.map((t, i) => (

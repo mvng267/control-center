@@ -2402,6 +2402,58 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     await ctx.close();
   }
 
+  /* ---------- G. Xem lai tin cu + cau hoi cua minh dinh dau khung ----------
+     Truoc day server tra CUNG 30 tin cuoi, khong co duong nao lay them: do tren phien
+     control 12.876 tin, tuc chi xem duoc 0,2% noi dung. Muon doc lai dieu da ban truoc
+     do phai tai ca file .md ve doc ngoai app.
+     Va vi khong cuon lai duoc nen doc giua chung mat luon ngu canh "dang hoi gi" —
+     day chinh la ly do can sticky. Hai thu nay di voi nhau. */
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page = await ctx.newPage();
+    await page.goto(URL, { waitUntil: 'networkidle' });
+    await page.waitForSelector('[data-testid=session-row]', { timeout: 20000 });
+    await page.waitForTimeout(1500);
+    await page.locator('[data-testid=session-row]:visible').first().click();
+    await page.waitForSelector('[data-testid=chat-view]', { timeout: 15000 });
+    await page.waitForTimeout(2500);
+
+    const coNut = await page.locator('[data-testid=xem-them]').count();
+    if (!coNut) {
+      ok('nut xem them tin cu', true, 'bo qua: phien ngan hon 30 tin');
+    } else {
+      const truoc = await page.locator('[data-testid=msg-wrap]').count();
+      // bam 3 lan: mot lan co the roi vao doan toan tin assistant, khong ra luot user
+      for (let i = 0; i < 3; i++) {
+        const n = page.locator('[data-testid=xem-them]');
+        if (await n.count()) { await n.click(); await page.waitForTimeout(1800); }
+      }
+      const sau = await page.locator('[data-testid=msg-wrap]').count();
+      ok('bam "xem them" keo duoc tin cu ve', sau > truoc, `${truoc} -> ${sau} luot`);
+
+      /* Sticky phai do bang getComputedStyle, KHONG do bang offsetParent: phan tu
+         position:sticky van co offsetParent binh thuong, con position:fixed thi luon
+         null — da tung viet nham cach do va duoc mot bai test xanh gia. */
+      const st = await page.evaluate(() => {
+        const u = [...document.querySelectorAll('[data-testid=msg-wrap]')]
+          .find((x) => x.getAttribute('data-role') === 'user');
+        if (!u) return null;
+        const cs = getComputedStyle(u);
+        return { position: cs.position, top: cs.top, z: cs.zIndex, bg: cs.backgroundColor };
+      });
+      if (!st) {
+        ok('luot cua minh dinh dau khung khi cuon', true, 'bo qua: doan nay khong co luot user');
+      } else {
+        ok('luot cua minh dinh dau khung khi cuon (sticky)',
+          st.position === 'sticky' && st.top === '0px', JSON.stringify(st));
+        // nen duc: thieu thi chu ben duoi troi xuyen qua, doc thanh hai lop chong nhau
+        ok('luot dinh co nen duc (khong loi chu ben duoi)',
+          !!st.bg && !/transparent|rgba\(0, 0, 0, 0\)/.test(st.bg), st.bg);
+      }
+    }
+    await ctx.close();
+  }
+
   await browser.close();
   traPasscode();
   const fails = results.filter((r) => !r.pass);
