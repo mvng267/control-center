@@ -58,8 +58,12 @@ export function PlanCard({
         )}
       </button>
 
-      {/* Dòng ⌐ tóm tắt — luôn hiện, đúng như terminal in kết quả tool */}
-      <div className="flex gap-2 pl-[3px] text-muted-foreground">
+      {/* Dòng ⌐ tóm tắt — luôn hiện, đúng như terminal in kết quả tool.
+          pl-[18px] để thẳng trục với dòng kết quả của ToolCard: cả hai đều là "con"
+          của một lượt nên phải thụt bằng nhau. Trước dùng pl-[3px] — đúng giá trị mà
+          tool-card.tsx đã bỏ vì gần như không thụt, khiến thẻ Kế hoạch lệch 15px so
+          với thẻ Tool ngay bên cạnh. */}
+      <div className="flex gap-2 pl-[18px] text-muted-foreground">
         <span aria-hidden className="mt-[3px] shrink-0 select-none text-muted-foreground/40"><CornerDownRight className="size-3" /></span>
         <span className="min-w-0 flex-1 truncate text-[12px]">
           {soDong} dòng

@@ -201,8 +201,15 @@ async function snapshot() {
   /* Model + mức nghĩ đọc từ chính .jsonl (dòng assistant mới nhất), không phải từ
      dashboard-models.json — file đó chỉ có một mục rác test, không ứng với phiên nào. */
   {
-    const coModel = ss.filter((s) => s.model).length;
-    ok('lấy được model từ .jsonl', coModel > ss.length / 2, coModel + '/' + ss.length + ' phiên');
+    /* Chỉ tính phiên ĐÃ CÓ LƯỢT TRẢ LỜI. Model nằm ở dòng assistant, nên phiên mở ra
+       rồi đóng ngay (chưa hỏi gì) không thể có model — đếm cả chúng là đo sai.
+       Đo thật: 121/236 phiên không có model, TẤT CẢ đều là file 2-3KB tức chưa có lượt
+       nào. Bài này từng đỏ oan vì tỷ lệ phiên rỗng tăng dần theo thời gian: mỗi lần mở
+       nhầm một thư mục là thêm một file rỗng, kéo mẫu số lên mà không thêm mẫu số thật. */
+    const coLuot = ss.filter((s) => (s.luot || 0) > 0);
+    const coModel = coLuot.filter((s) => s.model).length;
+    ok('lấy được model từ .jsonl', coModel > coLuot.length * 0.9,
+      coModel + '/' + coLuot.length + ' phiên đã có lượt (bỏ qua ' + (ss.length - coLuot.length) + ' phiên rỗng)');
   }
 
   /* ---------- ĐỌC THÊM: hai nhánh, kiểm bằng phiên giả tự dựng ----------
@@ -375,6 +382,65 @@ async function snapshot() {
     }
   }
 
+  /* ---------- Phiên chờ người bấm: phân biệt với "đã trả lời xong" ----------
+     Vinh dùng iPhone là chính. Trước đây mọi lượt kết thúc đều bắn một thông báo y hệt
+     "đã trả lời xong", nên phiên ĐANG ĐỨNG CHỜ TAY NGƯỜI (duyệt kế hoạch / chọn phương
+     án) không phân biệt được với phiên đã xong hẳn — mà đó mới là cái cần mở ra bấm.
+
+     Test kiểm server nhận DẠNG chờ đúng từ .jsonl. Bản thân push không kiểm được ở đây
+     (cần push service thật — tests/push.js lo tầng đó), nhưng `cho` là thứ quyết định
+     nhánh nào chạy, nên sai ở đây là sai luôn thông báo. */
+  {
+    const dir = path.join(PROJECTS_DIR, '-private-tmp-cho-check');
+    const sid = '99999999-1111-4222-8333-444444444444';
+    const f = path.join(dir, sid + '.jsonl');
+    const lay = async () => (await snapshot()).data.sessions.find((s) => s.sid === sid);
+    const gio = Date.now();
+    // lượt assistant gọi tool nhưng CHƯA có tool_result -> đang chờ người bấm
+    const dongCho = (ten, extra) => JSON.stringify({
+      type: 'assistant', timestamp: new Date(gio - 5000).toISOString(),
+      cwd: '/private/tmp/cho-check',
+      message: { model: 'claude-opus-5', usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: 'tool_use', id: 'toolu_' + ten, name: ten, input: extra }] },
+    }) + '\n';
+
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+
+      fs.writeFileSync(f, dongCho('ExitPlanMode', { plan: 'Kế hoạch thử' }));
+      await new Promise((r) => setTimeout(r, 250));
+      const a = await lay();
+      ok('phiên chờ DUYỆT KẾ HOẠCH nhận đúng dạng "ke-hoach"',
+        !!a && a.cho === 'ke-hoach', a ? JSON.stringify(a.cho) : 'không thấy phiên');
+
+      fs.writeFileSync(f, dongCho('AskUserQuestion', { questions: [{ question: 'Chọn gì?' }] }));
+      await new Promise((r) => setTimeout(r, 250));
+      const b = await lay();
+      ok('phiên chờ TRẢ LỜI CÂU HỎI nhận đúng dạng "cau-hoi"',
+        !!b && b.cho === 'cau-hoi', b ? JSON.stringify(b.cho) : 'không thấy');
+
+      /* Lượt xong hẳn: tool đã có kết quả -> KHÔNG chờ gì.
+         Đây là nhánh dễ sai nhất — nhầm ở đây thì mọi phiên đều báo "chờ duyệt",
+         thông báo mất hết ý nghĩa. */
+      fs.appendFileSync(f, JSON.stringify({
+        type: 'user', timestamp: new Date(gio - 3000).toISOString(),
+        cwd: '/private/tmp/cho-check',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_AskUserQuestion', content: 'đã chọn' }] },
+      }) + '\n' + JSON.stringify({
+        type: 'assistant', timestamp: new Date(gio - 2000).toISOString(),
+        cwd: '/private/tmp/cho-check',
+        message: { model: 'claude-opus-5', usage: { input_tokens: 1, output_tokens: 1 },
+          content: [{ type: 'text', text: 'Xong rồi nhé.' }] },
+      }) + '\n');
+      await new Promise((r) => setTimeout(r, 250));
+      const c = await lay();
+      ok('lượt xong hẳn thì KHÔNG bị coi là đang chờ',
+        !!c && !c.cho, c ? JSON.stringify(c.cho) : 'không thấy');
+    } finally {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  }
+
   /* ---------- Khởi động lại sau khi cập nhật ----------
      Mắt xích thiếu khiến bấm Cập nhật xong mà version không đổi: `npm install -g`
      chỉ thay file trên ĐĨA, mã đang chạy đã nạp vào RAM từ lúc khởi động. Gặp thật
@@ -414,10 +480,17 @@ async function snapshot() {
      chốt chặn thủng lúc đó. Nên test bắn thẳng đường dẫn, không lấy từ cây. */
   {
     const snap = await snapshot();
-    const ss = (snap.data.sessions || []).filter((s) => s.duAn && s.duAn.conTonTai && !s.duAn.laNhap);
+    /* Phải loại phiên chạy ở THƯ MỤC NHÀ. Server chặn thẳng chúng bằng `gocQuaRong`
+       ("phiên này chạy ở thư mục nhà, không mở file") — đúng chủ ý, vì cho đọc từ ~/
+       là mở toang cả đĩa. Nhưng test bắn vào một phiên như vậy thì MỌI bài đều nhận
+       cùng một lỗi chặn, kể cả bài "vẫn đọc được file thường" — đỏ oan 15 bài.
+       Danh sách phiên xoay theo thời gian nên lúc trúng lúc không: đã thấy cùng một
+       commit chạy ra 68/69 rồi 53/68. Lọc theo đường dẫn thật để hết ngẫu nhiên. */
+    const ss = (snap.data.sessions || []).filter((s) => s.duAn && s.duAn.conTonTai && !s.duAn.laNhap
+      && s.duAn.duongDan && (s.duAn.duongDan.match(/\//g) || []).length >= 4);
     const phien = ss[0];
     if (!phien) {
-      ok('có phiên để kiểm chốt chặn /api/file', false, 'không tìm được phiên nào có cwd thật');
+      ok('có phiên để kiểm chốt chặn /api/file', false, 'không tìm được phiên nào có cwd đủ sâu');
     } else {
       const doc = async (duong) => {
         const u = `${URL}/api/file?sid=${encodeURIComponent(phien.sid)}&path=${encodeURIComponent(duong)}`;

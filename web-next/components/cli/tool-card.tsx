@@ -97,13 +97,16 @@ function KhoiDiff({ text }: { text: string }) {
     <div className="mt-1">
       <div className="mb-1 text-[10px] font-semibold tracking-wide text-muted-foreground/70">THAY ĐỔI</div>
       <pre className="max-h-[220px] overflow-auto border-l border-border text-[12px] leading-relaxed md:max-h-[300px]">
+        {/* w-max min-w-full: mỗi dòng rộng bằng NỘI DUNG nhưng tối thiểu bằng khung.
+            Thiếu nó thì dòng chỉ rộng bằng khung, nên khi cuộn ngang sang phải nền màu
+            hết ngay ở mép — dòng thêm/bớt mất màu đúng lúc đang đọc phần dài. */}
         {lines.map((l, i) => {
-          if (l === '--- old') { mode = 'del'; return <div key={i} className="px-3 text-[10px] font-semibold text-status-error">Trước</div>; }
-          if (l === '+++ new') { mode = 'add'; return <div key={i} className="px-3 text-[10px] font-semibold text-status-ok">Sau</div>; }
+          if (l === '--- old') { mode = 'del'; return <div key={i} className="w-max min-w-full px-3 text-[10px] font-semibold text-status-error">Trước</div>; }
+          if (l === '+++ new') { mode = 'add'; return <div key={i} className="w-max min-w-full px-3 text-[10px] font-semibold text-status-ok">Sau</div>; }
           return (
-            <div key={i} className={cn('whitespace-pre px-3',
-              mode === 'del' && 'bg-status-error/[0.07] text-status-error/90',
-              mode === 'add' && 'bg-status-ok/[0.07] text-status-ok/90')}>
+            <div key={i} className={cn('w-max min-w-full whitespace-pre px-3',
+              mode === 'del' && 'bg-status-error/12 text-status-error',
+              mode === 'add' && 'bg-status-ok/12 text-status-ok')}>
               {l}
             </div>
           );

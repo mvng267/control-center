@@ -197,6 +197,10 @@ function CopyTurn({ parts }: { parts: Part[] }) {
 
 export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: () => void; perm?: string; effort?: string }) {
   const [h, setH] = useState<History | null>(null);
+  /* Số tin CŨ đã xin thêm ngoài cửa sổ 30 mặc định. Mỗi lần bấm "xem thêm" cộng 30.
+     Reset khi đổi phiên — nếu không, mở phiên ngắn sau phiên dài sẽ xin thừa. */
+  const [them, setThem] = useState(0);
+  useEffect(() => { setThem(0); }, [sid]);
   const [att, setAtt] = useState<Attachment[]>([]);
   // Sheet chức năng (chỉ mở được trên điện thoại — nút mở có `sm:hidden`)
   const [sheet, setSheet] = useState(false);
@@ -283,13 +287,17 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   // Nhịp hỏi lại server: Claude ĐANG chạy thì hỏi dày (700ms) để chữ hiện ra gần như
   // tức thì; rảnh thì giãn ra 2s cho đỡ tốn pin và băng thông Tailscale.
   const busyNow = h?.typing || h?.status === 'RUNNING';
+  /* `them` phải đi kèm MỌI lần tải, không chỉ lần bấm: nhịp poll 2 giây gọi lại
+     /api/history liên tục, thiếu tham số là tin cũ vừa tải bị cuốn đi ngay nhịp sau —
+     nhìn như nút "xem thêm" không ăn. */
   useEffect(() => {
     let alive = true;
-    const load = () => api<History>('/api/history/' + sid).then((r) => alive && setH(r)).catch(() => {});
+    const q = them > 0 ? '?them=' + them : '';
+    const load = () => api<History>('/api/history/' + sid + q).then((r) => alive && setH(r)).catch(() => {});
     load();
     const t = setInterval(load, busyNow ? 700 : 2000);
     return () => { alive = false; clearInterval(t); };
-  }, [sid, busyNow]);
+  }, [sid, busyNow, them]);
 
   useEffect(() => {
     if (!pending.length) return;
@@ -521,6 +529,16 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
            thật sự cần cột thẳng hàng thì vẫn thẳng.
            Full-width: terminal không kẹp nội dung vào giữa. */
         className="flex w-full min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-4">
+        {/* Xem lại tin cũ. Trước đây server trả CỨNG 30 tin cuối và không có đường nào
+            lấy thêm — đo trên phiên control: 19.806 lượt, tức chỉ xem được 0,2% nội
+            dung, muốn đọc lại điều đã bàn trước đó phải tải cả file .md về đọc ngoài.
+            `start > 0` nghĩa là còn tin cũ chưa tải; server trả sẵn total/start. */}
+        {(h?.start || 0) > 0 && (
+          <button data-testid="xem-them" onClick={() => setThem((n) => n + 30)}
+            className="tap44 mx-auto mb-1 shrink-0 rounded-lg border border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+            Xem thêm 30 tin trước · còn {h?.start}
+          </button>
+        )}
         {groups.map((m, gi) => {
           const parts = m.parts?.length ? mergeTextParts(m.parts) : [{ t: 'text', text: m.content } as TextPart];
           const k = dayKey(m.ts);

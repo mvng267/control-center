@@ -20,8 +20,14 @@ export interface NotePart {
   lap?: number;   // cùng một lỗi lặp bao nhiêu lần trong phiên (server đã gộp)
 }
 
+/* Dùng TOKEN, không dùng palette thô của Tailwind: token có giá trị riêng cho theme
+   sáng và tối, còn `amber-500` là một màu cố định nên ở theme sáng nó chói, theme tối
+   thì đục. `hook-error` trước đây là chỗ DUY NHẤT trong cả thư mục còn dùng palette
+   thô — mà nó lại là loại note nhiều nhất (đếm thật: 11.881 hook lỗi trên 180 file).
+   `status-run` cùng sắc vàng (hue 78 vs ~70) nên nhìn không khác, chỉ khác ở chỗ nó
+   đổi theo theme. */
 const TONE: Record<string, string> = {
-  'hook-error': 'text-amber-500',
+  'hook-error': 'text-status-run',
   'api-error': 'text-status-error',
   'hang-doi': 'text-muted-foreground',
   'ke-hoach': 'text-primary',
@@ -55,7 +61,14 @@ export function NoteLine({ part }: { part: NotePart }) {
       <button onClick={() => setOpen((v) => !v)} data-testid="note-toggle"
         disabled={!part.body}
         title={part.body ? (open ? 'Thu gọn' : 'Xem chi tiết lỗi') : undefined}
-        className="tap44 flex w-full items-start gap-2 pl-[18px] text-left">
+        /* KHÔNG dùng .tap44 ở đây. Dòng này chỉ cao ~20px (13px + leading-relaxed), mà
+           .tap44 phủ 44px bằng ::after nên tràn 12px lên trên và xuống dưới, chồng lên
+           vùng chạm của ToolCard liền kề — bấm thẻ tool lại trúng dòng note. Đúng bẫy
+           đã ghi trong CLAUDE.md; cách xử lý cũng theo đó: nới bằng ĐỆM THẬT.
+           py-2 cho ra ~36px, không đủ 44 nhưng là chiều cao thật nên không nuốt hàng
+           xóm. Dòng không có chi tiết thì disabled, không cần vùng chạm nào. */
+        className={cn('flex w-full items-start gap-2 pl-[18px] text-left',
+          part.body && 'py-2')}>
         <span className={cn('mt-[3px] shrink-0 select-none', tone)}><CornerDownRight className="size-3" /></span>
         <span className={cn('min-w-0 flex-1 truncate', tone)}>{part.title}</span>
         {/* Cùng một lỗi lặp hàng nghìn lần thì server gộp thành một dòng (đo thật:

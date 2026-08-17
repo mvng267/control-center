@@ -563,14 +563,24 @@ function parseSessionFile(file) {
   return data;
 }
 
-// Đọc lịch sử chat 1 session (30 message cuối) — dùng chung cache mtime của parseSessionFile,
-// tránh đọc + parse lại cả file JSONL mỗi lần client poll (2s/lần khi mở chat).
-function getHistory(sid) {
+/* Đọc lịch sử chat 1 session — dùng chung cache mtime của parseSessionFile, tránh đọc
+   + parse lại cả file JSONL mỗi lần client poll (2s/lần khi mở chat).
+
+   `them` = số tin CŨ muốn lấy thêm ngoài cửa sổ mặc định. Trước đây hàm này trả cứng
+   30 tin cuối và KHÔNG có đường nào lấy tin cũ hơn — đo trên phiên control:
+   19.806 lượt, tức dashboard chỉ xem được 0,2% nội dung, muốn đọc lại điều đã bàn 100
+   lượt trước thì phải tải cả file .md về đọc ngoài app.
+   parsed.msgs vốn đã có TOÀN BỘ tin trong RAM nên lấy thêm không tốn parse, chỉ tốn
+   payload: đo thật 497 ký tự/tin -> mỗi trang 30 tin ≈ 15KB, và chỉ tải khi người dùng
+   BẤM, không lặp theo nhịp SSE. */
+const CUA_SO = 30;
+function getHistory(sid, them) {
   const file = findSessionFile(sid);
   if (!file) return null;
   const parsed = parseSessionFile(file);
   if (!parsed) return null;
-  return parsed.msgs.slice(-30).map(m => ({ role: m.role, content: m.text, ts: m.ts, parts: m.parts }));
+  const n = CUA_SO + Math.max(0, Math.min(+them || 0, 970));   // trần 1000 tin/lần
+  return parsed.msgs.slice(-n).map(m => ({ role: m.role, content: m.text, ts: m.ts, parts: m.parts }));
 }
 
 /* ---- tên tự đặt: ghi riêng của dashboard, ĐÈ ai-title của Claude CLI ----
@@ -1183,10 +1193,37 @@ function spawnClaude(args, sid, meta) {
         ? 'Claude CLI không tìm thấy phiên này (thư mục dự án gốc có thể đã bị xoá/đổi tên) — tin nhắn chưa được gửi.'
         : (err || 'claude thoát với mã ' + code);
       spawnErrors.set(sid, { at: Date.now(), msg: msg.split('\n').slice(0, 3).join(' ').slice(0, 300) });
-      notifyPush(sessionLabel(sid) + ': ' + (failedResume ? 'không gửi được tin' : 'chạy lỗi'), sid);
+      notifyPush(sessionLabel(sid) + ': ' + (failedResume ? 'không gửi được tin' : 'chạy lỗi'), sid, 'ccc-loi');
       return; // thất bại thì đừng báo "đã trả lời xong"
     }
-    notifyPush(sessionLabel(sid) + ' đã trả lời xong', sid);
+    /* Xong lượt nhưng ĐANG CHỜ NGƯỜI BẤM là chuyện khác hẳn "đã trả lời xong": Claude
+       đứng im cho tới khi có người duyệt kế hoạch hoặc chọn phương án. Vinh dùng iPhone
+       là chính, nhận thông báo giống hệt nhau thì không biết cái nào cần mở ra bấm.
+
+       CHỈ đọc phiên khi việc đó RẺ. Bản đầu tôi gọi thẳng parseSessionFile ở đây và
+       nó làm server test chết: lúc cache còn lạnh, hàm đó đọc nguyên file — phiên
+       control đang 135MB — ngay giữa lúc trình duyệt chạy hàng chục bài, kéo theo cả
+       bộ test sau đó nhận ECONNREFUSED.
+       docReTien() trả true khi cache còn dùng được hoặc chỉ cần đọc phần đuôi; false
+       thì bỏ qua, báo câu mặc định. Thà mất một dòng chữ chính xác còn hơn treo server.
+       Chờ 400ms vì CLI ghi .jsonl khi lượt kết thúc, `exit` có thể tới trước lúc ghi
+       xong — đo trên máy này ghi mất < 100ms. */
+    const hen = setTimeout(() => {
+      let cho = '';
+      try {
+        const f = findSessionFile(sid);
+        if (f && docReTien(f)) {
+          const d = parseSessionFile(f);
+          cho = (d && d.cho) || (d && d.planFile ? 'ke-hoach' : '');
+        }
+      } catch {}
+      if (cho === 'ke-hoach') notifyPush(sessionLabel(sid) + ' — kế hoạch đã xong, chờ bạn duyệt', sid, 'ccc-cho');
+      else if (cho === 'cau-hoi') notifyPush(sessionLabel(sid) + ' — Claude đang hỏi, cần bạn chọn', sid, 'ccc-cho');
+      else notifyPush(sessionLabel(sid) + ' đã trả lời xong', sid);
+    }, 400);
+    // unref: timer này không được giữ tiến trình sống, nếu không server test spawn rồi
+    // kill sẽ nán lại chờ hết hẹn, cổng chưa nhả kịp cho bộ test kế tiếp.
+    hen.unref?.();
   });
   procs.set(sid, { proc, startedAt: Date.now(), ...meta });
   return proc;
@@ -1881,9 +1918,17 @@ async function pushAll(dataObj) {
 
 // Bắn push khi Claude/Hermes trả lời xong. SW phía client quyết định hiển thị:
 // có tab visible thì bỏ qua (toast/beep local đã lo), tab ẩn/đóng mới hiện notification.
-function notifyPush(msg, sid) {
+/* tag quyết định thông báo nào ĐÈ thông báo nào: cùng tag thì cái sau thay cái trước.
+   Trước đây mọi thông báo dùng chung 'ccc-done' nên "đang chờ bạn duyệt" bị "đã trả
+   lời xong" của phiên khác nuốt mất — mà chờ-duyệt mới là thứ cần tay người. Tách tag
+   theo LOẠI việc, và kèm sid để hai phiên khác nhau không đè nhau. */
+function notifyPush(msg, sid, tag) {
   if (!pushState.subs.length) return;
-  pushAll({ title: 'Claude Control Center', body: msg, tag: 'ccc-done', sid: sid || null, url: '/' }).catch(() => {});
+  pushAll({
+    title: 'Claude Control Center', body: msg,
+    tag: (tag || 'ccc-done') + (sid ? ':' + sid : ''),
+    sid: sid || null, url: '/',
+  }).catch(() => {});
 }
 
 /* ---------------- ảnh gửi từ điện thoại ----------------
@@ -2288,7 +2333,10 @@ const server = http.createServer(async (req, res) => {
     }
     let mt = 0;
     try { mt = fs.statSync(file).mtimeMs; } catch {}
-    const messages = getHistory(sid) || [];
+    // ?them=N -> lấy thêm N tin CŨ ngoài cửa sổ 30. Client tăng dần mỗi lần bấm
+    // "xem thêm"; giữ nguyên kiểu cửa-sổ-trượt nên tin mới vẫn về bình thường.
+    const them = +(url.searchParams.get('them') || 0);
+    const messages = getHistory(sid, them) || [];
     // total: TỔNG message tuyệt đối (messages chỉ là window 30 cuối) — client cần để
     // quy đổi offset /clear; thiếu total thì /clear trên session >30 msg mất message mới vĩnh viễn
     const parsed = parseSessionFile(file);

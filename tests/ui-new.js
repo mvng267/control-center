@@ -309,7 +309,15 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
        tool có dấu mở đầu và dòng kết quả có dấu nối, chứ không phải một ký tự cụ thể.
        Dấu nối chỉ có khi phiên CÓ tool. Phiên nào đứng đầu danh sách là tuỳ máy, gặp
        phiên chỉ toàn câu chữ thì đòi nó là bắt lỗi môi trường chứ không phải lỗi code. */
-    ok('dong tool co dau mo dau (icon thay ky tu ⏺)', cli.chamTron > 0, `icon=${cli.chamTron}`);
+    /* Cùng lý do với dòng dưới: bỏ qua khi phiên không có tool. Trước đây bài này đòi
+       cứng `> 0` trong khi ghi chú ngay trên đã nói không nên — nên nó đỏ ngẫu nhiên
+       tuỳ phiên nào rơi vào đầu danh sách. Đã gặp thật: cùng một commit chạy ra xanh
+       rồi đỏ, mất công truy lỗi code trong khi code không sai. */
+    if (n) {
+      ok('dong tool co dau mo dau (icon thay ky tu ⏺)', cli.chamTron > 0, `icon=${cli.chamTron} (${n} tool)`);
+    } else {
+      ok('dong tool co dau mo dau (icon thay ky tu ⏺)', true, 'bỏ qua: phiên không có tool');
+    }
     if (n) {
       ok('dong ket qua co dau noi (icon thay ky tu ⎿)', cli.ngoac > 0, `icon=${cli.ngoac} (${n} tool)`);
     } else {
