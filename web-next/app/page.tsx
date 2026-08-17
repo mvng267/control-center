@@ -53,6 +53,18 @@ export default function Page() {
     // bấm chính nút toggle trong AppShell — nó nằm TRONG ThemeProvider nên chắc chắn có context
     if (id === "ui:theme") { document.querySelector<HTMLButtonElement>("[data-testid=theme-toggle]")?.click(); return; }
     if (id === "ui:perm") { document.querySelector<HTMLButtonElement>("[data-testid=perm-btn]")?.click(); return; }
+    /* Bấm chính công tắc đang hiển thị, thay vì dựng bản sao. Trong khung chat nó là
+       `chat-perm`/`chat-model-btn` (đã gắn sid nên chỉ đổi phiên đang mở); ngoài danh
+       sách là `perm-btn`. Mức nghĩ nằm trong menu ⋯ nên mở menu trước. */
+    if (id === "ui:model") {
+      document.querySelector<HTMLButtonElement>("[data-testid=chat-model-btn]")?.click();
+      return;
+    }
+    if (id === "ui:effort") {
+      const menu = document.querySelector<HTMLButtonElement>("[data-testid=chat-more]");
+      if (menu) { menu.click(); setTimeout(() => document.querySelector<HTMLButtonElement>("[data-testid=m-effort]")?.click(), 150); }
+      return;
+    }
     if (id === "ui:export" && openSid) { location.href = "/api/export/" + openSid + "?fmt=md"; return; }
     // Lệnh này VỐN ĐÃ có trong bảng lệnh nhưng không có nhánh xử lý -> bấm ra toast
     // lạc đề "Mở phiên rồi dùng nút tương ứng…". Giờ mở thật.

@@ -520,6 +520,31 @@ async function snapshot() {
     }
   }
 
+  /* ---- lệnh slash của Claude CLI ----
+     CLI có 40 lệnh nhưng phần lớn CHỈ chạy trong phiên tương tác — gọi qua `-p` thì
+     trả "… isn't available in this environment". Đã thử từng cái: chỉ /usage, /model,
+     /context, /cost, /mcp, /doctor, /config, /agents là ra nội dung thật.
+     Đưa vào bảng một lệnh rồi bấm ra lỗi còn tệ hơn không có nó, nên bài này chốt
+     những lệnh ĐANG quảng cáo trong bảng đều chạy được. */
+  {
+    const chay = async (cmd) => {
+      const r = await fetch(`${URL}/api/claude/run`, {
+        method: 'POST',
+        headers: { 'X-Dash-Token': token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd }),
+      });
+      const j = await r.json().catch(() => ({}));
+      return { ok: !!j.ok, out: String(j.output || j.error || '') };
+    };
+    for (const c of ['/usage', '/model']) {
+      const r = await chay(c);
+      const chan = /isn't available|Unknown command/i.test(r.out);
+      ok(`lệnh ${c} trả nội dung thật (không bị CLI chặn)`,
+        r.ok && r.out.length > 20 && !chan,
+        r.out.replace(/\s+/g, ' ').slice(0, 60));
+    }
+  }
+
   /* ---- tự cập nhật: /api/capnhat ----
      Hai cách cài -> hai lệnh cập nhật khác nhau (npm i -g / git pull). Server phải TỰ
      nhận ra, vì người bấm nút trên điện thoại không nhìn thấy máy đang chạy kiểu nào. */
