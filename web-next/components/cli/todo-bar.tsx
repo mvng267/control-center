@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ListChecks, ChevronDown } from 'lucide-react';
+import { ListChecks, ChevronDown, Square, SquareCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Server trả {text, status} — xem extractTodos trong src/server/tools.js
@@ -52,7 +52,7 @@ export function TodoBar({ todos }: { todos: Todo[] }) {
           {todos.map((t, i) => (
             <div key={i} className="flex items-start gap-2 text-[12.5px]">
               <span className={cn('shrink-0 select-none', TONE[t.status])}>
-                {t.status === 'completed' ? '☒' : '☐'}
+                {t.status === 'completed' ? <SquareCheck className="size-3.5" /> : <Square className="size-3.5" />}
               </span>
               <span className={cn('min-w-0 leading-snug',
                 t.status === 'completed' && 'text-muted-foreground line-through',

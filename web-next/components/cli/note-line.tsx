@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { CornerDownRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /* Dòng ghi chú giữa hội thoại: hook lỗi, mốc /compact, lỗi từ máy chủ Claude.
@@ -55,7 +56,7 @@ export function NoteLine({ part }: { part: NotePart }) {
         disabled={!part.body}
         title={part.body ? (open ? 'Thu gọn' : 'Xem chi tiết lỗi') : undefined}
         className="tap44 flex w-full items-start gap-2 pl-[18px] text-left">
-        <span className={cn('shrink-0 select-none', tone)}>⎿</span>
+        <span className={cn('mt-[3px] shrink-0 select-none', tone)}><CornerDownRight className="size-3" /></span>
         <span className={cn('min-w-0 flex-1 truncate', tone)}>{part.title}</span>
         {/* Cùng một lỗi lặp hàng nghìn lần thì server gộp thành một dòng (đo thật:
             4.220 -> 12 dòng trên phiên này). Số lần vẫn phải hiện, nếu không giấu

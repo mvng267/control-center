@@ -247,10 +247,19 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       const noiDung = box.innerText;
       const bb = box.querySelector('[data-testid=bubble]');
       const st = bb ? getComputedStyle(bb) : null;
+      /* Tên tool / đường dẫn / kết quả lệnh vẫn phải MONOSPACE — đó là chỗ thật sự
+         cần cột thẳng hàng. Câu văn tiếng Việt thì KHÔNG: dấu tiếng Việt trên phông
+         chữ đều chồng chật, dòng ngắn hơn, trên iPhone phải cuộn nhiều hơn hẳn. */
+      const tenTool = box.querySelector('[data-testid=tool-card-status]')
+        ?.parentElement?.querySelector('.font-mono');
+      const vanBan = bb?.querySelector('div');
+      const laMono = (e) => !!e && /mono|consol|menlo|courier/.test(getComputedStyle(e).fontFamily.toLowerCase());
       return {
-        mono: /mono|consol|menlo|courier|ui-monospace/.test(chu),
-        chamTron: (noiDung.match(/⏺/g) || []).length,
-        ngoac: (noiDung.match(/⎿/g) || []).length,
+        monoTenTool: laMono(tenTool),
+        monoVanBan: laMono(vanBan),
+        // Ký tự ⏺ ⎿ đã thay bằng icon vector — đếm icon thay vì đếm ký tự
+        chamTron: box.querySelectorAll('[data-testid=tool-card-status] svg').length,
+        ngoac: box.querySelectorAll('[data-testid=tool-ket-qua] svg').length,
         avatarCu: box.querySelectorAll('[data-testid=msg-avatar]').length,
         vaiCu: box.querySelectorAll('[data-testid=msg-role]').length,
         // bong bóng cũ bo 12px + nền đặc; kiểu CLI thì không bo, nền trong suốt
@@ -258,7 +267,12 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         nen: st ? st.backgroundColor : '',
       };
     });
-    ok('bản chép dùng phông chữ đều như terminal', cli.mono, JSON.stringify(cli).slice(0, 120));
+    /* Trước đây bài này đòi CẢ khung dùng monospace. Giờ chia đôi: mã giữ phông đều,
+       câu văn dùng chữ thường — nên kiểm ĐÚNG hai thứ đó thay vì kiểm cả khung. */
+    ok('ten tool/duong dan van dung phong chu deu', cli.monoTenTool,
+      JSON.stringify(cli).slice(0, 120));
+    ok('cau van KHONG dung phong chu deu (doc de hon tren dien thoai)',
+      cli.monoVanBan === false, 'monoVanBan=' + cli.monoVanBan);
 
     /* CẤU TRÚC như Claude CLI in ra:
          ⏺ câu Claude nói      <- chấm màu CHỮ THƯỜNG
@@ -286,18 +300,20 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     } else {
       ok('cham cua LUOT khac mau cham cua TOOL (nhu CLI)', true, 'bo qua: phien khong du phan tu');
     }
-    ok('dong ⎿ ket qua THUT VAO lam con cua tool',
+    ok('dong ket qua THUT VAO lam con cua tool',
       cauTruc.thutKQ < 0 || cauTruc.thutKQ >= 12, cauTruc.thutKQ + 'px');
-    ok('dong ⎿ hook loi cung thut vao', cauTruc.thutNote < 0 || cauTruc.thutNote >= 12,
+    ok('dong hook loi cung thut vao', cauTruc.thutNote < 0 || cauTruc.thutNote >= 12,
       cauTruc.thutNote + 'px');
-    /* ⎿ chỉ có khi phiên CÓ tool. Phiên nào đứng đầu danh sách là tuỳ máy, gặp phiên
-       chỉ toàn câu chữ thì đòi ⎿ là bắt lỗi môi trường chứ không phải lỗi code
-       (đã dính: ⏺=1 ⎿=0 ở một phiên không có tool nào). */
-    ok('có ký tự đánh dấu ⏺ như Claude CLI', cli.chamTron > 0, `⏺=${cli.chamTron}`);
+    /* Ký tự ⏺ ⎿ đã thay bằng icon vector — chúng phụ thuộc font hệ thống nên trên
+       iPhone mảnh và mờ. Kiểm ICON có mặt thay vì kiểm ký tự: thứ cần bảo đảm là dòng
+       tool có dấu mở đầu và dòng kết quả có dấu nối, chứ không phải một ký tự cụ thể.
+       Dấu nối chỉ có khi phiên CÓ tool. Phiên nào đứng đầu danh sách là tuỳ máy, gặp
+       phiên chỉ toàn câu chữ thì đòi nó là bắt lỗi môi trường chứ không phải lỗi code. */
+    ok('dong tool co dau mo dau (icon thay ky tu ⏺)', cli.chamTron > 0, `icon=${cli.chamTron}`);
     if (n) {
-      ok('có ký tự ⎿ cho dòng kết quả tool', cli.ngoac > 0, `⎿=${cli.ngoac} (${n} tool)`);
+      ok('dong ket qua co dau noi (icon thay ky tu ⎿)', cli.ngoac > 0, `icon=${cli.ngoac} (${n} tool)`);
     } else {
-      ok('có ký tự ⎿ cho dòng kết quả tool', true, 'bỏ qua: phiên không có tool');
+      ok('dong ket qua co dau noi (icon thay ky tu ⎿)', true, 'bỏ qua: phiên không có tool');
     }
     ok('KHÔNG còn avatar tròn / nhãn vai (terminal không có)',
       cli.avatarCu === 0 && cli.vaiCu === 0, `avatar=${cli.avatarCu} vai=${cli.vaiCu}`);
@@ -1155,9 +1171,15 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       ok('luc gap van hien TIEU DE ke hoach',
         /Sửa khung chat cho giống CLI/.test(chu), chu.slice(0, 70).replace(/\n/g, ' '));
 
-      // vẽ kiểu terminal: có ⏺ và ⌐, KHÔNG có khung bo góc nền màu
-      ok('the ke hoach ve kieu terminal (co ⏺ va ⌐)',
-        chu.includes('⏺') && chu.includes('⌐'), JSON.stringify(chu.slice(0, 40)));
+      /* Vẽ kiểu terminal: có dấu mở đầu + dấu nối, KHÔNG khung bo góc nền màu.
+         Hai ký tự ⏺ ⌐ đã thay bằng icon vector nên đếm icon, không đếm ký tự. */
+      const dauKH = await pg.evaluate(() => {
+        const t = document.querySelector('[data-testid=plan-card]');
+        return { icon: t ? t.querySelectorAll(':scope > button svg, :scope > div > svg').length : 0,
+          bo: t ? Math.round(parseFloat(getComputedStyle(t).borderRadius) || 0) : -1 };
+      });
+      ok('the ke hoach ve kieu terminal (icon dau dong, khong khung bo goc)',
+        dauKH.icon > 0 && dauKH.bo === 0, JSON.stringify(dauKH));
 
       await pg.locator('[data-testid=plan-toggle]').click();
       await pg.waitForTimeout(500);

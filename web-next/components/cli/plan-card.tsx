@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Pencil, FileText, X } from 'lucide-react';
+import { Check, Pencil, FileText, X, Circle, CornerDownRight } from 'lucide-react';
 import { Markdown } from './markdown';
 import { cn } from '@/lib/utils';
 
@@ -45,7 +45,7 @@ export function PlanCard({
         disabled={!dai}
         className={cn('flex w-full items-start gap-2 text-left',
           dai && 'tap44 transition-colors md:hover:bg-accent/25')}>
-        <span aria-hidden className="shrink-0 select-none text-tool-accent">⏺</span>
+        <span aria-hidden className="mt-[3px] shrink-0 select-none text-tool-accent"><Circle className="size-2.5 fill-current" /></span>
         <span className="min-w-0 flex-1">
           <span className="font-medium text-tool-accent">Kế hoạch</span>
           {tieuDe && <span className="text-muted-foreground">({tieuDe})</span>}
@@ -60,7 +60,7 @@ export function PlanCard({
 
       {/* Dòng ⌐ tóm tắt — luôn hiện, đúng như terminal in kết quả tool */}
       <div className="flex gap-2 pl-[3px] text-muted-foreground">
-        <span aria-hidden className="shrink-0 select-none text-muted-foreground/40">⌐</span>
+        <span aria-hidden className="mt-[3px] shrink-0 select-none text-muted-foreground/40"><CornerDownRight className="size-3" /></span>
         <span className="min-w-0 flex-1 truncate text-[12px]">
           {soDong} dòng
           {keFile && <> · <span className="font-mono">{keFile.split('/').pop()}</span></>}

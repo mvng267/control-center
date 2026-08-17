@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ChevronDown, X, Copy } from 'lucide-react';
+import {
+  ChevronDown, X, Copy, Circle, CornerDownRight, Square, SquareCheck,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { imgUrl } from '@/lib/api';
 
@@ -184,10 +186,15 @@ export function ToolCard({ part, sid, open, onToggle }: {
         onClick={() => { onToggle(part.id); navigator.vibrate?.(10); }}
         aria-expanded={open}
         className="tap44 flex w-full items-start gap-2 text-left transition-colors md:hover:bg-accent/25">
-        <span className={cn('shrink-0 select-none', CHAM[part.status] || CHAM.pending)}
-          data-testid="tool-card-status">⏺</span>
+        {/* Icon vector thay ký tự `⏺`. Ký tự vẽ hộp phụ thuộc font hệ thống nên trên
+            iPhone nó mảnh và mờ; icon nét đậm rõ ở mọi cỡ chữ. Giữ nguyên testid và
+            bảng màu CHAM — màu vẫn là thứ phân biệt tool đang chạy / xong / lỗi. */}
+        <span className={cn('mt-[3px] shrink-0 select-none', CHAM[part.status] || CHAM.pending)}
+          data-testid="tool-card-status">
+          <Circle className="size-2.5 fill-current" />
+        </span>
         <span className="min-w-0 flex-1">
-          <span className="font-medium">{part.disp || part.name}</span>
+          <span className="font-mono font-medium">{part.disp || part.name}</span>
           {part.summary && (
             <span className="text-muted-foreground">({part.summary})</span>
           )}
@@ -200,9 +207,11 @@ export function ToolCard({ part, sid, open, onToggle }: {
           Thụt vào cho ⎿ nằm DƯỚI CHỮ ĐẦU của tên tool, đúng như Claude CLI in ra.
           `pl-[3px]` cũ gần như không thụt nên ⎿ dính sát lề trái, ngang hàng với ⏺
           của lượt — nhìn ra hai thứ cùng cấp trong khi kết quả là con của tool. */}
-      <div className="flex gap-2 pl-[18px]">
-        <span className="shrink-0 select-none text-muted-foreground/40">⎿</span>
-        <div className={cn('min-w-0 flex-1', isErr ? 'text-status-error/90' : 'text-muted-foreground')}>
+      <div className="flex gap-2 pl-[18px]" data-testid="tool-ket-qua">
+        <span className="mt-[3px] shrink-0 select-none text-muted-foreground/40">
+          <CornerDownRight className="size-3" />
+        </span>
+        <div className={cn('min-w-0 flex-1 font-mono', isErr ? 'text-status-error/90' : 'text-muted-foreground')}>
           {soTodo ? (
             <span className="tabular-nums">{xong}/{soTodo} việc</span>
           ) : (
@@ -228,11 +237,14 @@ export function ToolCard({ part, sid, open, onToggle }: {
             <div className="mt-1 flex flex-col gap-0.5">
               {part.todos!.map((t, i) => (
                 <div key={i} className="flex items-start gap-2">
-                  {/* ☒ / ☐ đúng ký tự Claude CLI dùng cho danh sách việc */}
-                  <span className={cn('shrink-0 select-none',
+                  {/* Ô việc: icon vector thay `☒`/`☐`. Hai ký tự đó là thứ Claude CLI
+                      in ra trên terminal, nhưng trên iPhone chúng nhỏ và nhoè. */}
+                  <span className={cn('mt-[3px] shrink-0 select-none',
                     t.status === 'completed' ? 'text-status-ok'
                       : t.status === 'in_progress' ? 'text-primary' : 'text-muted-foreground/60')}>
-                    {t.status === 'completed' ? '☒' : '☐'}
+                    {t.status === 'completed'
+                      ? <SquareCheck className="size-3.5" />
+                      : <Square className="size-3.5" />}
                   </span>
                   <span className={cn(
                     t.status === 'completed' && 'text-muted-foreground line-through',

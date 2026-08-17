@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus, Loader2, Plus,
-  Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree, Maximize2,
+  Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree, Maximize2, Circle, ChevronRight,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
@@ -496,10 +496,14 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           const el = e.currentTarget;
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
-        /* font-mono cho CẢ bản chép: terminal chỉ có một phông chữ đều, mọi cột thẳng
-           hàng. Đây là thứ tạo cảm giác "đúng là CLI" rõ nhất, hơn cả ký tự ⏺ ⎿.
+        /* Chữ THƯỜNG cho câu văn, monospace giữ lại cho mã và tên lệnh.
+           Trước đây cả khung dùng font-mono để "đúng chất CLI". Nhưng phần lớn nội
+           dung ở đây là câu tiếng Việt, mà dấu tiếng Việt trên phông chữ đều thì chồng
+           chật và dòng ngắn hơn — trên iPhone phải cuộn nhiều hơn hẳn. Mã, tên lệnh và
+           kết quả tool vẫn monospace (do Markdown và ToolCard tự đặt), nên chỗ nào
+           thật sự cần cột thẳng hàng thì vẫn thẳng.
            Full-width: terminal không kẹp nội dung vào giữa. */
-        className="flex w-full min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-4 font-mono">
+        className="flex w-full min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-4">
         {groups.map((m, gi) => {
           const parts = m.parts?.length ? mergeTextParts(m.parts) : [{ t: 'text', text: m.content } as TextPart];
           const k = dayKey(m.ts);
@@ -565,9 +569,15 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                           className="flex min-w-0 flex-1 items-center gap-1.5 rounded py-2 text-left transition-colors hover:text-foreground">
                           <ChevronDown className={cn('size-3 shrink-0 transition-transform',
                             gap && '-rotate-90')} />
-                          <span className={cn('shrink-0 font-medium',
+                          {/* Icon vector thay `❯`/`⏺`. Vẫn giữ ý nghĩa cũ — mũi tên
+                              cho lượt mình, chấm tròn cho lượt Claude — nhưng nét rõ
+                              ở mọi cỡ chữ thay vì phụ thuộc font hệ thống. */}
+                          <span className={cn('flex shrink-0 items-center gap-1 font-medium',
                             m.role === 'user' ? 'text-primary' : 'text-tool-accent')}>
-                            {m.role === 'user' ? '❯ ' + cauHinh.nguoiDung : '⏺ Claude'}
+                            {m.role === 'user'
+                              ? <ChevronRight className="size-3" />
+                              : <Circle className="size-2.5 fill-current" />}
+                            {m.role === 'user' ? cauHinh.nguoiDung : 'Claude'}
                           </span>
                           {m.ts && <span className="shrink-0 tabular-nums">{clock(m.ts)}</span>}
                           {!!soTool && <span className="shrink-0">· {soTool} thẻ</span>}
@@ -625,9 +635,11 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                        lệnh — mất đúng thông tin mà ký tự ⏺ sinh ra để mang. */
                     <div key={i} data-testid="bubble" data-role={m.role}
                       className="flex w-full items-start gap-2 text-[13px] leading-relaxed">
-                      <span className={cn('shrink-0 select-none',
+                      <span className={cn('mt-[4px] shrink-0 select-none',
                         m.role === 'user' ? 'text-primary' : 'text-foreground')}>
-                        {m.role === 'user' ? '❯' : '⏺'}
+                        {m.role === 'user'
+                          ? <ChevronRight className="size-3" />
+                          : <Circle className="size-2.5 fill-current" />}
                       </span>
                       <div className={cn('min-w-0 flex-1 break-words',
                         m.role === 'user' && 'whitespace-pre-wrap text-foreground/90')}>
@@ -649,7 +661,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             Con trỏ nhấp nháy ở cuối, đúng kiểu terminal đang gõ. */}
         {!!h?.nhap && (
           <div data-testid="dang-go" className="flex w-full gap-2">
-            <span aria-hidden className="shrink-0 select-none text-tool-accent">⏺</span>
+            <span aria-hidden className="mt-[4px] shrink-0 select-none text-tool-accent"><Circle className="size-2.5 fill-current" /></span>
             <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed">
               {h.nhap}
               <span className="ml-[1px] inline-block h-[13px] w-[7px] translate-y-[2px] animate-pulse bg-foreground/70" />

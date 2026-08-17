@@ -99,7 +99,7 @@ export function AskCard({
                     : 'border-transparent text-muted-foreground hover:text-foreground')}>
                 {q.nhan || `Câu ${i + 1}`}
                 {/* dấu ✓ để biết câu nào đã chọn xong mà không phải bấm qua từng tab */}
-                {xong && <span className="ml-1 text-status-ok">✓</span>}
+                {xong && <Check className="ml-1 inline size-3 text-status-ok" />}
               </button>
             );
           })}

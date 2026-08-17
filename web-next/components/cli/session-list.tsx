@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Search, ChevronLeft, ChevronRight, Plus, SlidersHorizontal, Check,
+  Search, ChevronLeft, ChevronRight, Plus, SlidersHorizontal, Check, ArrowUp, ArrowDown,
   MoreHorizontal, MessageSquare, Download, Square,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -440,7 +440,9 @@ export function SessionList({
                 thấy trạng thái nữa. Chỉ chữ, không bấm được: muốn đổi thì mở menu. */}
             <span className="ml-auto shrink-0 text-[12px] text-muted-foreground" data-testid="sort-hien-tai">
               {SAP_XEP.find((x) => x.k === sort.k)?.nhan}
-              {sort.dir === 1 ? ' ↑' : ' ↓'}
+              {sort.dir === 1
+                ? <ArrowUp className="ml-0.5 inline size-3" />
+                : <ArrowDown className="ml-0.5 inline size-3" />}
             </span>
           </div>
 
@@ -621,8 +623,10 @@ export function SessionList({
             <span className="flex-1 text-[13.5px]">{nhan}</span>
             {/* Bấm lại mục đang chọn để đảo chiều — mũi tên cho biết chiều hiện tại */}
             {sort.k === k && (
-              <span className="shrink-0 text-[12px] text-muted-foreground">
-                {sort.dir === 1 ? 'tăng ↑' : 'giảm ↓'}
+              <span className="flex shrink-0 items-center gap-0.5 text-[12px] text-muted-foreground">
+                {sort.dir === 1
+                  ? <>tăng <ArrowUp className="size-3" /></>
+                  : <>giảm <ArrowDown className="size-3" /></>}
               </span>
             )}
           </button>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Play, Square, RotateCw, Search, ChevronDown, ArrowLeftRight, TriangleAlert, Coins } from 'lucide-react';
+import { Play, Square, RotateCw, Search, ChevronDown, ArrowLeftRight, TriangleAlert, Coins, Check, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { AgyStatus, AgyUsage } from '@/lib/types';
 import { PageHeader } from '@/components/layout/app-shell';
@@ -230,7 +230,7 @@ export function AgyTab() {
                 l ? (l.ok ? 'border-status-ok/40 text-status-ok' : 'border-status-error/40 text-status-error')
                   : 'border-border text-muted-foreground',
               )}>
-                {n}: {l ? (l.ok ? '✓' : '✗') : '—'}
+                {n}: {l ? (l.ok ? <Check className="inline size-3 text-status-ok" /> : <X className="inline size-3 text-status-error" />) : '—'}
               </span>
             );
           })}
