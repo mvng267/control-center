@@ -101,7 +101,12 @@ const PERM_FILE = path.join(os.homedir(), '.claude', 'dashboard-perm.json');
 // 'plan' = Claude trình bày kế hoạch rồi DỪNG chờ duyệt (không đụng file). Đây là cách
 // duyệt-trước-khi-làm khả thi duy nhất: CLI không có kênh uỷ quyền để dashboard bấm
 // "cho phép" từng tool (đã thử stream-json: không phát sự kiện xin quyền).
-const PERM_MODES = ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
+/* 'default' KHÔNG phải giá trị của CLI — đó là quy ước riêng nghĩa "không truyền cờ,
+   để CLI tự quyết" (xem permArgs). Các giá trị còn lại đã CHẠY THỬ từng cái bằng
+   `claude -p ... --permission-mode X` và đều trả lời bình thường.
+   KHÔNG đưa 'manual' vào dù CLI nhận: theo tài liệu nó là ALIAS của 'default', thêm
+   nữa là hai mục cùng nghĩa nằm cạnh nhau trong menu. */
+const PERM_MODES = ['default', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions', 'plan'];
 let permMode = 'acceptEdits'; // mặc định: hết cảnh "làm như không làm"
 try {
   const saved = JSON.parse(fs.readFileSync(PERM_FILE, 'utf8'));
@@ -119,7 +124,11 @@ function permArgs(sid) {
    nghĩ kỹ nhưng càng lâu và tốn token. Dashboard trước đây KHÔNG truyền cờ này, nên
    dù người dùng có đổi ở terminal thì task giao từ app vẫn chạy mức mặc định.
    Lưu chung file với chế độ quyền cho gọn. */
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+/* `ultracode` có trong bảng của /effort và CHẠY THẬT (đã thử `claude -p --effort
+   ultracode`). Còn `auto` thì /effort cũng liệt kê nhưng CLI trả
+   "Unknown --effort value 'auto' — ignoring it" rồi chạy mức khác — nên KHÔNG đưa vào,
+   thêm là người dùng chọn xong tưởng đã đổi mà thật ra không. */
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'];
 let effort = '';   // '' = để CLI tự quyết
 try {
   const saved = JSON.parse(fs.readFileSync(PERM_FILE, 'utf8'));

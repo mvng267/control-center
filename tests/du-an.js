@@ -717,13 +717,40 @@ async function snapshot() {
         method: 'POST', headers: H2, body: JSON.stringify({ mode: 'linh-tinh' }),
       });
       ok('từ chối chế độ quyền không hợp lệ', xau.status === 400, 'HTTP ' + xau.status);
+
+      /* Giá trị mới bổ sung cho khớp CLI. Mỗi cái đã chạy thử thật bằng
+         `claude -p ... --permission-mode X` trước khi đưa vào — `--help` liệt kê
+         KHÔNG có nghĩa là dùng được (bài học `--effort auto`: CLI in
+         "Unknown --effort value 'auto' — ignoring it" rồi chạy mức khác). */
+      for (const mode of ['auto', 'dontAsk']) {
+        const r = await fetch(`${URL}/api/perm/${A}`, {
+          method: 'POST', headers: H2, body: JSON.stringify({ mode }),
+        });
+        const j = await r.json().catch(() => ({}));
+        ok(`nhận chế độ quyền "${mode}" (giá trị thật của CLI)`,
+          r.status === 200 && j.mode === mode, 'HTTP ' + r.status + ' ' + JSON.stringify(j.mode));
+      }
+      // `manual` là ALIAS của `default` -> cố tình KHÔNG nhận, tránh hai mục cùng nghĩa
+      const alias = await fetch(`${URL}/api/perm/${A}`, {
+        method: 'POST', headers: H2, body: JSON.stringify({ mode: 'manual' }),
+      });
+      ok('bỏ "manual" vì trùng nghĩa với "default"', alias.status === 400, 'HTTP ' + alias.status);
+
+      const ef = await fetch(`${URL}/api/effort/${A}`, {
+        method: 'POST', headers: H2, body: JSON.stringify({ effort: 'ultracode' }),
+      });
+      ok('nhận mức nghĩ "ultracode"', ef.status === 200, 'HTTP ' + ef.status);
+      // dọn: trả phiên về mặc định để bài sau không chạy trên trạng thái đã đổi
+      await fetch(`${URL}/api/perm/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ mode: '' }) });
+      await fetch(`${URL}/api/effort/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ effort: '' }) });
     }
   }
 
   /* ---- lệnh slash của Claude CLI ----
-     CLI có 40 lệnh nhưng phần lớn CHỈ chạy trong phiên tương tác — gọi qua `-p` thì
-     trả "… isn't available in this environment". Đã thử từng cái: chỉ /usage, /model,
-     /context, /cost, /mcp, /doctor, /config, /agents là ra nội dung thật.
+     CLI có hàng chục lệnh nhưng phần lớn CHỈ chạy trong phiên tương tác — gọi qua `-p`
+     thì trả "… isn't available in this environment". Đã thử từng cái, ra nội dung thật:
+     /usage /model /context /cost /mcp /doctor /config /agents, và đợt sau thêm
+     /effort /recap /insights /list-agents /autocompact.
      Đưa vào bảng một lệnh rồi bấm ra lỗi còn tệ hơn không có nó, nên bài này chốt
      những lệnh ĐANG quảng cáo trong bảng đều chạy được. */
   {

@@ -50,6 +50,13 @@ export default function Page() {
 
   // Lệnh nhóm Dashboard — dashboard tự làm, gồm cả 4 lệnh CLI chặn ở chế độ -p
   const onUi = (id: string) => {
+    /* Nói rõ vì sao không làm gì được. Trước đây các nhánh dùng `?.click()` rồi return
+       vô điều kiện: bấm lúc đang ở DANH SÁCH phiên thì querySelector trả null,
+       optional-chaining nuốt im lặng — không mở gì, cũng không báo gì. */
+    const canMoPhien = () => {
+      setTab("cli");
+      toast("Mở một phiên trước rồi dùng lệnh này");
+    };
     // bấm chính nút toggle trong AppShell — nó nằm TRONG ThemeProvider nên chắc chắn có context
     if (id === "ui:theme") { document.querySelector<HTMLButtonElement>("[data-testid=theme-toggle]")?.click(); return; }
     if (id === "ui:perm") { document.querySelector<HTMLButtonElement>("[data-testid=perm-btn]")?.click(); return; }
@@ -57,12 +64,23 @@ export default function Page() {
        `chat-perm`/`chat-model-btn` (đã gắn sid nên chỉ đổi phiên đang mở); ngoài danh
        sách là `perm-btn`. Mức nghĩ nằm trong menu ⋯ nên mở menu trước. */
     if (id === "ui:model") {
-      document.querySelector<HTMLButtonElement>("[data-testid=chat-model-btn]")?.click();
+      const nut = document.querySelector<HTMLButtonElement>("[data-testid=chat-model-btn]");
+      if (nut) nut.click(); else canMoPhien();
       return;
     }
-    if (id === "ui:effort") {
+    /* Ba mục này nằm trong menu ⋯ của khung chat: mở menu rồi bấm mục tương ứng.
+       `cost` và `rename` VỐN ĐÃ có trong bảng lệnh mà KHÔNG có nhánh nào ở đây — bấm
+       vào rơi xuống toast mặc định "Mở phiên rồi dùng nút tương ứng", đúng loại lỗi đã
+       sửa cho `ui:compare` trước đó. */
+    const trongMenu: Record<string, string> = {
+      "ui:effort": "m-effort", "ui:cost": "m-cost", "ui:rename": "m-rename",
+    };
+    if (trongMenu[id]) {
       const menu = document.querySelector<HTMLButtonElement>("[data-testid=chat-more]");
-      if (menu) { menu.click(); setTimeout(() => document.querySelector<HTMLButtonElement>("[data-testid=m-effort]")?.click(), 150); }
+      if (!menu) { canMoPhien(); return; }
+      menu.click();
+      // menu là dropdown, mục con chỉ tồn tại sau khi mở — 150ms đủ cho animation
+      setTimeout(() => document.querySelector<HTMLButtonElement>(`[data-testid=${trongMenu[id]}]`)?.click(), 150);
       return;
     }
     if (id === "ui:export" && openSid) { location.href = "/api/export/" + openSid + "?fmt=md"; return; }

@@ -13,6 +13,7 @@
 const { spawn, execFile } = require('child_process');
 const path = require('path');
 const http = require('http');
+const fs = require('fs');
 
 const ROOT = path.join(__dirname, '..');
 const CONG_CU = 7896;   // bản cũ (NEW_UI=0)
@@ -71,9 +72,36 @@ function chay(nhan, file, env) {
   });
 }
 
+/* Dọn TRẠNG THÁI do lần chạy trước để lại, trước khi bật server.
+
+   Vì sao cần: vài bài test đặt mã khoá hoặc gán model riêng cho phiên rồi mới xoá ở
+   cuối. Bộ nào hỏng giữa chừng là phần xoá không chạy — lần sau bật lên đã thấy mã
+   khoá bật sẵn (mọi API trả 423, e2e đỏ hàng loạt) hoặc phiên vẫn còn model thừa
+   (bài "phiên khác KHÔNG dính theo" đỏ). Rác đó lại làm lần chạy sau hỏng tiếp, thành
+   vòng luẩn quẩn: đã mất mấy vòng chạy chỉ để phát hiện lỗi nằm ở nền, không ở mã.
+
+   Chỉ đụng file của DASHBOARD, tuyệt đối không đụng .jsonl của Claude CLI. */
+function donNen() {
+  const HOME = require('os').homedir();
+  const nen = [
+    // mã khoá: test tự tạo rồi tự xoá — sót lại là chặn hết API
+    ['dashboard-passcode.json', null],
+    // model riêng từng phiên: chỉ có test mới gán, người dùng thật đặt qua giao diện
+    ['dashboard-models.json', {}],
+  ];
+  for (const [ten, giaTri] of nen) {
+    const f = path.join(HOME, '.claude', ten);
+    try {
+      if (giaTri === null) fs.rmSync(f, { force: true });
+      else if (fs.existsSync(f)) fs.writeFileSync(f, JSON.stringify(giaTri, null, 2));
+    } catch {}
+  }
+}
+
 (async () => {
   console.log('Chạy toàn bộ test — mỗi bộ ở đúng môi trường của nó\n');
   const ket = [];
+  donNen();
 
   ket.push(await chay('cú pháp', 'scripts/verify.js', {}));
 

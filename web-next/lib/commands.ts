@@ -2,9 +2,13 @@
 //
 // Đã CHẠY THỬ từng lệnh qua `claude -p` để biết cái nào thật sự hoạt động:
 //   chạy được : /context /cost /mcp /doctor /config /init /agents /usage /model
+//               /effort /recap /insights /list-agents /autocompact
 //   CLI chặn  : /status /permissions /memory /hooks /bashes /add-dir /resume
-//               /rewind /export  ("… isn't available in this environment")
-//   không có  : /todos ("Unknown command")
+//               /rewind /export /plan /tasks /diff /powerup
+//               ("… isn't available in this environment")
+//   không có  : /todos /skill-doctor ("Unknown command")
+//   chạy nhưng VÔ DỤNG: /fast -> "Fast mode unavailable: requires usage credits".
+//               Đưa vào bảng là bấm ra lỗi, nên bỏ.
 //
 // CLI có 40 lệnh slash nhưng phần lớn CHỈ chạy trong phiên tương tác. Đưa vào bảng
 // một lệnh rồi bấm ra lỗi là tệ hơn hẳn việc không có nó — nên chỉ thêm cái đã thử
@@ -37,16 +41,21 @@ export const COMMANDS: Cmd[] = [
   { id: '/context', label: '/context', desc: 'Ngữ cảnh đã dùng bao nhiêu', group: 'Claude', kind: 'claude-run' },
   { id: '/cost', label: '/cost', desc: 'Hạn mức và chi phí phiên', group: 'Claude', kind: 'claude-run' },
   { id: '/model', label: '/model', desc: 'Model Claude CLI đang dùng', group: 'Claude', kind: 'claude-run' },
+  { id: '/effort', label: '/effort', desc: 'Mức suy nghĩ CLI đang đặt', group: 'Claude', kind: 'claude-run' },
+  { id: '/recap', label: '/recap', desc: 'Tóm tắt một dòng phiên đang mở', group: 'Claude', kind: 'claude-run' },
 
   // ---- CÔNG CỤ: xem thứ đang cài trên máy ----
   { id: '/mcp', label: '/mcp', desc: 'Trạng thái các MCP server', group: 'Claude', kind: 'claude-run' },
   { id: '/agents', label: '/agents', desc: 'Danh sách subagent', group: 'Claude', kind: 'claude-run' },
+  { id: '/list-agents', label: '/list-agents', desc: 'Phiên Claude khác đang chạy', group: 'Claude', kind: 'claude-run' },
+  { id: '/insights', label: '/insights', desc: 'Báo cáo thống kê dùng Claude', group: 'Claude', kind: 'claude-run' },
 
   // ---- HỆ THỐNG: cấu hình và chẩn đoán ----
   { id: '/doctor', label: '/doctor', desc: 'Kiểm tra môi trường cài đặt', group: 'Claude', kind: 'claude-run' },
   { id: '/config', label: '/config', desc: 'Xem cấu hình Claude Code', group: 'Claude', kind: 'claude-run' },
   { id: '/release-notes', label: '/release-notes', desc: 'Có gì mới ở bản này', group: 'Claude', kind: 'claude-run' },
   { id: '/privacy-settings', label: '/privacy-settings', desc: 'Cài đặt riêng tư', group: 'Claude', kind: 'claude-run' },
+  { id: '/autocompact', label: '/autocompact', desc: 'Ngưỡng tự dọn ngữ cảnh', group: 'Claude', kind: 'claude-run' },
 
   // ---- CHẠY: gửi vào phiên đang mở như một tin nhắn ----
   { id: '/init', label: '/init', desc: 'Tạo CLAUDE.md cho dự án', group: 'Claude', kind: 'claude-chat', needSession: true },

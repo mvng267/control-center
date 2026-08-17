@@ -18,6 +18,11 @@ export const EFFORTS: readonly MucChon[] = [
   { id: 'high', label: 'Cao', desc: 'Nghĩ kỹ hơn, hợp việc cần suy luận' },
   { id: 'xhigh', label: 'Rất cao', desc: 'Rất kỹ, chậm và tốn token' },
   { id: 'max', label: 'Tối đa', desc: 'Kỹ nhất có thể — chậm nhất, tốn nhất' },
+  /* CLI có thêm 'ultracode' (đã thử `claude -p --effort ultracode`, chạy thật).
+     KHÔNG thêm 'auto' dù /effort có liệt kê: CLI trả "Unknown --effort value 'auto'
+     — ignoring it" rồi chạy mức khác, tức chọn xong tưởng đã đổi mà thật ra không.
+     Mức "Tự động" ở đầu danh sách là id rỗng = không truyền cờ, khác hẳn. */
+  { id: 'ultracode', label: 'Ultracode', desc: 'Mức riêng cho việc lập trình nặng' },
 ] as const;
 
 export function effortOf(id?: string) {
