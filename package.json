@@ -1,6 +1,6 @@
 {
   "name": "claude-control-center",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Dashboard quản lý Claude CLI sessions + Hermes chat + agy-proxy",
   "bin": {
     "control": "bin/control.js"
