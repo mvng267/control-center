@@ -2776,6 +2776,32 @@ const server = http.createServer(async (req, res) => {
       });
   }
 
+  /* Khởi động lại chính mình sau khi cập nhật.
+
+     Đây là mắt xích THIẾU khiến bấm Cập nhật xong mà version không đổi: `npm install
+     -g` chỉ thay file trên ĐĨA, còn mã đang chạy đã nạp vào RAM từ lúc khởi động.
+     Gặp thật trên máy vinhnm: đĩa đã 1.2.0 lúc 04:58 nhưng tiến trình vẫn là bản
+     chạy từ 14/8, nên dashboard hiện bản cũ suốt — nhìn như cập nhật hỏng.
+
+     Chỉ làm được khi chạy dưới systemd (hoặc trình quản lý tương đương): tiến trình
+     tự thoát, systemd bật lại bản mới. Chạy tay bằng `node index.js` thì thoát là
+     chết hẳn, KHÔNG có ai bật lại — nên phải kiểm trước và từ chối, thà báo lỗi còn
+     hơn tắt dashboard của người ta rồi im lặng. */
+  if (p === '/api/capnhat/khoi-dong-lai' && req.method === 'POST') {
+    // INVOCATION_ID chỉ có khi tiến trình do systemd sinh ra — dấu hiệu chắc chắn
+    // hơn là dò tên service, vì service có thể đặt tên bất kỳ.
+    if (!process.env.INVOCATION_ID) {
+      return json(res, 409, {
+        error: 'không chạy dưới systemd nên tự khởi động lại là tắt hẳn. '
+          + 'Khởi động lại thủ công: systemctl --user restart control-center',
+      });
+    }
+    json(res, 200, { ok: true, thongBao: 'đang khởi động lại…' });
+    // Thoát SAU khi phản hồi đã đi, nếu không client nhận ECONNRESET và tưởng lỗi.
+    setTimeout(() => process.exit(0), 300);
+    return;
+  }
+
   // ---- Hermes: stream hội thoại của orchestrator (read-only) ----
   if (p === '/api/hermes' && req.method === 'GET') {
     // sending nằm NGOÀI cache: typing indicator phải realtime, không trễ theo cache 1.5s

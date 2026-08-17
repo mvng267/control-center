@@ -375,6 +375,37 @@ async function snapshot() {
     }
   }
 
+  /* ---------- Khởi động lại sau khi cập nhật ----------
+     Mắt xích thiếu khiến bấm Cập nhật xong mà version không đổi: `npm install -g`
+     chỉ thay file trên ĐĨA, mã đang chạy đã nạp vào RAM từ lúc khởi động. Gặp thật
+     trên máy vinhnm — đĩa lên 1.2.0 lúc 04:58 nhưng tiến trình chạy từ ba ngày
+     trước, nên dashboard hiện bản cũ suốt, nhìn như cập nhật hỏng.
+
+     Test chạy ở môi trường KHÔNG có systemd (test-all tự bật server bằng node), nên
+     endpoint phải TỪ CHỐI — thoát lúc này là tắt hẳn dashboard, không ai bật lại.
+     Đây mới là nhánh cần chốt: nhánh thoát thật thì test không kiểm được mà không
+     tự giết server của chính mình. */
+  {
+    const r = await fetch(URL + '/api/capnhat/khoi-dong-lai', {
+      method: 'POST', headers: { 'X-Dash-Token': token, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const j = await r.json().catch(() => ({}));
+    const coSystemd = !!process.env.INVOCATION_ID;
+    if (coSystemd) {
+      ok('khởi động lại: chạy dưới systemd -> chấp nhận', r.status === 200, 'HTTP ' + r.status);
+    } else {
+      ok('khởi động lại: KHÔNG có systemd -> từ chối, không tự tắt',
+        r.status === 409, 'HTTP ' + r.status);
+      ok('lý do từ chối nói rõ lệnh phải gõ tay',
+        /systemctl/.test(j.error || ''), (j.error || '').slice(0, 70));
+    }
+    // GET phải không làm gì — hành động đổi trạng thái máy chỉ đi qua POST
+    const g = await fetch(URL + '/api/capnhat/khoi-dong-lai',
+      { headers: { 'X-Dash-Token': token } });
+    ok('khởi động lại: GET không kích hoạt được (chỉ POST)', g.status === 404, 'HTTP ' + g.status);
+  }
+
   /* ---------- Chốt chặn đường dẫn của /api/file ----------
      Đây là endpoint DUY NHẤT trong app đọc file tuỳ ý theo đường dẫn gửi từ ngoài vào.
      Thủng nó là dashboard thành công cụ đọc trộm cả đĩa — mà máy này mở trên tailnet.

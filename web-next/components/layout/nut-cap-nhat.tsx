@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { RefreshCw, Loader2, Check, TriangleAlert } from 'lucide-react';
-import { api } from '@/lib/api';
+import { RefreshCw, Loader2, Check, TriangleAlert, Power } from 'lucide-react';
+import { api, dauToken } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -27,6 +27,42 @@ export function NutCapNhat() {
   const [st, setSt] = useState<TrangThai | null>(null);
   const [chay, setChay] = useState(false);
   const [xong, setXong] = useState<KetQua | null>(null);
+  const [dangKhoiDong, setDangKhoiDong] = useState(false);
+
+  /* Server thoát rồi systemd bật lại — mất vài giây. Không tải lại trang ngay được
+     vì lúc đó chưa có ai nghe cổng; đợi tới khi server trả lời rồi mới F5. */
+  const khoiDongLai = async () => {
+    if (dangKhoiDong) return;
+    setDangKhoiDong(true);
+    try {
+      /* Gọi bằng fetch trần chứ không qua api(): api() chỉ ném "HTTP 409", nuốt mất
+         câu giải thích trong body — mà đúng lúc đó người dùng cần biết vì sao không
+         khởi động lại được (không chạy dưới systemd) và phải gõ lệnh gì. */
+      const r = await fetch('/api/capnhat/khoi-dong-lai', {
+        method: 'POST',
+        headers: { ...dauToken(), 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      toast('Đang khởi động lại…');
+      // dò cho tới khi server sống lại, tối đa 30 giây
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          await api('/api/capnhat/trangthai');
+          location.reload();
+          return;
+        } catch { /* chưa lên, thử tiếp */ }
+      }
+      toast.error('Server chưa lên lại sau 30 giây — kiểm tra lại trên máy');
+    } catch (e) {
+      // Không chạy dưới systemd -> server từ chối, nói rõ lệnh phải gõ tay
+      toast.error(String((e as Error)?.message || e).slice(0, 160));
+    } finally { setDangKhoiDong(false); }
+  };
 
   useEffect(() => {
     api<TrangThai>('/api/capnhat/trangthai').then(setSt).catch(() => {});
@@ -90,10 +126,26 @@ export function NutCapNhat() {
           {xong.error?.slice(0, 180)}
         </p>
       )}
+      {/* Tải xong bản mới thì phải KHỞI ĐỘNG LẠI mới dùng được: npm chỉ thay file
+          trên đĩa, mã đang chạy đã nạp vào RAM từ lúc khởi động. Trước đây chỗ này
+          chỉ là một câu chữ, nên bấm Cập nhật xong version vẫn y nguyên và nhìn như
+          cập nhật hỏng — đã xảy ra thật: đĩa lên 1.2.0 mà dashboard hiện bản cũ
+          suốt vì tiến trình chạy từ ba ngày trước. */}
       {xong?.ok && xong.canKhoiDongLai && (
-        <p className="px-2.5 text-[10.5px] leading-relaxed text-muted-foreground" data-testid="cap-nhat-xong">
-          Đã tải bản mới. Khởi động lại server để dùng.
-        </p>
+        <div className="flex flex-col gap-1" data-testid="cap-nhat-xong">
+          <p className="px-2.5 text-[10.5px] leading-relaxed text-muted-foreground">
+            Đã tải bản mới — khởi động lại để dùng.
+          </p>
+          <button onClick={khoiDongLai} disabled={dangKhoiDong} data-testid="nut-khoi-dong-lai"
+            className="tap44 flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[13px] text-status-ok transition-colors hover:bg-sidebar-accent/60">
+            {dangKhoiDong
+              ? <Loader2 className="size-4 shrink-0 animate-spin" />
+              : <Power className="size-4 shrink-0" />}
+            <span className="truncate">
+              {dangKhoiDong ? 'Đang khởi động lại…' : 'Khởi động lại ngay'}
+            </span>
+          </button>
+        </div>
       )}
     </div>
   );
