@@ -1,78 +1,59 @@
-#!/usr/bin/env bash
-# Cập nhật dashboard trên máy Debian. Chạy ĐƯỢC NHIỀU LẦN, không hỏng gì nếu chạy lại.
+#!/bin/sh
+# Cập nhật control-center trên Debian. Chạy lại nhiều lần vô hại.
 #
-# Cách chạy (trên máy Debian, qua SSH):
-#   bash scripts/cap-nhat-debian.sh
+# Prerequisite: đã cài sẵn bằng `npm i -g claude-control-center` (bản 1.0.0 trở lên)
+# và service chạy dưới systemd --user.
 #
-# Cần sẵn: git, node >= 18 (đã rà src/: API mới nhất dùng tới là fetch()).
-# KHÔNG cần npm install — backend zero dependency và web-next/out đã build sẵn trong repo.
-set -euo pipefail
+# Vì sao có script này thay vì bấm nút Cập nhật trong dashboard: nút đó kéo từ npm
+# registry, nên chỉ chạy được SAU khi bản mới đã publish. Script hỗ trợ cả đường
+# npm lẫn đường cài trực tiếp từ tarball khi chưa publish kịp.
+#
+#   sh cap-nhat-debian.sh              # kéo bản mới nhất trên npm
+#   sh cap-nhat-debian.sh ./goi.tgz    # cài từ file .tgz chép sang (chưa publish)
 
-THU_MUC="${THU_MUC:-$HOME/control}"
-CONG="${PORT:-7799}"
+set -eu
 
-cd "$THU_MUC"
+GOI="${1:-}"
+SV=control-center
 
-echo "==> Thư mục: $(pwd)"
-echo "==> Bản hiện tại: $(git rev-parse --short HEAD) ($(git log -1 --format=%s | cut -c1-60))"
+echo "==> bản đang chạy:"
+control --version 2>/dev/null || echo "   (chưa cài hoặc lệnh control không có trong PATH)"
 
-# Có sửa tay trên server thì dừng lại, đừng nuốt mất công của người ta
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "!! Có thay đổi chưa commit trên máy này. Xem 'git status' rồi tự quyết." >&2
-  git status --short >&2
-  exit 1
-fi
-
-echo "==> Kéo bản mới"
-git pull --ff-only
-
-echo "==> Bản sau khi kéo: $(git rev-parse --short HEAD) ($(git log -1 --format=%s | cut -c1-60))"
-
-# Kiểm cú pháp trước khi khởi động lại — thà không restart còn hơn restart vào bản hỏng
-echo "==> Kiểm cú pháp"
-node --check src/server/index.js
-node scripts/verify.js
-
-# Dừng bản đang chạy. Ba đường, tuỳ máy cài kiểu nào:
-#   1) systemd  2) pm2  3) tiến trình trần
-if systemctl --user list-units --type=service 2>/dev/null | grep -q '^\s*control'; then
-  echo "==> Khởi động lại qua systemd (user)"
-  systemctl --user restart control
-elif command -v pm2 >/dev/null 2>&1 && pm2 list 2>/dev/null | grep -q control; then
-  echo "==> Khởi động lại qua pm2"
-  pm2 restart control
+if [ -n "$GOI" ]; then
+  [ -f "$GOI" ] || { echo "!! không thấy file $GOI"; exit 1; }
+  echo "==> cài từ tarball: $GOI"
+  npm i -g "$GOI"
 else
-  echo "==> Khởi động lại tiến trình trần"
-  # Chỉ giết tiến trình CHÍNH của dashboard, không đụng node khác trên máy
-  pkill -f "node .*control/src/server/index.js" || true
-  sleep 1
-  PORT="$CONG" nohup node src/server/index.js > "$THU_MUC/dashboard.log" 2>&1 &
-  disown || true
+  echo "==> kéo bản mới nhất từ npm"
+  npm i -g claude-control-center@latest
 fi
 
-echo "==> Chờ server lên"
+echo "==> bản sau khi cài:"
+control --version
+
+# Service có thể chưa được tạo (cài tay, chạy bằng nohup). Không có thì bỏ qua,
+# đừng để `set -e` giết script ở đây.
+if systemctl --user list-unit-files 2>/dev/null | grep -q "^$SV"; then
+  echo "==> khởi động lại $SV"
+  systemctl --user restart "$SV"
+  sleep 2
+  systemctl --user is-active "$SV" >/dev/null 2>&1 \
+    && echo "==> $SV đang chạy" \
+    || { echo "!! $SV KHÔNG lên — xem log:"; journalctl --user -u "$SV" -n 20 --no-pager; exit 1; }
+else
+  echo "==> không thấy service $SV, tự khởi động lại tiến trình đang nghe cổng 7799"
+  pkill -f "claude-control-center" 2>/dev/null || true
+  echo "   (chạy lại bằng: control &)"
+fi
+
+# Chốt cuối: server phải trả lời thật, không chỉ "tiến trình còn sống".
+echo "==> kiểm server trả lời"
 for i in $(seq 1 20); do
-  if curl -sf -o /dev/null "http://127.0.0.1:$CONG/api/passcode/status"; then
-    echo "==> OK: server trả lời trên cổng $CONG (sau ${i}s)"
-    break
+  if curl -sf -o /dev/null http://127.0.0.1:7799/api/tree 2>/dev/null; then
+    echo "==> OK: server trả lời trên cổng 7799"
+    exit 0
   fi
-  [ "$i" = 20 ] && { echo "!! Server KHÔNG lên sau 20s. Xem $THU_MUC/dashboard.log" >&2; exit 1; }
   sleep 1
 done
-
-# Kiểm bản mới ĐÃ THẬT SỰ nạp, không phải tiến trình cũ còn sống.
-# Vừa gặp trên Mac: server cũ vẫn nghe cổng 7799 nên /api/tree trả 404 dù mã đã có.
-TOKEN="$(node -e "try{console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.claude/dashboard-token.json','utf8')).token)}catch{}" 2>/dev/null || true)"
-if [ -n "$TOKEN" ]; then
-  MA="$(curl -s -o /dev/null -w '%{http_code}' -H "X-Dash-Token: $TOKEN" "http://127.0.0.1:$CONG/api/tree?sid=kiem-tra" || true)"
-  if [ "$MA" = "404" ]; then
-    echo "!! /api/tree trả 404 — tiến trình CŨ vẫn đang chạy, bản mới chưa nạp." >&2
-    exit 1
-  fi
-  echo "==> Endpoint mới có mặt (/api/tree -> HTTP $MA)"
-fi
-
-# Địa chỉ vào từ iPhone
-IP_TS="$(tailscale ip -4 2>/dev/null | head -1 || true)"
-[ -n "$IP_TS" ] && echo "==> Vào từ iPhone: http://$IP_TS:$CONG"
-echo "==> Xong."
+echo "!! server không trả lời sau 20 giây"
+exit 1

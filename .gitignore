@@ -14,3 +14,4 @@ dashboard-uploads/
 # web-next/out ĐƯỢC commit để máy mới chạy được ngay không cần cài gì.
 web-next/node_modules/
 web-next/.next/
+*.tgz
