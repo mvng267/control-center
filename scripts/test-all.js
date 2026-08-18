@@ -96,6 +96,36 @@ function donNen() {
       else if (fs.existsSync(f)) fs.writeFileSync(f, JSON.stringify(giaTri, null, 2));
     } catch {}
   }
+  donCong();
+}
+
+/* Dọn TIẾN TRÌNH còn nghe cổng test.
+
+   Đây là thứ `donNen` cũ bỏ sót, và nó tốn nhiều thời gian nhất để tìm ra: kết quả
+   test nhảy lung tung giữa các lần chạy dù mã không đổi một dòng. Cùng một commit ra
+   68/69 rồi 53/68 rồi 190/190 rồi TimeoutError.
+
+   Gốc: server của lần chạy TRƯỚC vẫn sống. Bắt được thật — một tiến trình giữ cổng
+   7797 suốt 12 phút, và một `test-all` cũ vẫn chạy nền đụng với lần chạy mới. Bộ test
+   mới bind cổng thất bại rồi lặng lẽ nói chuyện với server CŨ (mã cũ, khoá VAPID cũ,
+   dữ liệu cũ) — nên bài đỏ mà đọc mã thì không thấy sai ở đâu.
+
+   Đúng bẫy CLAUDE.md đã ghi cho cổng 7799, chỉ khác là ở cổng test. */
+function donCong() {
+  const { execSync } = require('child_process');
+  const im = (c) => { try { return execSync(c, { encoding: 'utf8' }).trim(); } catch { return ''; } };
+  // Bộ test có thể còn chạy nền từ lần trước (Ctrl-C không giết tiến trình con)
+  for (const m of ['tests/e2e.js', 'tests/ui-new.js', 'tests/du-an.js', 'tests/push.js']) {
+    if (im(`pgrep -f "${m}"`)) im(`pkill -f "${m}"`);
+  }
+  // 7797 = cổng của tests/push.js, hai cổng kia là của chính test-all
+  for (const c of [CONG_CU, CONG_MOI, 7797, 7869]) {
+    const pid = im(`lsof -ti:${c}`);
+    if (pid) {
+      console.log(`  (dọn cổng ${c}: tiến trình cũ ${pid.split('\n').join(' ')} còn sống)`);
+      im(`kill -9 ${pid.split('\n').join(' ')}`);
+    }
+  }
 }
 
 (async () => {
