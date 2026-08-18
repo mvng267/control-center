@@ -1108,11 +1108,16 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
            phien nao tinh co dung dau danh sach co dang chay hay khong. */
         const dc = document.querySelector('[data-testid=typing]');
         const buChay = dc?.offsetParent ? Math.round(dc.getBoundingClientRect().height) : 0;
+        /* Thanh CÂU HỎI ĐANG ĐỌC (kiểu Claude CLI) nằm NGOÀI vùng cuộn và chỉ hiện khi
+           đã cuộn qua một lượt của mình. Cùng lý do với ba thanh trên: không bù thì bài
+           này đỏ tuỳ vào vị trí cuộn lúc đo, chứ không đo việc ẩn header. */
+        const cd = document.querySelector('[data-testid=cau-dinh]');
+        const buDinh = cd?.offsetParent ? Math.round(cd.getBoundingClientRect().height) : 0;
         return {
           header: !!document.querySelector('[data-testid=app-header]')?.offsetParent,
           tabbar: !!document.querySelector('[data-testid=tabbar]')?.offsetParent,
-          caoChat: Math.round(box.getBoundingClientRect().height) + buTodo + buGoiY + buChay,
-          buTodo, buGoiY, buChay,
+          caoChat: Math.round(box.getBoundingClientRect().height) + buTodo + buGoiY + buChay + buDinh,
+          buTodo, buGoiY, buChay, buDinh,
         };
       });
       ok('trong CHAT tren iPhone: an header va thanh tab',

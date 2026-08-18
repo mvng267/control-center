@@ -663,6 +663,23 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
 
       <TodoBar todos={todos} />
 
+      {/* THANH CÂU HỎI ĐANG ĐỌC — kiểu Claude CLI, giữ đúng MỘT dòng trên cùng.
+
+          Đặt NGOÀI vùng cuộn, không phải `sticky` bên trong. Lúc đầu làm sticky và nó
+          chạy đúng về mặt hình ảnh, nhưng phá một thứ khác: thanh nằm trong `chat-bubbles`
+          nên khi nó hiện ra, `scrollHeight` tăng 46px — mà chỗ chống-trượt-khi-có-tin-mới
+          lại đọc đúng con số đó để bù `scrollTop`. Nó tưởng có lượt mới về và bù nhầm,
+          làm chữ dưới mắt nhảy đi. Đưa ra ngoài thì vùng cuộn không đổi chiều cao. */}
+      {!!cauDinh && (
+        <div data-testid="cau-dinh" title={cauDinh}
+          className="flex shrink-0 items-center gap-1.5 border-b border-border bg-card px-4 py-2">
+          <ChevronRight className="size-3 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
+            {cauDinh}
+          </span>
+        </div>
+      )}
+
       <div ref={boxRef} data-testid="chat-bubbles"
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -691,20 +708,6 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
            thật sự cần cột thẳng hàng thì vẫn thẳng.
            Full-width: terminal không kẹp nội dung vào giữa. */
         className="relative flex w-full min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-4">
-        {/* MỘT thanh duy nhất giữ câu hỏi đang được trả lời — kiểu Claude CLI.
-            Trước đây mỗi lượt user tự `sticky top-0`, mà nhiều phần tử cùng `top-0`
-            thì CSS không đẩy nhau: chúng chồng thành từng lớp che hết nội dung khi
-            cuộn phiên dài.
-            `sticky -top-4` bù đúng `py-4` của khung, để thanh chạm sát mép trên. */}
-        {!!cauDinh && (
-          <div data-testid="cau-dinh" title={cauDinh}
-            className="sticky -top-4 z-20 -mx-4 flex shrink-0 items-center gap-1.5 border-b border-border bg-card/95 px-4 py-2 backdrop-blur">
-            <ChevronRight className="size-3 shrink-0 text-primary" />
-            <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
-              {cauDinh}
-            </span>
-          </div>
-        )}
         {/* Xem lại tin cũ. Trước đây server trả CỨNG 30 tin cuối và không có đường nào
             lấy thêm — đo trên phiên control: 19.806 lượt, tức chỉ xem được 0,2% nội
             dung, muốn đọc lại điều đã bàn trước đó phải tải cả file .md về đọc ngoài.
