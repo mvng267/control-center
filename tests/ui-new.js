@@ -1499,6 +1499,13 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
           rongO: Math.round(o.getBoundingClientRect().width),
           // cot danh sach ben trai (bo cuc hai cot) — 0 neu man hep, khong chia cot
           rongDs: ds ? Math.round(ds.getBoundingClientRect().width) : 0,
+          /* ĐO sidebar thay vì viết cứng 256: nó GẬP được xuống 56px và lựa chọn đó
+             nhớ qua localStorage, nên hằng số ở đây sẽ sai ngay lần chạy sau khi có ai
+             đó gập nó. */
+          rongSide: (() => {
+            const sb = document.querySelector('[data-testid=sidebar]');
+            return sb && sb.offsetParent ? Math.round(sb.getBoundingClientRect().width) : 0;
+          })(),
         };
       });
       /* Y DINH GOC cua bai nay: chan viec ke.p khung chat vao `max-w-[920px]` — da tung
@@ -1506,10 +1513,10 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
          Gio bo cuc HAI COT co y lam chat hep di (danh sach chiem ~340px), nen khong the
          doi `> 920` nua. Doi dung thu can: chat phai dung HET phan con lai sau khi tru
          sidebar 256px va cot danh sach — tuc khong con tran ke.p nao khac. */
-      const conLai = bd.rongMan - 256 - bd.rongDs;
+      const conLai = bd.rongMan - bd.rongSide - bd.rongDs;
       ok('khung chat dung tron phan con lai (khong bi ke.p)',
         bd.rongChat >= conLai - 8,
-        `chat=${bd.rongChat} conLai=${conLai} (man ${bd.rongMan} - sidebar 256 - ds ${bd.rongDs})`);
+        `chat=${bd.rongChat} conLai=${conLai} (man ${bd.rongMan} - side ${bd.rongSide} - ds ${bd.rongDs})`);
       ok('khung go rong bang khung chat', Math.abs(bd.rongO - bd.rongChat) <= 32,
         `o=${bd.rongO} chat=${bd.rongChat}`);
 
@@ -2667,6 +2674,21 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
           kyTu.every((x) => x.svg === 0),
           kyTu.map((x) => x.id + ':' + x.svg + 'svg').join(' ') || 'khong thay nut');
       }
+      /* LOI CHAN QUYEN phai noi ro phai lam gi, khong de nguyen tieng Anh.
+         Dashboard chay `claude -p` voi stdio ignore nen KHONG co kenh hoi quyen — lenh
+         can duyet thi chet ngay voi mot cau tieng Anh tran. "Contains
+         command_substitution" doc len khong ai doan duoc phai lam gi, ma moi lenh co
+         $(...) hay backtick deu dinh.
+         Va KHONG duoc in hai lan: dong ⎿ da noi het thi khoi mo ra dung lap lai. */
+      const quyen = await page.evaluate(() => {
+        const ds = [...document.querySelectorAll('[data-testid=tool-ket-qua]')]
+          .map((e) => e.innerText.replace(/\s+/g, ' ').trim());
+        const anh = ds.filter((t) => /requires approval|command_substitution/i.test(t));
+        return { tong: ds.length, conTiengAnh: anh.length, mau: anh[0] || '' };
+      });
+      ok('khong con thong bao quyen bang tieng Anh tran',
+        quyen.conTiengAnh === 0, `${quyen.conTiengAnh}/${quyen.tong} the — ${quyen.mau.slice(0, 60)}`);
+
       /* Phien dang mo phai duoc TO SANG trong danh sach — cuon mot luc la mat dau minh
          dang doc cai nao. Do NEN that, khong do class: class co ca `hover:bg-accent/30`
          nen dem theo chuoi thi the nao cung khop het 128 the.

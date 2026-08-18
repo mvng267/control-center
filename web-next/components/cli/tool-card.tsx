@@ -47,9 +47,34 @@ const CHAM = {
   pending: 'text-muted-foreground/50',
 } as const;
 
+/* Lỗi CHẶN QUYỀN của Claude CLI, dịch sang tiếng Việt kèm cách xử lý.
+
+   Vì sao đáng dịch riêng: dashboard chạy `claude -p` với `stdio: ignore` nên KHÔNG có
+   kênh để Claude hỏi quyền — lệnh cần duyệt thì chết ngay với một câu tiếng Anh trần.
+   "Contains command_substitution" đọc lên không ai đoán được phải làm gì, mà đó lại là
+   thứ hay gặp nhất: mọi lệnh có `$(...)` hay backtick đều dính.
+
+   Không dịch máy móc cả câu — chỉ nhận đúng mấy mẫu CLI thật sự in ra, còn lại giữ
+   nguyên văn. Đoán sai nghĩa một thông báo về quyền còn tệ hơn để nguyên tiếng Anh. */
+function loiQuyen(s: string): string {
+  const t = s.trim();
+  if (/^Contains command_substitution/i.test(t)) {
+    return 'Lệnh có $(…) hoặc dấu backtick — cần bạn duyệt. Dashboard không hỏi quyền được, chạy tay hoặc đổi chế độ quyền sang "Tự sửa file".';
+  }
+  if (/requires approval/i.test(t)) {
+    return 'Lệnh này cần bạn duyệt. Dashboard không hỏi quyền được — chạy tay trên máy, hoặc đổi chế độ quyền ở cuối khung chat.';
+  }
+  if (/have permission to use|not allowed/i.test(t)) {
+    return 'Lệnh không nằm trong danh sách cho phép. Thêm vào `.claude/settings.local.json` hoặc chạy tay.';
+  }
+  return '';
+}
+
 /** Dòng tóm tắt kết quả cho phần ⎿ — vài dòng đầu, phần còn lại đếm ra số. */
 function tomTat(part: ToolPart): { dong: string[]; con: number } {
   if (part.status === 'running') return { dong: ['đang chạy…'], con: 0 };
+  const dich = loiQuyen(String(part.result || ''));
+  if (dich) return { dong: [dich], con: 0 };
   const raw = String(part.result || '').replace(/\r/g, '').split('\n').filter((l) => l.trim());
   if (!raw.length) {
     if (part.status === 'pending') return { dong: ['(bị ngắt, không có kết quả)'], con: 0 };
@@ -179,6 +204,8 @@ export function ToolCard({ part, sid, open, onToggle }: {
   const isDiff = part.name === 'Edit' && part.input.startsWith('--- old');
   const isErr = part.status === 'error';
   const tt = tomTat(part);
+  // lỗi quyền hiện chữ thường xuống dòng, không phải mã nên không cắt cụt
+  const laLoiQuyen = !!loiQuyen(String(part.result || ''));
   const soTodo = part.todos?.length || 0;
   const xong = part.todos?.filter((t) => t.status === 'completed').length || 0;
 
@@ -219,8 +246,13 @@ export function ToolCard({ part, sid, open, onToggle }: {
             <span className="tabular-nums">{xong}/{soTodo} việc</span>
           ) : (
             <>
+              {/* Lỗi quyền được XUỐNG DÒNG, không `truncate`: câu hướng dẫn dài hơn
+                  một dòng, cắt cụt thì mất đúng phần nói phải làm gì. Kết quả thường
+                  vẫn `truncate` — nó là dữ liệu, xem đủ thì bấm mở thẻ. */}
               {tt.dong.map((l, i) => (
-                <div key={i} className="truncate">{l}</div>
+                <div key={i} className={laLoiQuyen ? 'whitespace-pre-wrap break-words font-sans leading-relaxed' : 'truncate'}>
+                  {l}
+                </div>
               ))}
               {/* "… +12 dòng" MỞ ĐƯỢC (bấm đầu thẻ) nhưng trông như chữ chết nên
                   không ai bấm. Nói thẳng ra phải làm gì. */}
@@ -266,8 +298,17 @@ export function ToolCard({ part, sid, open, onToggle }: {
               : <KhoiChu nhan="INPUT" text={part.input} lang={langOf(part.summary)} />
           ) : null}
 
-          {!soTodo && (part.result || part.status === 'ok' || isErr) && (
+          {/* Khối kết quả đầy đủ. BỎ QUA khi dòng ⎿ đã nói hết: kết quả một dòng thì
+              mở thẻ ra chỉ thấy đúng câu vừa đọc, in hai lần liền nhau — Vinh bắt được
+              đúng chỗ này với "This command requires approval" hiện hai lần. */}
+          {!soTodo && (part.result || part.status === 'ok' || isErr)
+            && !(tt.con === 0 && tt.dong.length === 1 && String(part.result || '').trim() === tt.dong[0]) && (
             <KhoiChu nhan={isErr ? 'LỖI' : 'KẾT QUẢ'} text={part.result || '(trống)'} error={isErr} />
+          )}
+          {/* Lỗi quyền: dòng ⎿ đã hiện bản dịch, khối này hiện NGUYÊN VĂN của CLI —
+              cần khi phải tra cứu hoặc báo lỗi, mà bản dịch thì không tra được. */}
+          {!soTodo && isErr && !!loiQuyen(String(part.result || '')) && (
+            <KhoiChu nhan="NGUYÊN VĂN" text={String(part.result)} error />
           )}
 
           {part.images?.length > 0 && (

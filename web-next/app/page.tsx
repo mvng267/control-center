@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { RefreshCw, MessageSquare } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppShell, TABS, type TabId } from '@/components/layout/app-shell';
 import { ManCauHinh } from '@/components/layout/man-cau-hinh';
@@ -207,21 +207,16 @@ export default function Page() {
               </div>
             )}
 
-            {/* Cột chat. Khi chưa chọn phiên nào, desktop hiện lời mời thay vì khoảng
-                trống — màn rộng mà nửa phải trắng trơn thì nhìn như hỏng. */}
-            {openSid ? (
+            {/* Cột chat — CHỈ dựng khi đã chọn phiên.
+                Bản đầu có thêm panel "Chọn một phiên để xem" cho nửa phải lúc chưa
+                chọn, nhưng nó SAI bố cục: lúc đó danh sách đang `w-full`, nên hai khối
+                cùng đòi chỗ và panel bị đẩy tràn ra ngoài mép phải (thấy rõ khi gập
+                sidebar). Và ép danh sách vào 340px chỉ để hiện một dòng chữ là đánh đổi
+                tệ — 145 phiên đọc ở màn rộng thoải mái hơn hẳn. */}
+            {!!openSid && (
               <div className="h-full min-h-0 min-w-0 flex-1">
                 <ChatView sid={openSid} onBack={() => setOpenSid(null)} perm={data?.perm}
                   effort={data?.effort} />
-              </div>
-            ) : (
-              <div data-testid="chua-chon-phien"
-                className="hidden min-w-0 flex-1 flex-col items-center justify-center gap-2 border-l border-border bg-muted/20 xl:flex">
-                <MessageSquare className="size-8 text-muted-foreground/30" />
-                <p className="text-[14px] text-muted-foreground">Chọn một phiên để xem</p>
-                <p className="text-[12px] text-muted-foreground/60">
-                  {(data?.sessions || []).length} phiên · {(data?.sessions || []).filter((s) => s.status === 'RUNNING').length} đang chạy
-                </p>
               </div>
             )}
           </div>

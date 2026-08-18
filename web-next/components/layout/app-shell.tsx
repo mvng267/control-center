@@ -2,7 +2,7 @@
 
 import {
   Terminal, MessageSquare, Settings2, PieChart, Sun, Moon,
-  ChevronRight, MoreHorizontal, Lock, ShieldPlus, Container, Gauge,
+  ChevronRight, MoreHorizontal, Lock, ShieldPlus, Container, Gauge, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
@@ -107,36 +107,81 @@ export function AppShell({
   const tabsHien = TABS.filter((t) => t.id === 'cli' || cauHinh.tabBat[t.id] !== false);
   const active = TABS.find((t) => t.id === tab);
 
+  /* Thanh bên GẬP hay không. Khởi tạo `false` rồi mới đọc localStorage trong effect —
+     đọc thẳng lúc dựng thì bản render ở server (static export) và bản ở trình duyệt ra
+     khác nhau, React báo hydration mismatch. */
+  const [gapSide, setGapSide] = useState(false);
+  useEffect(() => {
+    try { setGapSide(localStorage.getItem('side-gap') === '1'); } catch {}
+  }, []);
+  const doiGap = (v: boolean) => {
+    setGapSide(v);
+    try { localStorage.setItem('side-gap', v ? '1' : '0'); } catch {}
+  };
+
   return (
     /* Chiều cao trừ đi phần bàn phím che (--kb do use-soft-keyboard bơm vào).
        Trên iOS layout viewport KHÔNG co khi bàn phím bật, kể cả dùng dvh — nên
        phải tự trừ, nếu không ô nhập nằm sau bàn phím. */
     <div className="flex overflow-hidden bg-background text-foreground"
       style={{ height: 'calc(100dvh - var(--kb, 0px))' }}>
-      {/* ---- SIDEBAR 256px — chỉ desktop, dựng theo Atlas ---- */}
-      <aside className="hidden w-64 shrink-0 flex-col bg-sidebar md:flex"
-        data-testid="sidebar">
-        {/* logo */}
-        <div className="flex items-center gap-2.5 px-4 py-3.5">
+      {/* ---- SIDEBAR — chỉ desktop, dựng theo Atlas. GẬP được xuống 56px ----
+           Vì sao đáng gập: 256px là 18% màn 1440, mà khi đang đọc một phiên thì cả
+           cột đó chỉ để đổi tab — thứ hiếm khi đụng. Gập lại vẫn thấy icon nên không
+           mất đường đi, mà khung chat rộng thêm 200px.
+           Nhớ lựa chọn qua localStorage: gập rồi mà mở lại trang nó bung ra thì phải
+           gập lại mỗi lần, thành ra phiền hơn là tiện. */}
+      <aside className={cn('hidden shrink-0 flex-col bg-sidebar transition-[width] duration-200 md:flex',
+        gapSide ? 'w-14' : 'w-64')}
+        data-testid="sidebar" data-gap={gapSide}>
+        {/* logo + nút gập. Trước đây chỗ này là icon ⋯ TRANG TRÍ, bấm không làm gì. */}
+        <div className={cn('flex items-center py-3.5', gapSide ? 'justify-center px-2' : 'gap-2.5 px-4')}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icon-192.png" alt="" width={28} height={28} className="size-7 shrink-0 rounded-lg" />
-          <span className="flex-1 truncate text-[14px] font-semibold tracking-tight">Control</span>
-          <MoreHorizontal className="size-4 shrink-0 text-muted-foreground" />
+          {!gapSide && (
+            <span className="flex-1 truncate text-[14px] font-semibold tracking-tight">Control</span>
+          )}
+          {!gapSide && (
+            <button type="button" data-testid="gap-sidebar" onClick={() => doiGap(true)}
+              title="Thu gọn thanh bên" aria-label="Thu gọn thanh bên"
+              className="tap44 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground">
+              <PanelLeftClose className="size-4" />
+            </button>
+          )}
         </div>
+        {/* Gập rồi thì nút mở nằm riêng một hàng — nhét chung với logo ở 56px thì
+            hai thứ chồng nhau. */}
+        {gapSide && (
+          <button type="button" data-testid="mo-sidebar" onClick={() => doiGap(false)}
+            title="Mở rộng thanh bên" aria-label="Mở rộng thanh bên"
+            className="tap44 mx-auto mb-1 flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground">
+            <PanelLeftOpen className="size-4" />
+          </button>
+        )}
 
-        <nav className="flex-1 overflow-y-auto px-2.5 pb-2">
-          <div className="px-2.5 pb-1.5 pt-2 text-[12px] font-medium text-muted-foreground">Menu</div>
+        <nav className={cn('flex-1 overflow-y-auto pb-2', gapSide ? 'px-2' : 'px-2.5')}>
+          {!gapSide && (
+            <div className="px-2.5 pb-1.5 pt-2 text-[12px] font-medium text-muted-foreground">Menu</div>
+          )}
           {tabsHien.map(({ id, label, icon: Icon }) => (
+            /* Gập: chỉ icon, căn giữa, `title` làm tooltip — không có nhãn thì phải có
+               cách khác để biết nút nào là gì. Badge chuyển thành chấm nhỏ góc trên vì
+               con số không đủ chỗ trong ô 32px. */
             <button key={id} onClick={() => onTab(id)} data-testid={`nav-${id}`} data-active={tab === id}
+              title={gapSide ? label : undefined}
               className={cn(
-                'flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[14px] transition-colors',
+                'relative flex h-8 w-full items-center rounded-[8px] text-left text-[14px] transition-colors',
+                gapSide ? 'justify-center px-0' : 'gap-2.5 px-2.5',
                 tab === id
                   ? 'bg-sidebar-accent font-medium text-sidebar-foreground'
                   : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
               )}>
               <Icon className="size-4 shrink-0" />
-              <span className="flex-1 truncate">{label}</span>
-              {!!badges?.[id] && (
+              {gapSide && !!badges?.[id] && (
+                <span className="absolute right-1 top-0.5 size-1.5 rounded-full bg-primary" />
+              )}
+              {!gapSide && <span className="flex-1 truncate">{label}</span>}
+              {!gapSide && !!badges?.[id] && (
                 <span className="shrink-0 rounded-md bg-muted px-1.5 text-[12px] font-medium tabular-nums">
                   {badges[id]! > 99 ? '99+' : badges[id]}
                 </span>
@@ -144,17 +189,21 @@ export function AppShell({
             </button>
           ))}
 
-          {/* nhóm Favorites — chấm màu như Atlas, dẫn tới các chỗ hay dùng */}
-          <div className="flex items-center px-2.5 pb-1.5 pt-5 text-[12px] font-medium text-muted-foreground">
-            <span className="flex-1">Xem nhanh</span>
-          </div>
+          {/* Nhóm "Xem nhanh" ẨN khi gập: ba nút này phân biệt nhau bằng NHÃN, còn
+              chấm màu chỉ là điểm nhấn — gập lại thì ba chấm nhỏ xíu giống hệt nhau,
+              bấm nhầm nhiều hơn bấm đúng. */}
+          {!gapSide && (
+            <div className="flex items-center px-2.5 pb-1.5 pt-5 text-[12px] font-medium text-muted-foreground">
+              <span className="flex-1">Xem nhanh</span>
+            </div>
+          )}
           {/* Chuyển tab THÔI thì nhãn nói dối: bấm "Phiên đang chạy" mà mở ra vẫn cả
               100 phiên. Gửi kèm ý định qua onQuick để màn đích tự lọc. */}
           {[
             { c: 'bg-status-ok', label: 'Phiên đang chạy', to: 'cli' as TabId, q: 'run' },
             { c: 'bg-status-run', label: 'Lỗi agy-proxy', to: 'agy' as TabId, q: '' },
             { c: 'bg-primary', label: 'Thống kê hôm nay', to: 'stats' as TabId, q: '' },
-          ].map((f) => (
+          ].filter(() => !gapSide).map((f) => (
             <button key={f.label} data-testid={'quick-' + f.to + (f.q ? '-' + f.q : '')}
               onClick={() => { onTab(f.to); if (f.q) onQuick?.(f.q); }}
               className="flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[14px] text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground">
@@ -165,26 +214,38 @@ export function AppShell({
         </nav>
 
         {/* chân sidebar */}
-        <div className="px-2.5 pb-2">
+        <div className={gapSide ? "px-2 pb-2" : "px-2.5 pb-2"}>
           {/* Trước đây chỗ này là hai dòng chữ CHẾT ("Phiên", "Trợ giúp") — có icon,
               trông như nút, bấm không ra gì. Thay bằng nút khoá dùng được thật. */}
           <button onClick={onLock} data-testid="lock-btn"
             title={daDatMa ? 'Khoá dashboard ngay' : 'Đặt mã khoá để bảo vệ dashboard'}
-            className="tap44 flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[14px] text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground">
+            className={cn("tap44 flex h-8 w-full items-center overflow-hidden rounded-[8px] text-left text-[14px] text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+              gapSide ? "justify-center" : "gap-2.5 px-2.5")}>
             {daDatMa ? <Lock className="size-4 shrink-0" /> : <ShieldPlus className="size-4 shrink-0" />}
-            <span className="truncate">{daDatMa ? 'Khoá ngay' : 'Tạo mã khoá'}</span>
+            {/* Ẩn hẳn nhãn khi gập. `truncate` không đủ: ở 56px nó vẫn cố vẽ ra "T…"
+                cạnh icon, nhìn như chữ bị hỏng chứ không ra ý cố tình rút gọn. */}
+            {!gapSide && <span className="truncate">{daDatMa ? 'Khoá ngay' : 'Tạo mã khoá'}</span>}
           </button>
         </div>
         {/* Tên lấy từ tài khoản đang chạy server (ghi đè bằng DASH_USER). Trước đây ghi
             cứng tên chủ máy dev nên ai cài về cũng thấy tên người lạ trên máy mình. */}
+        {/* Gập: còn mỗi vòng tròn chữ đầu — vẫn bấm được vào cấu hình, `title` cho biết
+            đó là gì. Giữ nguyên khung có viền thì ở 56px nó chật cứng, chữ tràn ra. */}
         <button onClick={onCauHinh} data-testid="mo-cau-hinh"
-          title="Cấu hình dashboard"
-          className="m-2.5 mt-0 flex items-center gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2 text-left transition-colors hover:bg-sidebar-accent/60">
+          title={gapSide ? cauHinh.nguoiDung + ' — cấu hình dashboard' : 'Cấu hình dashboard'}
+          className={cn('flex items-center text-left transition-colors hover:bg-sidebar-accent/60',
+            gapSide
+              ? 'mx-auto mb-2.5 justify-center rounded-full p-1'
+              : 'm-2.5 mt-0 gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2')}>
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[12px] font-semibold text-primary">
             {chuDau(cauHinh.nguoiDung)}
           </span>
-          <span className="flex-1 truncate text-[14px] font-medium">{cauHinh.nguoiDung}</span>
-          <MoreHorizontal className="size-4 shrink-0 text-muted-foreground" />
+          {!gapSide && (
+            <>
+              <span className="flex-1 truncate text-[14px] font-medium">{cauHinh.nguoiDung}</span>
+              <MoreHorizontal className="size-4 shrink-0 text-muted-foreground" />
+            </>
+          )}
         </button>
       </aside>
 
