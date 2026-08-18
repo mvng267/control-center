@@ -65,8 +65,8 @@ export function AgyLog() {
     <Card className="gap-0 p-4" data-testid="agy-log">
       <div className="mb-3 flex items-center gap-2">
         <ScrollText className="size-4 text-muted-foreground" />
-        <span className="text-[13px] font-semibold">Log thời gian thực</span>
-        <span className="text-[11.5px] text-muted-foreground">{lines.length} dòng</span>
+        <span className="text-[14px] font-semibold">Log thời gian thực</span>
+        <span className="text-[12px] text-muted-foreground">{lines.length} dòng</span>
         <div className="ml-auto flex items-center gap-1">
           <Button variant="ghost" size="icon" className="tap44 size-7" data-testid="log-toggle"
             title={live ? 'Tạm dừng' : 'Chạy tiếp'} onClick={() => setLive((v) => !v)}>
@@ -84,7 +84,7 @@ export function AgyLog() {
           const el = e.currentTarget;
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
-        className="max-h-[260px] min-h-[120px] overflow-auto rounded-[10px] border border-border bg-background/60 p-2.5 font-mono text-[11.5px] leading-relaxed">
+        className="max-h-[260px] min-h-[120px] overflow-auto rounded-[10px] border border-border bg-background/60 p-2.5 font-mono text-[12px] leading-relaxed">
         {lines.length ? lines.map((l, i) => (
           <div key={i} className={cn('whitespace-pre-wrap break-words', TONE[l.lv])}>{l.text}</div>
         )) : (

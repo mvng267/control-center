@@ -109,7 +109,7 @@ export function StatCard({
         )}
       </div>
 
-      <div className="mt-2 truncate text-[11.5px] font-medium tracking-wide text-muted-foreground sm:mt-3 sm:text-[12px]">
+      <div className="mt-2 truncate text-[12px] font-medium tracking-wide text-muted-foreground sm:mt-3 sm:text-[12px]">
         {(sub || title).toUpperCase()}
       </div>
       <div className={cn('mt-1 text-[20px] font-bold leading-none tracking-tight sm:text-[24px]', TEXT[tone])}
@@ -117,7 +117,7 @@ export function StatCard({
         {value}
       </div>
       {deltaLabel && (
-        <div className="mt-1 truncate text-[11.5px] text-muted-foreground sm:mt-1.5 sm:text-[12px]">{deltaLabel}</div>
+        <div className="mt-1 truncate text-[12px] text-muted-foreground sm:mt-1.5 sm:text-[12px]">{deltaLabel}</div>
       )}
 
       {/* Sparkline chạm mép dưới thẻ như Atlas — nên Card để pb-0 và -mx-4 ở đây.

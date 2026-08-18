@@ -42,7 +42,7 @@ export function HoaClaude({ chay }: { chay: boolean }) {
   }, [chay]);
   return (
     <span aria-hidden data-testid="hoa-header" data-chay={chay}
-      className={cn('w-[1ch] shrink-0 select-none text-center font-mono text-[15px]',
+      className={cn('w-[1ch] shrink-0 select-none text-center font-mono text-[14px]',
         chay ? 'text-status-ok' : 'text-muted-foreground/35')}>
       {chay ? HOA[pha] : HOA[0]}
     </span>
@@ -74,7 +74,7 @@ export function DangChay({ onStop, lenh, agents }: {
        Trước đây nó là một dòng trần lẫn giữa nội dung, cuộn đi là mất; mà lúc cần
        bấm Dừng nhất chính là lúc Claude chạy lâu và mình đã cuộn đi chỗ khác. */
     <div data-testid="typing"
-      className="mx-3 mb-1.5 flex shrink-0 flex-col gap-0.5 rounded-lg border border-status-ok/30 bg-status-ok/[0.06] px-2.5 py-1.5 font-mono text-[12.5px]">
+      className="mx-3 mb-1.5 flex shrink-0 flex-col gap-0.5 rounded-lg border border-status-ok/30 bg-status-ok/[0.06] px-2.5 py-1.5 font-mono text-[14px]">
       <div className="flex items-center gap-2">
         {/* Bông hoa xoay — dấu hiệu Claude còn sống, thấy ngay không cần đọc chữ */}
         <span aria-hidden data-testid="hoa-xoay"
@@ -95,7 +95,7 @@ export function DangChay({ onStop, lenh, agents }: {
       </div>
       {/* Lệnh đang chạy dở — biết Claude kẹt ở đâu mà không phải cuộn lên tìm */}
       {!!lenh && (
-        <div className="truncate pl-[calc(1ch+0.5rem)] text-[11.5px] text-muted-foreground/75"
+        <div className="truncate pl-[calc(1ch+0.5rem)] text-[12px] text-muted-foreground/75"
           data-testid="dang-chay-lenh" title={lenh}>
           {lenh}
         </div>
@@ -103,7 +103,7 @@ export function DangChay({ onStop, lenh, agents }: {
       {/* Agent con đang chạy — mỗi cái một dòng, hiện tên việc nó đang làm */}
       {agents?.map((a, i) => (
         <div key={i} data-testid="dang-chay-agent"
-          className="flex min-w-0 items-center gap-1.5 pl-[calc(1ch+0.5rem)] text-[11.5px] text-status-ok/85"
+          className="flex min-w-0 items-center gap-1.5 pl-[calc(1ch+0.5rem)] text-[12px] text-status-ok/85"
           title={a.loai ? a.ten + ' (' + a.loai + ')' : a.ten}>
           <Bot className="size-3 shrink-0 animate-pulse" />
           <span className="truncate">{a.ten || a.loai || 'agent'}</span>

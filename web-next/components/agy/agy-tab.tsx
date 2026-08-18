@@ -58,7 +58,7 @@ export function AgyTab() {
       <>
         <PageHeader title="Agy Proxy" desc="Trạng thái gateway, lưu lượng và sức khoẻ tài khoản." />
         <div className="px-4 md:px-6">
-          <p className="py-8 text-center text-[13px] text-muted-foreground">Đang tải…</p>
+          <p className="py-8 text-center text-[14px] text-muted-foreground">Đang tải…</p>
         </div>
       </>
     );
@@ -84,15 +84,15 @@ export function AgyTab() {
       >
         <div className="flex flex-wrap items-center gap-3">
           <span className={cn('size-2.5 shrink-0 rounded-full', st.running ? 'bg-status-ok' : 'bg-status-error')} />
-          <span className="text-[17px] font-bold tracking-tight" data-testid="agy-status">
+          <span className="text-[16px] font-bold tracking-tight" data-testid="agy-status">
             {st.running ? 'Đang chạy' : 'Đã dừng'}
           </span>
-          <span className="text-[12.5px] text-muted-foreground">
+          <span className="text-[14px] text-muted-foreground">
             cổng {st.port}
             {st.dev ? ` · dashboard quản lý (pid ${st.dev.pid})` : ''}
           </span>
           {st.external && (
-            <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-[10.5px] text-amber-500">
+            <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-[12px] text-amber-500">
               CHẠY NGOÀI
             </Badge>
           )}
@@ -120,9 +120,9 @@ export function AgyTab() {
       {usage && (
         <Card className="gap-0 p-4" data-testid="agy-usage">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-[13px] font-semibold text-muted-foreground">Lưu lượng 24 giờ</span>
+            <span className="text-[14px] font-semibold text-muted-foreground">Lưu lượng 24 giờ</span>
             {!!usage.avgMs && (
-              <span className="text-[11.5px] text-muted-foreground">
+              <span className="text-[12px] text-muted-foreground">
                 trễ trung bình {(usage.avgMs / 1000).toFixed(1)}s
               </span>
             )}
@@ -177,7 +177,7 @@ export function AgyTab() {
           <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-2.5">
             {usage.codes.map((c) => (
               <span key={String(c.status)}
-                className="rounded-full border border-border bg-card px-2.5 py-[3px] text-[11px] text-muted-foreground">
+                className="rounded-full border border-border bg-card px-2.5 py-[3px] text-[12px] text-muted-foreground">
                 <b className="font-semibold text-status-error">{c.status ?? '?'}</b>{' '}
                 {CODE_LABEL[c.status ?? -1] || 'khác'} · {c.n}
               </span>
@@ -189,10 +189,10 @@ export function AgyTab() {
       {/* sức khoẻ tài khoản */}
       <Card className="gap-0 p-4" data-testid="agy-accounts">
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <span className="text-[13px] font-semibold text-muted-foreground">
+          <span className="text-[14px] font-semibold text-muted-foreground">
             Tài khoản <span className="text-foreground">{st.accounts}</span>
           </span>
-          <span className="text-[11.5px] text-muted-foreground">{st.acc?.recent24h ?? 0} chạy trong 24h</span>
+          <span className="text-[12px] text-muted-foreground">{st.acc?.recent24h ?? 0} chạy trong 24h</span>
         </div>
         <div className="flex h-2.5 gap-[2px] overflow-hidden rounded-full bg-muted/40" data-testid="agy-accbar">
           {accKeys.map((k) => (
@@ -202,7 +202,7 @@ export function AgyTab() {
         </div>
         <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
           {accKeys.map((k) => (
-            <span key={k} className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+            <span key={k} className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
               <i className={cn('block size-2 shrink-0 rounded-full', ACC_COLOR[k])} />
               {st.acc.status[k]} {ACC_LABEL[k]}
             </span>
@@ -212,7 +212,7 @@ export function AgyTab() {
 
       {/* kiểm tra */}
       <Card className="gap-0 p-4">
-        <div className="mb-2.5 text-[13px] font-semibold text-muted-foreground">Kiểm tra</div>
+        <div className="mb-2.5 text-[14px] font-semibold text-muted-foreground">Kiểm tra</div>
         <div className="flex flex-wrap gap-2">
           {(['typecheck', 'test', 'build'] as const).map((n) => (
             <Button key={n} size="sm" variant="outline" disabled={!!st.task}
@@ -226,7 +226,7 @@ export function AgyTab() {
             const l = st.last?.[n];
             return (
               <span key={n} className={cn(
-                'rounded-full border px-2.5 py-[3px] text-[11px] uppercase',
+                'rounded-full border px-2.5 py-[3px] text-[12px] uppercase',
                 l ? (l.ok ? 'border-status-ok/40 text-status-ok' : 'border-status-error/40 text-status-error')
                   : 'border-border text-muted-foreground',
               )}>
@@ -240,13 +240,13 @@ export function AgyTab() {
       {/* models gom nhóm + tìm kiếm */}
       <Card className="gap-0 p-4" data-testid="agy-models">
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <span className="text-[13px] font-semibold text-muted-foreground">
+          <span className="text-[14px] font-semibold text-muted-foreground">
             Models <span className="text-foreground">{st.models.length}</span>
           </span>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="tìm model…"
-              data-testid="model-search" className="h-11 w-[150px] pl-8 text-[16px] md:h-8 md:text-[12.5px]" />
+              data-testid="model-search" className="h-11 w-[150px] pl-8 text-[16px] md:h-8 md:text-[14px]" />
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
@@ -258,9 +258,9 @@ export function AgyTab() {
               <div key={g.name} className="overflow-hidden rounded-lg border border-border bg-card"
                 data-testid="model-group" data-open={isOpen}>
                 <button onClick={() => setOpen((o) => ({ ...o, [g.name]: !o[g.name] }))}
-                  className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-accent/50">
+                  className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left text-[14px] hover:bg-accent/50">
                   <span className="font-semibold capitalize">{g.name}</span>
-                  <span className="text-[11.5px] text-muted-foreground">{items.length}</span>
+                  <span className="text-[12px] text-muted-foreground">{items.length}</span>
                   <ChevronDown className={cn('ml-auto size-4 text-muted-foreground transition-transform',
                     isOpen && 'rotate-180')} />
                 </button>
@@ -277,7 +277,7 @@ export function AgyTab() {
             );
           })}
           {q && !(st.modelGroups || []).some((g) => g.items.some((m) => m.toLowerCase().includes(q.toLowerCase()))) && (
-            <div className="text-[12.5px] text-muted-foreground">Không có model nào khớp “{q}”</div>
+            <div className="text-[14px] text-muted-foreground">Không có model nào khớp “{q}”</div>
           )}
         </div>
       </Card>
@@ -324,7 +324,7 @@ function HourBars({ hours }: { hours: { h: string; n: number; e: number }[] }) {
       </div>
       <div className="mt-[3px] flex gap-[3px]">
         {hours.map((h) => (
-          <span key={h.h} className="min-w-0 flex-1 text-center text-[9px] text-muted-foreground">{h.h}</span>
+          <span key={h.h} className="min-w-0 flex-1 text-center text-[12px] text-muted-foreground">{h.h}</span>
         ))}
       </div>
     </>

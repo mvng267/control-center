@@ -382,6 +382,101 @@ async function snapshot() {
     }
   }
 
+  /* ---------- Phiên do LỆNH SLASH sinh ra phải bị ẩn ----------
+     Claude CLI tạo một file .jsonl MỚI cho mỗi lần chạy `claude -p /lenh`. Dashboard
+     lại gọi chính CLI để lấy hạn mức và chạy lệnh trong bảng lệnh — nên nó tự đẻ rác
+     cho chính mình. Đếm thật: 265/410 phiên là loại này, riêng `/usage` 183 cái.
+     Không lọc thì danh sách 70% là rác và phiên thật trôi mất. */
+  {
+    const dir = path.join(PROJECTS_DIR, '-private-tmp-lenh-check');
+    const sidLenh = 'bbbbbbbb-1111-4222-8333-cccccccccccc';
+    const sidThat = 'bbbbbbbb-1111-4222-8333-dddddddddddd';
+    const gio = Date.now();
+    const dongUser = (t, chu) => JSON.stringify({
+      type: 'user', timestamp: new Date(gio - t).toISOString(),
+      cwd: '/private/tmp/lenh-check',
+      message: { content: [{ type: 'text', text: chu }] },
+    }) + '\n';
+    const dongTraLoi = (t, chu) => JSON.stringify({
+      type: 'assistant', timestamp: new Date(gio - t).toISOString(),
+      cwd: '/private/tmp/lenh-check',
+      message: { model: 'claude-opus-5', usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: 'text', text: chu }] },
+    }) + '\n';
+
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      // phiên RÁC: đúng một lệnh slash rồi thôi — hệt thứ CLI đẻ ra khi dashboard gọi
+      fs.writeFileSync(path.join(dir, sidLenh + '.jsonl'),
+        dongUser(3000, '<command-name>/usage</command-name>')
+        + dongTraLoi(2000, 'Current week (all models): 44% used'));
+      /* phiên THẬT mở bằng lệnh slash rồi nhắn tiếp bình thường — PHẢI hiện.
+         Đây là chỗ dễ lọc nhầm nhất: chỉ dò `<command-name>` mà không đếm độ dài thì
+         giấu luôn phiên người dùng đang làm việc. */
+      fs.writeFileSync(path.join(dir, sidThat + '.jsonl'),
+        dongUser(9000, '<command-name>/init</command-name>')
+        + dongTraLoi(8000, 'Đã tạo CLAUDE.md')
+        + dongUser(7000, 'sửa thêm phần kiểm thử giúp tao')
+        + dongTraLoi(6000, 'Xong rồi nhé')
+        + dongUser(5000, 'chạy test luôn')
+        + dongTraLoi(4000, 'Tất cả đều đạt'));
+      await new Promise((r) => setTimeout(r, 300));
+
+      const ds = (await snapshot()).data.sessions || [];
+      ok('phiên chỉ có MỘT lệnh slash bị ẩn khỏi danh sách',
+        !ds.find((s) => s.sid === sidLenh), 'sid rác ' + (ds.find((s) => s.sid === sidLenh) ? 'VẪN HIỆN' : 'đã ẩn'));
+      ok('phiên mở bằng lệnh slash rồi nhắn tiếp vẫn HIỆN',
+        !!ds.find((s) => s.sid === sidThat), 'sid thật ' + (ds.find((s) => s.sid === sidThat) ? 'hiện' : 'BỊ ẨN OAN'));
+    } finally {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  }
+
+  /* ---------- Hạn mức Claude ----------
+     Hết hạn mức là thứ CHẶN việc, mà trước đây chỉ biết khi Claude đột ngột trả lỗi
+     giữa lượt — trên iPhone càng khó đoán vì không thấy terminal.
+
+     Cache 60 giây là phần bắt buộc phải chốt: `/usage` spawn `claude -p`, đo thật 8,4
+     giây. Gọi theo nhịp SSE 2 giây là treo cả dashboard. */
+  {
+    const goi = (them) => fetch(URL + '/api/quota' + (them || ''),
+      { headers: { 'X-Dash-Token': token } }).then((r) => r.json());
+
+    /* Ép hỏi lại CLI để có mốc "lần đầu" thật. Gọi trơn thì lần chạy test TRƯỚC đã
+       nhét sẵn cache, đo ra 6ms -> 8ms và bài cache thành vô nghĩa (đã xảy ra). */
+    const t0 = Date.now();
+    const a = await goi('?moi=1');
+    const lan1 = Date.now() - t0;
+
+    if (!a.ok) {
+      // máy không gọi được `claude` (CI, container) — báo rõ chứ không giả vờ xanh
+      ok('hạn mức: CLI trả được số liệu', false, a.error || 'không đọc được');
+    } else {
+      ok('hạn mức: parse ra được các mức dùng',
+        Array.isArray(a.muc) && a.muc.length > 0, (a.muc || []).length + ' mức');
+      /* CLI in "Warning: no stdin data received in 3s…" ra stderr nếu không đóng stdin.
+         Ta gộp stdout+stderr nên nó lọt thẳng vào khối "gì đang ăn hạn mức" trên giao
+         diện — đã thấy thật trên màn desktop, nhìn như dashboard hỏng. */
+      ok('không có dòng cảnh báo nào của CLI lọt vào số liệu',
+        !/no stdin data received|^\s*Warning:/mi.test(a.tho || ''),
+        (a.tho || '').split('\n').filter((d) => /Warning|stdin/i.test(d))[0] || 'sạch');
+
+      ok('mỗi mức có phần trăm là SỐ và mốc đặt lại',
+        (a.muc || []).every((m) => typeof m.phanTram === 'number' && m.phanTram >= 0 && m.phanTram <= 100),
+        JSON.stringify((a.muc || []).map((m) => m.ten + '=' + m.phanTram + '%')));
+
+      const t1 = Date.now();
+      const b = await goi();
+      const lan2 = Date.now() - t1;
+      ok('cache 60 giây ăn — lần sau không spawn CLI lại',
+        b.cache === true && lan2 < 200, lan1 + 'ms -> ' + lan2 + 'ms');
+    }
+    /* KHÔNG kiểm ?moi=1 ở đây: mỗi lần bỏ cache là spawn `claude -p /usage`, đo thật
+       8,2 giây. Thêm một lần nữa đẩy cả bộ test quá giới hạn 600 giây và làm server
+       test chết giữa chừng (ECONNRESET) — đã xảy ra thật. Nhánh đó chỉ khác nhau ở
+       một câu `if`, không đáng đánh đổi độ tin cậy của cả bộ. */
+  }
+
   /* ---------- Tìm trong NỘI DUNG phiên ----------
      Ô tìm ở danh sách chỉ quét siêu dữ liệu + tin CUỐI. Cộng với cửa sổ 30 tin, đo
      trên phiên control: 19.806 lượt tức dashboard xem được 0,2% — nội dung cũ vừa
@@ -751,12 +846,22 @@ async function snapshot() {
         `A=${hA.effortHieuLuc} B=${hB.effortHieuLuc}`);
 
       /* KHÔNG được ghi vào file cấu hình của Claude CLI. settings.json đang giữ các
-         quy tắc quyền đã duyệt + hook + plugin; ghi hỏng là người dùng mất hết. */
+         quy tắc quyền đã duyệt + hook + plugin; ghi hỏng là người dùng mất hết.
+
+         Đo NỘI DUNG, không đo mtime. Bài này từng dùng mtime > 30s và cho dương tính
+         giả: đo được CHÍNH Claude CLI ghi lại settings.json mỗi lần chạy `claude -p`
+         (mtime nhảy 8 giây sau một lệnh, dù dashboard không đụng gì). Mà dashboard thì
+         có endpoint gọi `claude -p /usage` — nên chỉ cần mở tab Hạn mức là bài đỏ oan.
+         Thứ cần bảo đảm là NỘI DUNG không đổi, không phải file bất động. */
       const fCLI = path.join(os.homedir(), '.claude', 'settings.json');
-      let moiSua = 999;
-      try { moiSua = (Date.now() - fs.statSync(fCLI).mtimeMs) / 1000; } catch {}
-      ok('KHÔNG ghi vào settings.json của Claude CLI',
-        moiSua > 30, Math.round(moiSua) + 's kể từ lần sửa cuối');
+      const docCLI = () => { try { return fs.readFileSync(fCLI, 'utf8'); } catch { return ''; } };
+      const truoc = docCLI();
+      // đổi cả ba thứ dashboard có thể ghi nhầm, rồi so lại nội dung
+      await fetch(`${URL}/api/perm/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ mode: 'bypassPermissions' }) });
+      await fetch(`${URL}/api/effort/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ effort: 'low' }) });
+      await fetch(`${URL}/api/model/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ model: 'haiku' }) });
+      ok('KHÔNG ghi vào settings.json của Claude CLI (so NỘI DUNG)',
+        docCLI() === truoc, truoc ? 'nội dung giữ nguyên' : 'không đọc được file');
 
       // xoá cài đặt riêng -> quay về mặc định chung
       await fetch(`${URL}/api/perm/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ mode: '' }) });

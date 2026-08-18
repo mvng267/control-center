@@ -62,7 +62,7 @@ function KhoiChu({ nhan, text, error, lang }: { nhan: string; text: string; erro
   const [copied, setCopied] = useState(false);
   return (
     <div className="mt-1">
-      <div className={cn('mb-1 flex items-center gap-1.5 text-[10px] font-semibold tracking-wide',
+      <div className={cn('mb-1 flex items-center gap-1.5 text-[12px] font-semibold tracking-wide',
         error ? 'text-status-error' : 'text-muted-foreground/70')}>
         {nhan}
         {lang && <span className="text-muted-foreground/50">{lang}</span>}
@@ -74,7 +74,7 @@ function KhoiChu({ nhan, text, error, lang }: { nhan: string; text: string; erro
               setTimeout(() => setCopied(false), 1200);
             }).catch(() => {});
           }}
-          className="ml-auto flex items-center gap-1 text-[10px] font-normal text-muted-foreground/60 hover:text-foreground">
+          className="ml-auto flex items-center gap-1 text-[12px] font-normal text-muted-foreground/60 hover:text-foreground">
           <Copy className="size-3" />{copied ? 'đã chép' : 'chép'}
         </button>
       </div>
@@ -95,14 +95,14 @@ function KhoiDiff({ text }: { text: string }) {
   let mode: 'del' | 'add' | '' = '';
   return (
     <div className="mt-1">
-      <div className="mb-1 text-[10px] font-semibold tracking-wide text-muted-foreground/70">THAY ĐỔI</div>
+      <div className="mb-1 text-[12px] font-semibold tracking-wide text-muted-foreground/70">THAY ĐỔI</div>
       <pre className="max-h-[220px] overflow-auto border-l border-border text-[12px] leading-relaxed md:max-h-[300px]">
         {/* w-max min-w-full: mỗi dòng rộng bằng NỘI DUNG nhưng tối thiểu bằng khung.
             Thiếu nó thì dòng chỉ rộng bằng khung, nên khi cuộn ngang sang phải nền màu
             hết ngay ở mép — dòng thêm/bớt mất màu đúng lúc đang đọc phần dài. */}
         {lines.map((l, i) => {
-          if (l === '--- old') { mode = 'del'; return <div key={i} className="w-max min-w-full px-3 text-[10px] font-semibold text-status-error">Trước</div>; }
-          if (l === '+++ new') { mode = 'add'; return <div key={i} className="w-max min-w-full px-3 text-[10px] font-semibold text-status-ok">Sau</div>; }
+          if (l === '--- old') { mode = 'del'; return <div key={i} className="w-max min-w-full px-3 text-[12px] font-semibold text-status-error">Trước</div>; }
+          if (l === '+++ new') { mode = 'add'; return <div key={i} className="w-max min-w-full px-3 text-[12px] font-semibold text-status-ok">Sau</div>; }
           return (
             <div key={i} className={cn('w-max min-w-full whitespace-pre px-3',
               mode === 'del' && 'bg-status-error/12 text-status-error',
@@ -184,7 +184,7 @@ export function ToolCard({ part, sid, open, onToggle }: {
 
   return (
     <div data-testid="tool-card" data-status={part.status} data-tid={part.id} data-open={open}
-      className="w-full text-[13px] leading-relaxed">
+      className="w-full text-[14px] leading-relaxed">
       <button data-testid="tool-card-head"
         onClick={() => { onToggle(part.id); navigator.vibrate?.(10); }}
         aria-expanded={open}

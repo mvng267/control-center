@@ -509,10 +509,10 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           {/* Hoa Claude cạnh tên: xoay khi đang chạy, đứng yên mờ khi nghỉ. Nhìn một
               cái là biết phiên còn sống hay không, khỏi đọc chữ trạng thái. */}
           <HoaClaude chay={!!(h?.typing || h?.status === 'RUNNING')} />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium" data-testid="chat-title" title={sid}>
+          <span className="min-w-0 flex-1 truncate text-[14px] font-medium" data-testid="chat-title" title={sid}>
             {h?.title || sid.slice(0, 8)}
           </span>
-          <Badge variant="outline" className={cn('shrink-0 text-[10.5px]',
+          <Badge variant="outline" className={cn('shrink-0 text-[12px]',
             h?.status === 'RUNNING' && 'border-status-ok/40 text-status-ok')}>{h?.status || '…'}</Badge>
           {/* Tìm trong phiên — đặt cạnh trạng thái vì đây là thao tác trên CẢ phiên,
               không phải trên lượt đang mở như các nút trong menu ⋯ */}
@@ -540,7 +540,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             đo ở 390px, sau pl-10 chỉ còn ~310px cho 6 mục nên gần như luôn tràn.
             Dùng mask thay vì thêm phần tử gradient — không đẻ thêm DOM, và khi không
             tràn thì phần mờ rơi vào khoảng trống nên không ai thấy. */}
-        <div className="flex min-w-0 items-center gap-x-2.5 overflow-x-auto whitespace-nowrap pl-10 text-[11.5px] text-muted-foreground [mask-image:linear-gradient(to_right,black_calc(100%-20px),transparent)]"
+        <div className="flex min-w-0 items-center gap-x-2.5 overflow-x-auto whitespace-nowrap pl-10 text-[12px] text-muted-foreground [mask-image:linear-gradient(to_right,black_calc(100%-20px),transparent)]"
           style={{ scrollbarWidth: 'none' }}
           data-testid="chat-meta">
           {h?.duAn && (
@@ -556,7 +556,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               báo TRƯỚC khi gõ, không phải sau khi gửi mà không thấy gì xảy ra. */}
           {h?.duAn && !h.duAn.conTonTai && (
             <span data-testid="chat-mat" title="Thư mục gốc đã bị xoá — nhắn vào phiên này sẽ không tới nơi"
-              className="shrink-0 rounded-md bg-status-error/12 px-1.5 py-px text-[10.5px] font-medium text-status-error">
+              className="shrink-0 rounded-md bg-status-error/12 px-1.5 py-px text-[12px] font-medium text-status-error">
               thư mục đã xoá
             </span>
           )}
@@ -603,7 +603,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               onChange={(e) => { setTim(e.target.value); chayTim(e.target.value); }}
               onKeyDown={(e) => { if (e.key === 'Escape') setMoTim(false); }}
               placeholder="Tìm trong phiên này — gõ không dấu cũng được"
-              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/60" />
+              className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/60" />
             {dangTim && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
             <button onClick={() => setMoTim(false)} data-testid="chat-tim-dong"
               className="tap44 shrink-0 px-1 text-muted-foreground hover:text-foreground" aria-label="Đóng tìm kiếm">
@@ -616,19 +616,19 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                 <p className="px-1 py-2 text-[12px] text-muted-foreground">Không thấy gì khớp.</p>
               ) : (
                 <>
-                  <p className="px-1 pb-1 text-[11px] text-muted-foreground" data-testid="chat-tim-so">
+                  <p className="px-1 pb-1 text-[12px] text-muted-foreground" data-testid="chat-tim-so">
                     {ketTim.length} kết quả{ketTim.length >= 50 ? ' (chỉ hiện 50 gần nhất)' : ''}
                   </p>
                   {ketTim.map((k) => (
                     <button key={k.i} onClick={() => toiKetQua(k)} data-testid="chat-tim-ket"
                       className="flex w-full items-start gap-2 rounded-md px-1 py-1.5 text-left transition-colors hover:bg-accent">
-                      <span className={cn('mt-[3px] shrink-0 text-[11px] font-medium',
+                      <span className={cn('mt-[3px] shrink-0 text-[12px] font-medium',
                         k.vai === 'user' ? 'text-primary' : 'text-tool-accent')}>
                         {k.vai === 'user' ? cauHinh.nguoiDung : 'Claude'}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">{k.trich}</span>
                       {/* Cách cuối bao nhiêu tin — biết kết quả nằm sâu tới đâu */}
-                      <span className="mt-[2px] shrink-0 text-[10.5px] tabular-nums text-muted-foreground/60">
+                      <span className="mt-[2px] shrink-0 text-[12px] tabular-nums text-muted-foreground/60">
                         −{k.cuoi}
                       </span>
                     </button>
@@ -685,7 +685,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             <div key={(m.tsDau || m.ts || '') + ':' + (m.role || '')} className="contents"
               data-ts={m.tsDau || m.ts || ''}>
               {showDay && (
-                <div className="my-2 flex items-center gap-2.5 text-[10.5px] text-muted-foreground/70"
+                <div className="my-2 flex items-center gap-2.5 text-[12px] text-muted-foreground/70"
                   data-testid="day-divider">
                   <span className="h-px flex-1 bg-border" />
                   <span className="shrink-0">{dayLabel(m.ts)}</span>
@@ -715,7 +715,11 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                    Chỉ áp cho lượt user: lượt Claude thường cao hơn cả màn hình, dính
                    lại thì che mất phần đang đọc. */
                 className={cn('flex w-full flex-col border-t border-border/50 pt-1.5',
-                  m.role === 'user' && 'sticky top-0 z-10 bg-card')}>
+                  /* Lượt user có NỀN riêng nên phải có đệm riêng: nếu không, chữ dính
+                     sát mép nền — nhìn như khối bị cắt cụt. Đệm ngang âm (-mx-2) rồi
+                     bù lại bằng px-2 để nền rộng hơn cột chữ một chút, mép nền không
+                     cắt đúng vào chữ đầu dòng. */
+                  m.role === 'user' && '-mx-2 sticky top-0 z-10 rounded-lg bg-card px-2 pb-1.5')}>
                 {/* DÒNG TIÊU ĐỀ LƯỢT — vùng bấm gập DUY NHẤT.
                     Không cho bấm cả lượt: bên trong đã có 5 thứ bấm được (thẻ tool,
                     bảng chọn, thẻ kế hoạch, nút chép, dòng ghi chú), bấm cả khối thì
@@ -729,7 +733,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                   const tomTat = parts.find((p) => p.t === 'text') as TextPart | undefined;
                   return (
                     <>
-                      <div className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground/70">
+                      <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground/70">
                         <button type="button" data-testid="luot-gap"
                           onClick={() => toggleLuot(khoa)}
                           title={gap ? 'Mở lượt này' : 'Gập lượt này'}
@@ -762,7 +766,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                           )}
                         </button>
                         {m.sub && (
-                          <span data-testid="msg-sub" className="shrink-0 text-[10px] text-tool-accent">sub</span>
+                          <span data-testid="msg-sub" className="shrink-0 text-[12px] text-tool-accent">sub</span>
                         )}
                         <span className="shrink-0 opacity-45 transition-opacity hover:opacity-100">
                           <CopyTurn parts={parts} />
@@ -811,7 +815,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                        nên không phân biệt được đâu là Claude nói, đâu là nó chạy
                        lệnh — mất đúng thông tin mà ký tự ⏺ sinh ra để mang. */
                     <div key={i} data-testid="bubble" data-role={m.role}
-                      className="flex w-full items-start gap-2 text-[13px] leading-relaxed">
+                      className="flex w-full items-start gap-2 text-[14px] leading-relaxed">
                       <span className={cn('mt-[4px] shrink-0 select-none',
                         m.role === 'user' ? 'text-primary' : 'text-foreground')}>
                         {m.role === 'user'
@@ -839,7 +843,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         {!!h?.nhap && (
           <div data-testid="dang-go" className="flex w-full gap-2">
             <span aria-hidden className="mt-[4px] shrink-0 select-none text-tool-accent"><Circle className="size-2.5 fill-current" /></span>
-            <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+            <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[14px] leading-relaxed">
               {h.nhap}
               <span className="ml-[1px] inline-block h-[13px] w-[7px] translate-y-[2px] animate-pulse bg-foreground/70" />
             </div>
@@ -866,7 +870,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
       )}
 
       {h?.error && (
-        <div className="mx-4 mb-2 shrink-0 rounded-[10px] border border-status-error/30 bg-status-error/[0.08] px-3 py-2 text-[12.5px] text-status-error"
+        <div className="mx-4 mb-2 shrink-0 rounded-[10px] border border-status-error/30 bg-status-error/[0.08] px-3 py-2 text-[14px] text-status-error"
           data-testid="chat-error">{h.error}</div>
       )}
 
@@ -878,7 +882,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           .focus() vào ô nhập mà không nói gì — giờ việc góp ý nằm hẳn trong thẻ, nên
           thay bằng nút cuộn TỚI thẻ đó. */}
       {h?.awaiting && (
-        <div className="mx-4 mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded-[10px] border border-primary/35 bg-primary/10 px-3 py-2 text-[12.5px]"
+        <div className="mx-4 mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded-[10px] border border-primary/35 bg-primary/10 px-3 py-2 text-[14px]"
           data-testid="chat-approve">
           <span className="min-w-0 flex-1">Claude đã trình bày kế hoạch và đang chờ duyệt.</span>
           <Button size="sm" className="h-[34px]" onClick={() => approve()}>
@@ -909,7 +913,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           {/* Dấu nhắc trước ô gõ, đúng như dòng nhập của Claude CLI — và ĐỔI theo chế
               độ: "!" chạy bash, "#" ghi nhớ, còn lại là ">" nhắn cho Claude. */}
           <span aria-hidden data-testid="prompt-sign"
-            className={cn('shrink-0 select-none font-mono text-[15px]',
+            className={cn('shrink-0 select-none font-mono text-[14px]',
               docChe(text) === 'bash' ? 'text-tool-accent'
                 : docChe(text) === 'nho' ? 'text-primary' : 'text-primary')}>
             {docChe(text) === 'bash' ? '!' : docChe(text) === 'nho' ? '#' : '❯'}
@@ -1016,7 +1020,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               là có rồi vuốt đi tìm. Một nút mở sheet thì mọi chức năng đều nhìn thấy
               cùng lúc, kèm mô tả, và ngón cái với tới được ngay đáy màn. */}
           <button type="button" data-testid="mo-chuc-nang" onClick={() => setSheet(true)}
-            className="tap44 inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95 sm:hidden">
+            className="tap44 inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95 sm:hidden">
             <Plus className="size-3.5 opacity-70" />
             Chức năng
           </button>
@@ -1027,20 +1031,35 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             {CHUC_NANG.map(({ k, nhan, Icon }) => (
               <button key={k} type="button" data-testid={'goi-y-' + nhan}
                 onClick={() => chen(k)}
-                className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95">
-                <Icon className="size-3 opacity-70" />
+                className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 font-mono text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95">
+                {/* CHỈ ký tự, KHÔNG kèm icon vector. Trước đây nút có cả hai — icon
+                    Terminal/Zap/Brain lẫn ký tự `/ ! #` — hai dấu hiệu cho cùng một
+                    thứ, mà ký tự mới là cái thật sự được chèn vào ô nhập. Icon chỉ
+                    làm nút chật thêm và rối mắt trên 390px. */}
                 <b className="font-semibold text-foreground/80">{k}</b>
                 {/* Giữ nhãn ở MỌI bề rộng: chỉ mỗi ký tự `#` thì không ai đoán ra
                     nó làm gì. Hàng này cuộn ngang được nên chật cũng không vỡ. */}
                 <span className="font-sans">{nhan}</span>
               </button>
             ))}
-            {/* Nút ảnh rời khỏi hàng 1 (hàng 1 chỉ để nhắn tin) về đây */}
-            <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])} />
+            {/* Nút ảnh rời khỏi hàng 1 (hàng 1 chỉ để nhắn tin) về đây.
+                Tự vẽ qua `render` để GIỐNG HỆT các nút bên cạnh: cùng viền, cùng nền,
+                cùng cỡ chữ, cùng có nhãn. Nút mặc định là nút icon tròn cao 44px không
+                viền — đứng cạnh mấy nút có viền thì lạc hẳn ra. */}
+            <AttachButton onAttach={(a) => setAtt((xs) => [...xs, a])}
+              render={(moChon, busy) => (
+                <button type="button" onClick={moChon} disabled={busy} data-testid="goi-y-anh"
+                  className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95 disabled:opacity-60">
+                  {busy
+                    ? <Loader2 className="size-3 animate-spin" />
+                    : <ImagePlus className="size-3 opacity-70" />}
+                  ảnh
+                </button>
+              )} />
             {/* Xem file: KHÁC nút `@file` bên cạnh — `@` chèn đường dẫn vào tin nhắn
                 cho Claude đọc, nút này mở panel để CHÍNH MÌNH đọc mã. */}
             <button type="button" data-testid="goi-y-xem-file" onClick={() => setMoFile(true)}
-              className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95">
+              className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95">
               <FolderTree className="size-3 opacity-70" />
               xem file
             </button>
@@ -1054,7 +1073,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               lại là thứ cần liếc thấy ngay khi đang nhắn. Mức nghĩ chuyển vào menu ⋯,
               vẫn đổi được, chỉ không chiếm chỗ hàng chính.
               Cả hai nhận `sid` nên chỉ đổi cho ĐÚNG phiên này. */}
-          <div className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground/70">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-[12px] text-muted-foreground/70">
             <PermSwitch perm={h?.permHieuLuc} compact testid="chat-perm" sid={sid} />
             {/* `model` (đặt riêng cho phiên) chứ KHÔNG phải `modelDaChay`: cái sau là
                 tên đầy đủ đọc từ .jsonl ("claude-opus-5", "kr/claude-sonnet-4.5") —
@@ -1104,7 +1123,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             </Button>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[14px] font-semibold">Soạn tin nhắn</span>
-              <span className="block truncate text-[11px] text-muted-foreground" data-testid="soan-dem">
+              <span className="block truncate text-[12px] text-muted-foreground" data-testid="soan-dem">
                 {text.length.toLocaleString('vi-VN')} ký tự · {text.split('\n').length} dòng
               </span>
             </span>

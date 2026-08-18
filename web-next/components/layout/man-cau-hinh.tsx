@@ -52,11 +52,11 @@ export function ManCauHinh({ onDong }: { onDong: () => void }) {
               {chuDau(c.nguoiDung)}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13.5px] font-medium" data-testid="cau-hinh-ten">
+              <span className="block truncate text-[14px] font-medium" data-testid="cau-hinh-ten">
                 {c.nguoiDung}
               </span>
               {/* Nói rõ tên này ở đâu ra, không thì người dùng đi tìm chỗ đổi trong app */}
-              <span className="block text-[11px] text-muted-foreground">
+              <span className="block text-[12px] text-muted-foreground">
                 lấy từ tài khoản máy — đổi bằng biến <code className="font-mono">DASH_USER</code>
               </span>
             </span>
@@ -78,10 +78,10 @@ export function ManCauHinh({ onDong }: { onDong: () => void }) {
                     batBuoc ? 'cursor-default opacity-70' : 'cursor-pointer')}>
                   <Icon className="size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium">{label}</span>
+                    <span className="block truncate text-[14px] font-medium">{label}</span>
                     {/* Máy không có công cụ thì nói thẳng, đừng để người dùng bật lên
                         rồi mở ra thấy lỗi và tưởng dashboard hỏng. */}
-                    <span className="block truncate text-[11px] text-muted-foreground">
+                    <span className="block truncate text-[12px] text-muted-foreground">
                       {batBuoc ? 'luôn bật — đây là màn chính'
                         : co ? 'có sẵn trên máy này'
                           : 'không tìm thấy công cụ này trên máy'}
@@ -97,7 +97,7 @@ export function ManCauHinh({ onDong }: { onDong: () => void }) {
               );
             })}
           </div>
-          <p className="px-0.5 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="px-0.5 text-[12px] leading-relaxed text-muted-foreground">
             Tắt tab nào thì nó biến khỏi thanh bên và thanh tab dưới. Bật lại lúc nào cũng được.
           </p>
         </section>

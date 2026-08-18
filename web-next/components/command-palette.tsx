@@ -86,7 +86,7 @@ export function CommandPalette({
               className="h-11 rounded-none border-0 border-b border-border text-[16px] focus-visible:ring-0 md:text-[14px]" />
         <CommandList data-testid="palette-list" className="max-h-[60dvh]">
           {!nMatch && !isRaw && (
-            <div className="py-6 text-center text-[13px] text-muted-foreground">Không tìm thấy lệnh nào.</div>
+            <div className="py-6 text-center text-[14px] text-muted-foreground">Không tìm thấy lệnh nào.</div>
           )}
 
           {isRaw && (
@@ -94,7 +94,7 @@ export function CommandPalette({
               <CommandItem value={raw} onSelect={runRaw} data-testid="palette-raw">
                 <Terminal className="size-4 text-tool-accent" />
                 <span className="font-mono">{raw}</span>
-                <span className="ml-auto text-[11px] text-muted-foreground">Enter để chạy</span>
+                <span className="ml-auto text-[12px] text-muted-foreground">Enter để chạy</span>
               </CommandItem>
             </CommandGroup>
           )}
@@ -105,10 +105,10 @@ export function CommandPalette({
               {COMMANDS.filter((c) => c.group === g && match(c)).map((c) => (
                 <CommandItem key={c.id} value={c.label + ' ' + c.desc} onSelect={() => run(c)}
                   data-testid="palette-item" data-cmd={c.id}>
-                  <span className="font-mono text-[13px]">{c.label}</span>
+                  <span className="font-mono text-[14px]">{c.label}</span>
                   <span className="ml-2 truncate text-[12px] text-muted-foreground">{c.desc}</span>
                   {c.needSession && !sid && (
-                    <span className="ml-auto shrink-0 text-[10.5px] text-muted-foreground">cần mở phiên</span>
+                    <span className="ml-auto shrink-0 text-[12px] text-muted-foreground">cần mở phiên</span>
                   )}
                 </CommandItem>
               ))}
@@ -121,7 +121,7 @@ export function CommandPalette({
 
       {running && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-background/60 backdrop-blur-sm">
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-[13px]">
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-[14px]">
             <Loader2 className="size-4 animate-spin text-primary" /> Đang chạy…
           </div>
         </div>
@@ -139,7 +139,7 @@ export function CommandPalette({
               có sẵn chức năng tương đương trong nhóm “Dashboard”.
             </p>
           )}
-          <pre className="max-h-[56dvh] overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background/60 p-3 font-mono text-[12.5px] leading-relaxed">
+          <pre className="max-h-[56dvh] overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background/60 p-3 font-mono text-[14px] leading-relaxed">
             {result?.body}
           </pre>
         </DialogContent>

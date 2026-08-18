@@ -2,16 +2,17 @@
 
 import {
   Terminal, MessageSquare, Settings2, PieChart, Sun, Moon,
-  ChevronRight, MoreHorizontal, Lock, ShieldPlus, Container,
+  ChevronRight, MoreHorizontal, Lock, ShieldPlus, Container, Gauge,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { NotifyToggle } from '@/components/notify-toggle';
 import { useCauHinh, chuDau } from '@/lib/use-cauhinh';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-export type TabId = 'cli' | 'hermes' | 'agy' | 'docker' | 'stats';
+export type TabId = 'cli' | 'hermes' | 'agy' | 'docker' | 'stats' | 'quota';
 
 export const TABS: { id: TabId; label: string; short: string; icon: typeof Terminal }[] = [
   { id: 'cli', label: 'Claude', short: 'CLAUDE', icon: Terminal },
@@ -19,7 +20,53 @@ export const TABS: { id: TabId; label: string; short: string; icon: typeof Termi
   { id: 'agy', label: 'Agy Proxy', short: 'AGY', icon: Settings2 },
   { id: 'docker', label: 'Docker', short: 'DOCKER', icon: Container },
   { id: 'stats', label: 'Thống kê', short: 'STATS', icon: PieChart },
+  // Hạn mức xếp cuối: thứ liếc thỉnh thoảng, không phải chỗ làm việc hằng ngày.
+  // `short` hiện ở thanh tab dưới trên điện thoại — giữ tiếng Việt cho đồng bộ.
+  { id: 'quota', label: 'Hạn mức', short: 'HẠN MỨC', icon: Gauge },
 ];
+
+/* Chip hạn mức tuần ở header — liếc là thấy, bấm mở tab đầy đủ.
+
+   Chỉ hiện khi ĐÃ ĐỌC ĐƯỢC số: `/usage` phải spawn `claude -p` (đo thật 8,4 giây) nên
+   lần đầu vào trang chưa có gì. Hiện ô xám chờ sẵn thì header nhấp nháy mỗi lần tải —
+   thà không có gì rồi xuất hiện một lần.
+
+   GỌI ĐÚNG MỘT LẦN mỗi lần mở trang, KHÔNG hẹn giờ lặp. Bản đầu tự làm mới mỗi 5 phút
+   và đó là sai lầm tốn kém: mỗi lần server bỏ cache là `claude -p /usage` chạy thật,
+   mà CLI tạo hẳn một file .jsonl MỚI cho mỗi lần gọi. Đếm được 183 phiên rác chỉ từ
+   lệnh này — danh sách phiên của Vinh 70% là rác do chính dashboard đẻ ra.
+   Muốn số mới thì mở tab Hạn mức bấm Làm mới; hạn mức nhích theo giờ, không cần theo dõi
+   từng phút. */
+function ChipQuota({ onMo }: { onMo: () => void }) {
+  const [p, setP] = useState<number | null>(null);
+
+  useEffect(() => {
+    let song = true;
+    api<{ ok: boolean; muc?: { ten: string; phanTram: number }[] }>('/api/quota')
+      .then((q) => {
+        if (!song || !q.ok) return;
+        // ưu tiên mức TUẦN (all models): phiên hết thì chờ vài giờ, tuần hết mới là chặn thật
+        const tuan = (q.muc || []).find((m) => /all models/i.test(m.ten)) || (q.muc || [])[0];
+        if (tuan) setP(tuan.phanTram);
+      })
+      .catch(() => {});
+    return () => { song = false; };
+  }, []);
+
+  if (p === null) return null;
+  return (
+    <button onClick={onMo} data-testid="chip-quota"
+      title={'Hạn mức tuần đã dùng ' + p + '% — bấm để xem chi tiết'}
+      aria-label={'Hạn mức tuần ' + p + '%'}
+      className={cn('tap44 flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[12px] font-medium tabular-nums transition-colors',
+        p >= 90 ? 'bg-status-error/15 text-status-error'
+          : p >= 75 ? 'bg-status-run/15 text-status-run'
+            : 'bg-muted text-muted-foreground hover:text-foreground')}>
+      <Gauge className="size-3.5 shrink-0" />
+      {p}%
+    </button>
+  );
+}
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -73,7 +120,7 @@ export function AppShell({
         <div className="flex items-center gap-2.5 px-4 py-3.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icon-192.png" alt="" width={28} height={28} className="size-7 shrink-0 rounded-lg" />
-          <span className="flex-1 truncate text-[15px] font-semibold tracking-tight">Control</span>
+          <span className="flex-1 truncate text-[14px] font-semibold tracking-tight">Control</span>
           <MoreHorizontal className="size-4 shrink-0 text-muted-foreground" />
         </div>
 
@@ -90,7 +137,7 @@ export function AppShell({
               <Icon className="size-4 shrink-0" />
               <span className="flex-1 truncate">{label}</span>
               {!!badges?.[id] && (
-                <span className="shrink-0 rounded-md bg-muted px-1.5 text-[11px] font-medium tabular-nums">
+                <span className="shrink-0 rounded-md bg-muted px-1.5 text-[12px] font-medium tabular-nums">
                   {badges[id]! > 99 ? '99+' : badges[id]}
                 </span>
               )}
@@ -133,10 +180,10 @@ export function AppShell({
         <button onClick={onCauHinh} data-testid="mo-cau-hinh"
           title="Cấu hình dashboard"
           className="m-2.5 mt-0 flex items-center gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2 text-left transition-colors hover:bg-sidebar-accent/60">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[12px] font-semibold text-primary">
             {chuDau(cauHinh.nguoiDung)}
           </span>
-          <span className="flex-1 truncate text-[13px] font-medium">{cauHinh.nguoiDung}</span>
+          <span className="flex-1 truncate text-[14px] font-medium">{cauHinh.nguoiDung}</span>
           <MoreHorizontal className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </aside>
@@ -161,13 +208,16 @@ export function AppShell({
             <span className="truncate font-medium">{crumb || active?.label}</span>
           </nav>
           <div className="ml-auto flex items-center gap-1">
+            {/* Hạn mức tuần — thấy ngay không phải chuyển tab. Hết hạn mức là thứ CHẶN
+                việc, mà trước đây chỉ biết khi Claude đột ngột trả lỗi giữa lượt. */}
+            {cauHinh.tabBat.quota !== false && <ChipQuota onMo={() => onTab('quota')} />}
             <NotifyToggle />
             <ThemeToggle />
             {/* Điện thoại: đây là lối DUY NHẤT vào màn cấu hình — sidebar (nơi có ô
                 tên bấm được) chỉ hiện từ md trở lên. Trước đây chỉ là chữ "V" chết. */}
             <button onClick={onCauHinh} data-testid="mo-cau-hinh-mobile"
               title="Cấu hình" aria-label="Cấu hình"
-              className="tap44 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary md:hidden">
+              className="tap44 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[12px] font-semibold text-primary md:hidden">
               {chuDau(cauHinh.nguoiDung)}
             </button>
           </div>
@@ -185,13 +235,13 @@ export function AppShell({
           {tabsHien.map(({ id, short, icon: Icon }) => (
             <button key={id} onClick={() => onTab(id)} data-testid={`tabbar-${id}`} data-active={tab === id}
               className={cn(
-                'relative flex min-h-[58px] flex-1 flex-col items-center justify-center gap-1 text-[10px] transition-colors',
+                'relative flex min-h-[58px] flex-1 flex-col items-center justify-center gap-1 text-[12px] transition-colors',
                 tab === id ? 'text-primary' : 'text-muted-foreground',
               )}>
               <Icon className="size-[18px]" />
               <span className="font-medium tracking-wide">{short}</span>
               {!!badges?.[id] && (
-                <span className="absolute right-[22%] top-2 rounded-full bg-destructive px-1.5 text-[9px] font-semibold text-white">
+                <span className="absolute right-[22%] top-2 rounded-full bg-destructive px-1.5 text-[12px] font-semibold text-white">
                   {badges[id]! > 99 ? '99+' : badges[id]}
                 </span>
               )}

@@ -40,7 +40,7 @@ export function PlanCard({
   const tieuDe = (ke.match(/^#\s+(.+)$/m) || [, ''])[1].trim();
 
   return (
-    <div data-testid="plan-card" data-open={mo} className="w-full text-[13px] leading-relaxed">
+    <div data-testid="plan-card" data-open={mo} className="w-full text-[14px] leading-relaxed">
       <button onClick={() => dai && setMo((v) => !v)} data-testid="plan-toggle"
         disabled={!dai}
         className={cn('flex w-full items-start gap-2 text-left',
@@ -50,9 +50,9 @@ export function PlanCard({
           <span className="font-medium text-tool-accent">Kế hoạch</span>
           {tieuDe && <span className="text-muted-foreground">({tieuDe})</span>}
         </span>
-        {daDuyet && <span className="shrink-0 text-[11px] text-status-ok">đã duyệt</span>}
+        {daDuyet && <span className="shrink-0 text-[12px] text-status-ok">đã duyệt</span>}
         {dai && (
-          <span className="shrink-0 select-none text-[11px] text-muted-foreground/60">
+          <span className="shrink-0 select-none text-[12px] text-muted-foreground/60">
             {mo ? '−' : '+'}
           </span>
         )}
@@ -81,7 +81,7 @@ export function PlanCard({
         <div className="ml-[18px] mt-2 flex flex-col gap-2 pl-3">
           <div className="flex flex-wrap items-center gap-2">
             <button onClick={() => onDuyet(gopY.trim())} data-testid="plan-approve"
-              className="tap44 flex items-center gap-1.5 rounded-[8px] bg-primary px-3 py-1.5 text-[12.5px] font-medium text-primary-foreground">
+              className="tap44 flex items-center gap-1.5 rounded-[8px] bg-primary px-3 py-1.5 text-[14px] font-medium text-primary-foreground">
               <Check className="size-3.5" /> Duyệt &amp; làm
             </button>
 
@@ -91,7 +91,7 @@ export function PlanCard({
                 không nói ra. Giờ mở hẳn ô soạn ngay tại đây, có nhãn rõ. */}
             <button onClick={() => setMoGopY((v) => !v)} data-testid="plan-edit"
               data-open={moGopY}
-              className={cn('tap44 flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12.5px]',
+              className={cn('tap44 flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[14px]',
                 moGopY ? 'border-primary text-primary' : 'border-border')}>
               <Pencil className="size-3.5" /> Góp ý
             </button>
@@ -101,12 +101,12 @@ export function PlanCard({
                 hiện ra dạng chữ thô không xuống dòng, không tiêu đề. */}
             {keFile && (
               <button onClick={() => setMoDayDu(true)} data-testid="plan-file"
-                className="tap44 flex items-center gap-1.5 rounded-[8px] border border-border px-3 py-1.5 text-[12.5px]">
+                className="tap44 flex items-center gap-1.5 rounded-[8px] border border-border px-3 py-1.5 text-[14px]">
                 <FileText className="size-3.5" /> Xem đầy đủ
               </button>
             )}
             {!moGopY && (
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-[12px] text-muted-foreground">
                 Duyệt sẽ cho Claude tự sửa file ở lượt này
               </span>
             )}
@@ -117,8 +117,8 @@ export function PlanCard({
               <textarea value={gopY} onChange={(e) => setGopY(e.target.value)} autoFocus
                 data-testid="plan-note" rows={3}
                 placeholder="Viết thêm ý rồi bấm Duyệt — Claude sẽ làm theo kế hoạch kèm lưu ý này…"
-                className="w-full resize-y rounded-[8px] border border-border bg-card px-2.5 py-2 text-[16px] outline-none focus:border-primary md:text-[13px]" />
-              <span className="text-[11px] text-muted-foreground">
+                className="w-full resize-y rounded-[8px] border border-border bg-card px-2.5 py-2 text-[16px] outline-none focus:border-primary md:text-[14px]" />
+              <span className="text-[12px] text-muted-foreground">
                 Để trống cũng được — khi đó Claude làm đúng kế hoạch đã trình bày.
               </span>
             </div>
@@ -134,10 +134,10 @@ export function PlanCard({
             style={{ paddingTop: 'calc(8px + env(safe-area-inset-top))' }}>
             <FileText className="size-4 shrink-0 text-tool-accent" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-semibold">
+              <span className="block truncate text-[14px] font-semibold">
                 {tieuDe || 'Kế hoạch'}
               </span>
-              <span className="block truncate text-[11px] text-muted-foreground">
+              <span className="block truncate text-[12px] text-muted-foreground">
                 {soDong} dòng{keFile ? ` · ${keFile.split('/').pop()}` : ''}
               </span>
             </span>

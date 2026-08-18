@@ -78,7 +78,7 @@ export function AgyReport() {
 
   const header = (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-[13px] font-semibold">Báo cáo lưu lượng</span>
+      <span className="text-[14px] font-semibold">Báo cáo lưu lượng</span>
       <Segmented items={RANGES} value={range} onChange={setRange} testid="agy-range" size="sm" />
       <Button variant="outline" size="sm" className="tap44 ml-auto h-8 text-[12px]"
         data-testid="agy-csv" title="Tải toàn bộ request dạng CSV"
@@ -90,14 +90,14 @@ export function AgyReport() {
 
   if (dangTai && !r) {
     return <Card className="gap-0 p-4" data-testid="agy-report">{header}
-      <p className="py-8 text-center text-[13px] text-muted-foreground">Đang tải báo cáo…</p></Card>;
+      <p className="py-8 text-center text-[14px] text-muted-foreground">Đang tải báo cáo…</p></Card>;
   }
 
   if (!r?.ok) {
     return (
       <Card className="gap-0 p-4" data-testid="agy-report">
         {header}
-        <p className="mt-3 rounded-[10px] border border-amber-500/25 bg-amber-500/[0.08] px-3 py-2.5 text-[12.5px] leading-relaxed text-amber-500">
+        <p className="mt-3 rounded-[10px] border border-amber-500/25 bg-amber-500/[0.08] px-3 py-2.5 text-[14px] leading-relaxed text-amber-500">
           Không lấy được báo cáo từ agy-proxy: {r?.error || 'lỗi không rõ'}.
           Phần trạng thái và lưu lượng 24 giờ ở trên vẫn đọc được từ dữ liệu dự phòng.
         </p>
@@ -151,7 +151,7 @@ export function AgyReport() {
         <div className="flex items-start gap-2 rounded-[10px] border border-status-error/30 bg-status-error/[0.07] px-3 py-2.5"
           data-testid="rp-canhbao">
           <TriangleAlert className="mt-[2px] size-4 shrink-0 text-status-error" />
-          <p className="text-[12.5px] leading-relaxed text-status-error">
+          <p className="text-[14px] leading-relaxed text-status-error">
             Chỉ <b>{okRate}%</b> request thành công — phần lớn lượt gọi bị lỗi. Thường do
             account hết hạn mức hoặc bị nhà cung cấp chặn tốc độ. Xem bảng tài khoản bên
             dưới, hoặc bấm <b>Gỡ cooldown</b> ở phần điều khiển.
@@ -160,7 +160,7 @@ export function AgyReport() {
       )}
 
       <Card className="gap-0 p-4">
-        <div className="mb-1 text-[13px] font-semibold">Request theo ngày</div>
+        <div className="mb-1 text-[14px] font-semibold">Request theo ngày</div>
         <div className="mb-3 text-[12px] text-muted-foreground">
           {range === '7d' ? '7 ngày' : range === '30d' ? '30 ngày' : '90 ngày'} gần nhất
         </div>
@@ -196,14 +196,14 @@ export function AgyReport() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="gap-0 p-4">
-          <div className="mb-1 text-[13px] font-semibold">Model dùng nhiều nhất</div>
+          <div className="mb-1 text-[14px] font-semibold">Model dùng nhiều nhất</div>
           <div className="mb-2 text-[12px] text-muted-foreground">{u.byModel.length} model</div>
           <RankList mono testid="rp-model"
             rows={u.byModel.map((m) => ({ label: m.model, value: m.requests }))} />
         </Card>
 
         <Card className="gap-0 p-4">
-          <div className="mb-1 text-[13px] font-semibold">Theo API key</div>
+          <div className="mb-1 text-[14px] font-semibold">Theo API key</div>
           <div className="mb-3 text-[12px] text-muted-foreground">Ai đang gọi nhiều</div>
           <DonutCard testid="rp-key" tongLabel="Request"
             data={u.byApiKey.map((k) => ({ name: k.name || k.apiKeyId, value: k.requests }))} />
@@ -211,7 +211,7 @@ export function AgyReport() {
       </div>
 
       <Card className="gap-0 p-4">
-        <div className="mb-1 text-[13px] font-semibold">Account dùng nhiều nhất</div>
+        <div className="mb-1 text-[14px] font-semibold">Account dùng nhiều nhất</div>
         <div className="mb-2 text-[12px] text-muted-foreground">
           {u.byAccount.length} account có lưu lượng
         </div>
@@ -252,7 +252,7 @@ function QuotaHistory({ range }: { range: Range }) {
   if (hong) {
     return (
       <Card className="gap-0 p-4" data-testid="agy-quota-history">
-        <div className="mb-1 text-[13px] font-semibold">Hạn mức còn lại</div>
+        <div className="mb-1 text-[14px] font-semibold">Hạn mức còn lại</div>
         <p className="text-[12px] text-muted-foreground">Không lấy được: {hong}</p>
       </Card>
     );
@@ -260,8 +260,8 @@ function QuotaHistory({ range }: { range: Range }) {
   if (!diem) {
     return (
       <Card className="gap-0 p-4" data-testid="agy-quota-history">
-        <div className="mb-1 text-[13px] font-semibold">Hạn mức còn lại</div>
-        <p className="py-6 text-center text-[12.5px] text-muted-foreground">Đang tải…</p>
+        <div className="mb-1 text-[14px] font-semibold">Hạn mức còn lại</div>
+        <p className="py-6 text-center text-[14px] text-muted-foreground">Đang tải…</p>
       </Card>
     );
   }
@@ -272,9 +272,9 @@ function QuotaHistory({ range }: { range: Range }) {
   return (
     <Card className="gap-0 p-4" data-testid="agy-quota-history">
       <div className="mb-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-[13px] font-semibold">Hạn mức còn lại</span>
+        <span className="text-[14px] font-semibold">Hạn mức còn lại</span>
         {cuoi && (
-          <span className="text-[11.5px] text-muted-foreground">
+          <span className="text-[12px] text-muted-foreground">
             mới nhất — Gemini <b className="tabular-nums text-foreground">{cuoi.gemini}%</b>,
             bên thứ ba <b className="tabular-nums text-foreground">{cuoi.third}%</b>
           </span>
@@ -285,7 +285,7 @@ function QuotaHistory({ range }: { range: Range }) {
       </div>
       {/* Chú giải màu: hai đường mà không có chú giải thì nhìn ảnh không biết đường
           nào là nhóm nào — phải rê chuột lên tooltip mới đoán ra. */}
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground">
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <i className="h-[3px] w-4 rounded-full bg-primary" /> Gemini
         </span>
@@ -295,7 +295,7 @@ function QuotaHistory({ range }: { range: Range }) {
       </div>
 
       {!diem.length ? (
-        <p className="py-6 text-center text-[12.5px] text-muted-foreground">Chưa có dữ liệu</p>
+        <p className="py-6 text-center text-[14px] text-muted-foreground">Chưa có dữ liệu</p>
       ) : (
         <div className="h-[200px] w-full">
           <ResponsiveContainer width="100%" height="100%">

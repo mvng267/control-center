@@ -48,7 +48,7 @@ export function AnhPhien({ sid, onClose }: { sid: string; onClose: () => void })
             <Images className="size-4" />
             Ảnh trong phiên
             {!!anh?.length && (
-              <span className="rounded bg-muted px-1.5 py-px text-[11px] font-normal text-muted-foreground">
+              <span className="rounded bg-muted px-1.5 py-px text-[12px] font-normal text-muted-foreground">
                 {anh.length}
               </span>
             )}
@@ -56,13 +56,13 @@ export function AnhPhien({ sid, onClose }: { sid: string; onClose: () => void })
         </DialogHeader>
 
         {hong ? (
-          <p className="py-8 text-center text-[13px] text-status-error">{hong}</p>
+          <p className="py-8 text-center text-[14px] text-status-error">{hong}</p>
         ) : anh === null ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 py-10 text-[14px] text-muted-foreground">
             <Loader2 className="size-4 animate-spin text-primary" /> Đang quét cả phiên…
           </div>
         ) : !anh.length ? (
-          <p className="py-8 text-center text-[13px] text-muted-foreground" data-testid="anh-trong">
+          <p className="py-8 text-center text-[14px] text-muted-foreground" data-testid="anh-trong">
             Phiên này chưa có ảnh nào
           </p>
         ) : (
@@ -87,7 +87,7 @@ export function AnhPhien({ sid, onClose }: { sid: string; onClose: () => void })
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={src} alt="" loading="lazy"
                     className="h-[104px] w-full bg-background/40 object-cover" />
-                  <span className="flex items-center gap-1.5 px-2 py-1 text-[10.5px] text-muted-foreground">
+                  <span className="flex items-center gap-1.5 px-2 py-1 text-[12px] text-muted-foreground">
                     <span className="tabular-nums">{gonByte(a.bytes)}</span>
                     <span className="ml-auto shrink-0 tabular-nums">{gioNgan(a.ts)}</span>
                   </span>

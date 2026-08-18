@@ -212,6 +212,43 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 
 ---
 
+## Agent con, xem lại phiên dài, hạn mức
+
+Nhóm này sinh ra từ một câu hỏi đo được: dashboard chỉ hiện **30 tin cuối**, mà phiên
+`control` có **19.806 lượt** — tức xem được **0,2 %** nội dung. Muốn đọc lại điều đã bàn
+100 lượt trước thì phải tải cả file `.md` về đọc ngoài app.
+
+| # | Tính năng | Cách kiểm | Test |
+|---|---|---|---|
+| 182 | Đếm **agent con đang chạy** trên thẻ phiên | chip `N agent` ở dòng số liệu, hover ra tên | du-an |
+| 183 | Danh sách agent đầy đủ trong khung chat | mỗi agent một dòng ở dải đang chạy | du-an |
+| 184 | `tool_result` về SỚM không bị tính là xong | đo thật: 83/83 lần gọi Task đều có `tool_result` ngay lúc phóng | du-an |
+| 185 | Trạng thái agent giữ nguyên `failed`/`stopped`/`killed` | không gộp hết thành "xong" — sẽ giấu mất agent chết | du-an |
+| 186 | Agent quá 30 phút chưa báo → đánh dấu **đứt** | ngưỡng = 2× agent lâu nhất từng đo (13,5 phút) | du-an |
+| 187 | **Xem thêm 30 tin trước** (phân trang lịch sử) | `?them=N`, nút ở đầu vùng cuộn | du-an |
+| 188 | **Tìm trong nội dung phiên** | nút kính lúp ở header chat | du-an |
+| 189 | Tìm **không dấu** vẫn ra chữ có dấu | gõ `ke hoach` → ra "kế hoạch" | du-an |
+| 190 | Nhảy tới kết quả nằm **ngoài** cửa sổ 30 | bấm kết quả cách cuối 40 tin | du-an |
+| 191 | Tin nhắn của mình **dính đầu** khi cuộn | cuộn lên giữa phiên dài | ui-new |
+| 192 | Thẻ kế hoạch **ghim trên** dải đang chạy | phiên chờ duyệt — không cuộn mất nút Duyệt | ui-new |
+| 193 | Push tách riêng "**chờ bạn duyệt**" với "đã trả lời xong" | dựng phiên chờ duyệt, xem thông báo trên iPhone | du-an + tay |
+| 194 | Tab **Hạn mức**: 3 thanh + mốc đặt lại | so số với `claude -p /usage` chạy tay | du-an |
+| 195 | Chip % hạn mức tuần ở header | bấm vào mở tab Hạn mức | tay |
+| 196 | Cache 60 giây cho `/usage` | đo thật 11.751ms → 5ms | du-an |
+| 197 | Nút **Khởi động lại ngay** sau khi cập nhật | chỉ chạy khi có systemd; không thì báo lệnh gõ tay | du-an |
+| 198 | Giá trị chế độ khớp CLI thật (`auto`, `dontAsk`, `ultracode`) | đổi rồi giao task thật | du-an |
+| 199 | Thang chữ **3 mức** theo ReUI (12/14/16) | trước có 15 cỡ rời rạc, 37% là nửa pixel | tay |
+| 200 | Thẻ phiên có **hiệu ứng vào** (mờ dần + trồi lên) | đổi bộ lọc — thẻ không thay đột ngột | tay |
+| 201 | Phiên ĐANG CHẠY giữ nhịp thở, không dính hiệu ứng vào | `animate-tho` và `animate-in` cùng dùng `animation`, đè nhau là mất nhịp thở | tay |
+| 202 | Test **hết nhảy kết quả** giữa các lần chạy | `donCong()` giết server cũ còn nghe cổng test | tay |
+| 203 | Lượt của mình dính đầu khung có **đệm riêng** | có nền thì phải có đệm, không chữ dính sát mép | ui-new |
+| 204 | Nút `/lệnh` `@file` `!bash` `#ghi nhớ` **bỏ icon trùng** | ký tự mới là thứ được chèn vào ô nhập, icon chỉ làm chật | ui-new |
+| 205 | Nút **ảnh** giống hệt các nút cùng hàng | trước là nút icon tròn 44px không viền, đứng cạnh thì lạc | ui-new |
+| 206 | Công tắc quyền/model **có viền** như nút bên cạnh | bỏ viền thì trông như chữ rơi vãi, không ra nút | ui-new |
+| 207 | Tab Hạn mức không lẫn **cảnh báo của CLI** | đóng stdin + lọc dòng `Warning:` | du-an |
+
+---
+
 ## Chạy test
 
 ```bash

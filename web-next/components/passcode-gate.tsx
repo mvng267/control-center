@@ -106,7 +106,7 @@ export function PasscodeGate({ daDat, onDone }: { daDat: boolean; onDone: () => 
 
       <div className="text-center">
         <div className="text-[16px] font-semibold">{tieuDe}</div>
-        <div className="mt-1 max-w-[280px] text-[12.5px] leading-relaxed text-muted-foreground">
+        <div className="mt-1 max-w-[280px] text-[14px] leading-relaxed text-muted-foreground">
           {daDat
             ? 'Mã bảo vệ dashboard khỏi người khác cầm máy này.'
             : 'Từ 4 đến 12 chữ số. Quên mã thì xoá file ~/.claude/dashboard-passcode.json để gỡ.'}
@@ -122,7 +122,7 @@ export function PasscodeGate({ daDat, onDone }: { daDat: boolean; onDone: () => 
       </div>
 
       {wait > 0 && (
-        <div className="rounded-lg border border-status-error/30 bg-status-error/[0.08] px-3 py-1.5 text-[12.5px] text-status-error"
+        <div className="rounded-lg border border-status-error/30 bg-status-error/[0.08] px-3 py-1.5 text-[14px] text-status-error"
           data-testid="passcode-wait">
           Sai nhiều lần — chờ {wait} giây
         </div>

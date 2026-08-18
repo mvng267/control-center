@@ -110,10 +110,10 @@ export function XemFile({ sid, onClose }: { sid: string; onClose: () => void }) 
         )}
         <FileText className="size-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold" data-testid="file-title">
+          <span className="block truncate text-[14px] font-semibold" data-testid="file-title">
             {chon || 'File trong dự án'}
           </span>
-          <span className="block truncate text-[11px] text-muted-foreground">
+          <span className="block truncate text-[12px] text-muted-foreground">
             {cay?.root || '…'}
             {tep?.soDong ? ` · ${tep.soDong} dòng · ${co(tep.kichThuoc)}` : ''}
           </span>
@@ -139,7 +139,7 @@ export function XemFile({ sid, onClose }: { sid: string; onClose: () => void }) 
         )}>
           <div className="border-b border-border p-2">
             <Input value={tim} onChange={(e) => setTim(e.target.value)} data-testid="file-search"
-              placeholder="Lọc theo tên file…" className="h-8 text-[16px] md:text-[13px]" />
+              placeholder="Lọc theo tên file…" className="h-8 text-[16px] md:text-[14px]" />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-1" data-testid="file-tree">
             {!cay && <div className="flex items-center gap-2 p-3 text-[12px] text-muted-foreground">
@@ -169,7 +169,7 @@ export function XemFile({ sid, onClose }: { sid: string; onClose: () => void }) 
                     {mo ? <FolderOpen className="size-3.5 shrink-0 text-tool-accent" />
                       : <Folder className="size-3.5 shrink-0 text-muted-foreground" />}
                     <span className="truncate text-[12px] font-medium">{thuMuc || '/'}</span>
-                    <span className="ml-auto shrink-0 text-[10.5px] text-muted-foreground">{ds.length}</span>
+                    <span className="ml-auto shrink-0 text-[12px] text-muted-foreground">{ds.length}</span>
                   </button>
                   {mo && ds.map((f) => (
                     <button key={f} onClick={() => moFile(f)} data-testid="file-item" data-path={f}
@@ -192,25 +192,25 @@ export function XemFile({ sid, onClose }: { sid: string; onClose: () => void }) 
             <Loader2 className="size-3.5 animate-spin" /> Đang mở…
           </div>}
           {!dangTai && !chon && (
-            <p className="p-6 text-[12.5px] text-muted-foreground">Chọn một file bên trái để xem.</p>
+            <p className="p-6 text-[14px] text-muted-foreground">Chọn một file bên trái để xem.</p>
           )}
           {!dangTai && tep?.error && (
-            <p className="p-4 text-[12.5px] text-status-error" data-testid="file-error">{tep.error}</p>
+            <p className="p-4 text-[14px] text-status-error" data-testid="file-error">{tep.error}</p>
           )}
           {!dangTai && tep?.quaLon && (
-            <p className="p-4 text-[12.5px] text-muted-foreground">
+            <p className="p-4 text-[14px] text-muted-foreground">
               File {co(tep.kichThuoc)} — quá lớn để mở trên trình duyệt (trần 512KB).
             </p>
           )}
           {!dangTai && tep?.laNhiPhan && (
-            <p className="p-4 text-[12.5px] text-muted-foreground">
+            <p className="p-4 text-[14px] text-muted-foreground">
               File nhị phân ({co(tep.kichThuoc)}) — không hiển thị được dạng chữ.
             </p>
           )}
           {!dangTai && tep?.noiDung !== undefined && (
             /* Số dòng trong cột riêng có min-width cố định: để chung một chuỗi với nội
                dung thì cuộn ngang làm số dòng trôi mất khỏi màn hình. */
-            <div className="flex font-mono text-[11.5px] leading-[1.55]">
+            <div className="flex font-mono text-[12px] leading-[1.55]">
               <div className="sticky left-0 shrink-0 select-none border-r border-border bg-muted/40 px-2 py-2 text-right text-muted-foreground">
                 {dong.map((_, i) => <div key={i}>{i + 1}</div>)}
               </div>

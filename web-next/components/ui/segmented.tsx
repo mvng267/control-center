@@ -41,7 +41,7 @@ export function Segmented<T extends string>({
             data-testid={testid ? `${testid}-${it.id || 'mac-dinh'}` : undefined} data-active={on}
             className={cn(
               'tap44 shrink-0 rounded-[8px] px-2.5 transition-colors',
-              size === 'sm' ? 'h-[25px] text-[12.5px]' : 'h-[25px] text-[14px]',
+              size === 'sm' ? 'h-[25px] text-[14px]' : 'h-[25px] text-[14px]',
               on
                 ? 'bg-background font-medium text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground',

@@ -190,11 +190,11 @@ export function ChatToolbar({
           <DialogContent className="max-h-[80dvh] max-w-[620px] overflow-hidden" data-testid="summary-dialog">
             <DialogHeader><DialogTitle>Tóm tắt phiên</DialogTitle></DialogHeader>
             {summary ? (
-              <div className="max-h-[60dvh] overflow-auto whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+              <div className="max-h-[60dvh] overflow-auto whitespace-pre-wrap break-words text-[14px] leading-relaxed">
                 {summary}
               </div>
             ) : (
-              <div className="flex items-center gap-2 py-6 text-[13px] text-muted-foreground">
+              <div className="flex items-center gap-2 py-6 text-[14px] text-muted-foreground">
                 <Loader2 className="size-4 animate-spin text-primary" /> Claude đang đọc lại phiên…
               </div>
             )}
@@ -240,7 +240,7 @@ export function ChatToolbar({
             <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus
               onKeyDown={(e) => e.key === 'Enter' && saveName()}
               placeholder="Tên phiên…" className="text-[16px]" data-testid="rename-input" />
-            <p className="text-[11.5px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               Để trống rồi Lưu = quay về tên Claude CLI tự đặt.
             </p>
             <div className="flex justify-end gap-2">
@@ -274,7 +274,7 @@ export function ChatToolbar({
           <DialogContent className="max-w-[380px]" data-testid="cost-dialog">
             <DialogHeader><DialogTitle>Token đã dùng</DialogTitle></DialogHeader>
             {usage?.turns ? (
-              <div className="flex flex-col gap-2 text-[13px]">
+              <div className="flex flex-col gap-2 text-[14px]">
                 {[
                   ['Số lượt', String(usage.turns), false],
                   ['Token gửi đi', short(usage.inTok), false],
@@ -287,12 +287,12 @@ export function ChatToolbar({
                     <span>{k}</span><span className="tabular-nums">{v}</span>
                   </div>
                 ))}
-                <p className="mt-1 border-t border-border pt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                <p className="mt-1 border-t border-border pt-2 text-[12px] leading-relaxed text-muted-foreground">
                   Token đọc từ cache rẻ hơn nhiều so với token gửi mới, nên con số lớn ở dòng đó là bình thường.
                 </p>
               </div>
             ) : (
-              <p className="text-[13px] text-muted-foreground">Phiên này chưa có dữ liệu token.</p>
+              <p className="text-[14px] text-muted-foreground">Phiên này chưa có dữ liệu token.</p>
             )}
           </DialogContent>
         </Dialog>

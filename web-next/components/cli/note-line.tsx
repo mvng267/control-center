@@ -45,7 +45,7 @@ export function NoteLine({ part }: { part: NotePart }) {
 
   if (LA_MOC.has(part.kind)) {
     return (
-      <div className={cn('my-1.5 flex items-center gap-2 text-[11.5px]', tone)}
+      <div className={cn('my-1.5 flex items-center gap-2 text-[12px]', tone)}
         data-testid="note-line" data-kind={part.kind}>
         <span className="h-px flex-1 bg-border" />
         <span className="shrink-0">{part.title}</span>
@@ -55,7 +55,7 @@ export function NoteLine({ part }: { part: NotePart }) {
   }
 
   return (
-    <div data-testid="note-line" data-kind={part.kind} className="text-[13px] leading-relaxed">
+    <div data-testid="note-line" data-kind={part.kind} className="text-[14px] leading-relaxed">
       {/* Thụt cùng mức với dòng ⎿ của tool: hook lỗi sinh ra TỪ một tool cụ thể nên
           nó là con của tool đó. Không thụt thì nó ngang hàng với ⏺ của cả lượt. */}
       <button onClick={() => setOpen((v) => !v)} data-testid="note-toggle"
@@ -76,13 +76,13 @@ export function NoteLine({ part }: { part: NotePart }) {
             mất mức độ nghiêm trọng: "lỗi 1 lần" và "lỗi 2.513 lần" khác hẳn nhau. */}
         {(part.lap || 1) > 1 && (
           <span data-testid="note-lap"
-            className="shrink-0 rounded-md bg-muted px-1.5 text-[10.5px] font-medium tabular-nums text-muted-foreground">
+            className="shrink-0 rounded-md bg-muted px-1.5 text-[12px] font-medium tabular-nums text-muted-foreground">
             {part.lap}×
           </span>
         )}
         {/* "+" trơ trọi không ai đoán ra để làm gì -> nói thẳng bằng chữ */}
         {part.body && (
-          <span className="shrink-0 select-none text-[11px] text-muted-foreground/60">
+          <span className="shrink-0 select-none text-[12px] text-muted-foreground/60">
             {open ? 'thu gọn' : 'chi tiết'}
           </span>
         )}

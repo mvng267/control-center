@@ -76,9 +76,9 @@ export function PostgresPanel() {
       <Card className="gap-0 p-4" data-testid="pg-panel">
         <div className="mb-1 flex items-center gap-2">
           <Database className="size-4 text-muted-foreground" />
-          <span className="text-[13px] font-semibold">PostgreSQL</span>
+          <span className="text-[14px] font-semibold">PostgreSQL</span>
         </div>
-        <p className="py-6 text-center text-[12.5px] text-muted-foreground">Đang kiểm tra…</p>
+        <p className="py-6 text-center text-[14px] text-muted-foreground">Đang kiểm tra…</p>
       </Card>
     );
   }
@@ -88,7 +88,7 @@ export function PostgresPanel() {
       <Card className="gap-0 p-4" data-testid="pg-panel">
         <div className="mb-2 flex items-center gap-2">
           <Database className="size-4 text-muted-foreground" />
-          <span className="text-[13px] font-semibold">PostgreSQL</span>
+          <span className="text-[14px] font-semibold">PostgreSQL</span>
         </div>
         <p className="flex items-start gap-2 rounded-[10px] border border-border bg-muted/40 px-2.5 py-2 text-[12px] leading-relaxed text-muted-foreground"
           data-testid="pg-tat">
@@ -107,16 +107,16 @@ export function PostgresPanel() {
     <Card className="gap-0 p-4" data-testid="pg-panel">
       <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
         <Database className="size-4 text-status-ok" />
-        <span className="text-[13px] font-semibold">PostgreSQL</span>
-        <span className="rounded bg-muted px-1.5 py-px font-mono text-[11px] text-muted-foreground">
+        <span className="text-[14px] font-semibold">PostgreSQL</span>
+        <span className="rounded bg-muted px-1.5 py-px font-mono text-[12px] text-muted-foreground">
           {st.version}
         </span>
-        <span className="ml-auto text-[11.5px] text-muted-foreground">
+        <span className="ml-auto text-[12px] text-muted-foreground">
           chạy {st.uptime} · {tongKetNoi} kết nối
           {dangLam > 0 && <b className="text-foreground"> ({dangLam} đang làm việc)</b>}
         </span>
       </div>
-      <div className="mb-3 truncate font-mono text-[11px] text-muted-foreground">
+      <div className="mb-3 truncate font-mono text-[12px] text-muted-foreground">
         {st.container}
       </div>
 
@@ -161,12 +161,12 @@ export function PostgresPanel() {
         <div className="flex flex-col gap-1.5" data-testid="pg-truyvan">
           {chay.map((q) => (
             <div key={q.pid} className="rounded-[10px] border border-border bg-background/50 px-2.5 py-1.5">
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
                 <span className="font-mono">pid {q.pid}</span>
                 <span className={cn(q.trangThai === 'active' && 'text-status-ok')}>{q.trangThai}</span>
                 <span className="ml-auto tabular-nums">{q.lau}</span>
               </div>
-              <div className="truncate font-mono text-[11.5px]">{q.sql}</div>
+              <div className="truncate font-mono text-[12px]">{q.sql}</div>
             </div>
           ))}
         </div>

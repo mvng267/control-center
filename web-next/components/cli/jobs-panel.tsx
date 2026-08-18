@@ -87,10 +87,10 @@ export function JobsPanel({ jobs, onOpen, moSan }: {
       <button onClick={() => setMo((v) => !v)} data-testid="jobs-toggle"
         className="tap44 flex items-center gap-2 text-left">
         <Timer className="size-4 text-muted-foreground" />
-        <span className="text-[13px] font-semibold">Việc nền</span>
+        <span className="text-[14px] font-semibold">Việc nền</span>
         {jobs.length
-          ? <Badge variant="outline" className="text-[10.5px]">{jobs.length}</Badge>
-          : <span className="text-[11.5px] text-muted-foreground">chưa có</span>}
+          ? <Badge variant="outline" className="text-[12px]">{jobs.length}</Badge>
+          : <span className="text-[12px] text-muted-foreground">chưa có</span>}
         <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', mo && 'rotate-180')} />
       </button>
 
@@ -118,14 +118,14 @@ export function JobsPanel({ jobs, onOpen, moSan }: {
                 ? <Repeat className="size-4 shrink-0 text-primary" />
                 : <CalendarClock className="size-4 shrink-0 text-tool-accent" />}
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px]">{j.prompt}</span>
-                <span className="block truncate text-[11px] text-muted-foreground">
+                <span className="block truncate text-[14px]">{j.prompt}</span>
+                <span className="block truncate text-[12px] text-muted-foreground">
                   {j.kind === 'loop' ? `mỗi ${j.spec}` : cronVi(j.spec)}
                   {j.runs > 0 && ` · đã chạy ${j.runs} lần`}
                 </span>
               </span>
               {j.lastSid && onOpen && (
-                <Button variant="ghost" size="sm" className="tap44 h-7 shrink-0 text-[11.5px]"
+                <Button variant="ghost" size="sm" className="tap44 h-7 shrink-0 text-[12px]"
                   data-testid="job-open" onClick={() => onOpen(j.lastSid!)}>
                   Xem lượt cuối
                 </Button>
@@ -156,15 +156,15 @@ export function JobsPanel({ jobs, onOpen, moSan }: {
             <div className="flex flex-wrap gap-1.5">
               {(dlg === 'loop' ? LOOP_PRESETS.map((v) => ({ label: v, v })) : CRON_PRESETS).map((p) => (
                 <Button key={p.v} size="sm" variant={spec === p.v ? 'default' : 'outline'}
-                  className="tap44 h-7 text-[11.5px]" onClick={() => setSpec(p.v)}>
+                  className="tap44 h-7 text-[12px]" onClick={() => setSpec(p.v)}>
                   {p.label}
                 </Button>
               ))}
             </div>
 
             <Input value={spec} onChange={(e) => setSpec(e.target.value)} data-testid="job-spec"
-              className="font-mono text-[16px] md:text-[13px]" />
-            <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+              className="font-mono text-[16px] md:text-[14px]" />
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
               {dlg === 'loop'
                 ? 'Khoảng cách giữa hai lần chạy: 30s, 5m, 1h… Tối thiểu 30 giây vì mỗi lượt là một tiến trình Claude riêng.'
                 : 'Cron 5 trường: phút giờ ngày tháng thứ. Ví dụ "0 8 * * *" là 8 giờ sáng hằng ngày.'}

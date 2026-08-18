@@ -58,8 +58,13 @@ function chay(nhan, file, env) {
         const dat = m ? (!err && m[1] === m[2]) : !err;
         console.log(`  ${dat ? 'OK  ' : 'HỎNG'}  ${nhan.padEnd(22)} ${ket}`);
         if (!dat) {
-          const cuoi = txt.trim().split('\n').filter((l) => /FAIL|Error|error/.test(l)).slice(0, 4);
-          cuoi.forEach((l) => console.log('        ' + l.slice(0, 110)));
+          /* Bắt cả dòng "waiting for locator(...)" của Playwright: khi bộ test ném
+             TimeoutError, dòng DUY NHẤT nói nó chờ CÁI GÌ lại nằm ở đây. Thiếu nó thì
+             log chỉ có `name: 'TimeoutError'` — phải chạy lại riêng bộ đó mới biết,
+             mà chạy lại thì cổng có thể đã khác nên lỗi không tái hiện. */
+          const cuoi = txt.trim().split('\n')
+            .filter((l) => /FAIL|Error|error|waiting for/.test(l)).slice(0, 5);
+          cuoi.forEach((l) => console.log('        ' + l.trim().slice(0, 110)));
           // Vài bài đòi DỮ LIỆU THẬT phải có sẵn, không phải lỗi code. Nói rõ ra để
           // lần sau không mất công đi tìm bug không tồn tại.
           if (/agy lưu lượng/.test(txt) && /"reqs":"0"/.test(txt)) {
@@ -96,6 +101,29 @@ function donNen() {
       else if (fs.existsSync(f)) fs.writeFileSync(f, JSON.stringify(giaTri, null, 2));
     } catch {}
   }
+
+  /* Phiên GIẢ do test dựng trong ~/.claude/projects. Bộ nào chết giữa chừng là phần
+     dọn ở cuối không chạy, file nằm lại rồi lần sau NỐI THÊM vào — đo thật: fixture
+     e2e còn 4 dòng trong khi bài đòi `total === 3`, nên lần chạy sau đỏ ở
+     "history trả parts có cấu trúc" mà đọc mã thì không thấy sai gì.
+     Chỉ xoá thư mục có tên rõ ràng là của test, KHÔNG quét bừa .claude/projects. */
+  const DU_AN = path.join(HOME, '.claude', 'projects');
+  const RAC = ['-tmp-e2e-tools', '-private-tmp-inc-check', '-private-tmp-agent-check',
+    '-private-tmp-cho-check', '-private-tmp-tim-check', '-private-tmp-lenh-check'];
+  for (const t of RAC) {
+    try { fs.rmSync(path.join(DU_AN, t), { recursive: true, force: true }); } catch {}
+  }
+  /* Thư mục e2e sinh trong scratchpad của phiên Claude: tên có UUID phiên nên không
+     liệt kê cứng được. Khớp theo ĐUÔI "-e2e" và bắt buộc nằm trong scratchpad —
+     đủ hẹp để không đụng dự án thật của người dùng. */
+  try {
+    for (const d of fs.readdirSync(DU_AN)) {
+      if (/scratchpad-e2e$/.test(d) && d.includes('claude-')) {
+        fs.rmSync(path.join(DU_AN, d), { recursive: true, force: true });
+      }
+    }
+  } catch {}
+
   donCong();
 }
 

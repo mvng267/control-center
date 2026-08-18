@@ -123,7 +123,7 @@ export function StatsTab({ sessions: tatCa }: { sessions: Session[] }) {
           <Card className="gap-0 p-4">
             <div className="mb-3">
               <div className="text-[14px] font-semibold">Phiên theo dự án</div>
-              <div className="mt-0.5 text-[11px] font-medium tracking-wide text-muted-foreground">
+              <div className="mt-0.5 text-[12px] font-medium tracking-wide text-muted-foreground">
                 PHÂN BỔ
               </div>
             </div>
@@ -140,7 +140,7 @@ export function StatsTab({ sessions: tatCa }: { sessions: Session[] }) {
             </div>
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
               {d.donut.map((e) => (
-                <span key={e.name} className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                <span key={e.name} className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
                   <i className="block size-2 shrink-0 rounded-full" style={{ background: e.fill }} />
                   {e.name} · {e.value}
                 </span>
@@ -151,7 +151,7 @@ export function StatsTab({ sessions: tatCa }: { sessions: Session[] }) {
           <Card className="gap-0 p-4">
             <div className="mb-3">
               <div className="text-[14px] font-semibold">Tin nhắn theo dự án</div>
-              <div className="mt-0.5 text-[11px] font-medium tracking-wide text-muted-foreground">
+              <div className="mt-0.5 text-[12px] font-medium tracking-wide text-muted-foreground">
                 TOP 6
               </div>
             </div>
@@ -177,7 +177,7 @@ export function StatsTab({ sessions: tatCa }: { sessions: Session[] }) {
           <Card className="gap-0 p-4">
             <div className="mb-3">
               <div className="text-[14px] font-semibold">Hoạt động 7 ngày</div>
-              <div className="mt-0.5 text-[11px] font-medium tracking-wide text-muted-foreground">
+              <div className="mt-0.5 text-[12px] font-medium tracking-wide text-muted-foreground">
                 PHIÊN CHẠM LẦN CUỐI
               </div>
             </div>
@@ -201,7 +201,7 @@ export function StatsTab({ sessions: tatCa }: { sessions: Session[] }) {
           <Card className="gap-0 p-4">
             <div className="mb-3">
               <div className="text-[14px] font-semibold">Phiên gần đây</div>
-              <div className="mt-0.5 text-[11px] font-medium tracking-wide text-muted-foreground">
+              <div className="mt-0.5 text-[12px] font-medium tracking-wide text-muted-foreground">
                 MỚI CẬP NHẬT
               </div>
             </div>
@@ -212,10 +212,10 @@ export function StatsTab({ sessions: tatCa }: { sessions: Session[] }) {
                     s.status === 'RUNNING' ? 'bg-status-ok' : s.status === 'ACTIVE' ? 'bg-primary' : 'bg-status-idle'
                   }`} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px]">{s.title || s.sid.slice(0, 8)}</span>
-                    <span className="block truncate text-[11.5px] text-muted-foreground">{s.duAn?.ten || s.project}</span>
+                    <span className="block truncate text-[14px]">{s.title || s.sid.slice(0, 8)}</span>
+                    <span className="block truncate text-[12px] text-muted-foreground">{s.duAn?.ten || s.project}</span>
                   </span>
-                  <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">{s.msgs} tin</span>
+                  <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">{s.msgs} tin</span>
                 </div>
               ))}
             </div>

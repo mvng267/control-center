@@ -31,7 +31,7 @@ function Pane({ sid, onPick }: { sid: string | null; onPick: () => void }) {
   if (!sid) {
     return (
       <button onClick={onPick} data-testid="cmp-empty"
-        className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border text-[13px] text-muted-foreground transition-colors hover:bg-accent/30">
+        className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border text-[14px] text-muted-foreground transition-colors hover:bg-accent/30">
         <Columns2 className="size-5" />
         Chọn một phiên
       </button>
@@ -43,20 +43,20 @@ function Pane({ sid, onPick }: { sid: string | null; onPick: () => void }) {
       data-testid="cmp-pane" data-sid={sid}>
       <button onClick={onPick}
         className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 text-left transition-colors hover:bg-accent/30">
-        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{h?.title || sid.slice(0, 8)}</span>
-        <span className={cn('shrink-0 text-[10.5px]',
+        <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{h?.title || sid.slice(0, 8)}</span>
+        <span className={cn('shrink-0 text-[12px]',
           h?.status === 'RUNNING' ? 'text-status-ok' : 'text-muted-foreground')}>{h?.status || '…'}</span>
       </button>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
         {(h?.messages || []).map((m, i) => (
           <div key={i} data-testid="cmp-msg" data-role={m.role}
-            className={cn('max-w-full break-words rounded-lg px-2.5 py-1.5 text-[12.5px] leading-relaxed',
+            className={cn('max-w-full break-words rounded-lg px-2.5 py-1.5 text-[14px] leading-relaxed',
               m.role === 'user' ? 'bg-primary/15' : 'bg-card')}>
             {m.role === 'user' ? m.content : <Markdown>{m.content}</Markdown>}
           </div>
         ))}
         {!h?.messages?.length && (
-          <p className="py-6 text-center text-[12.5px] text-muted-foreground">Chưa có nội dung</p>
+          <p className="py-6 text-center text-[14px] text-muted-foreground">Chưa có nội dung</p>
         )}
       </div>
     </div>
@@ -84,7 +84,7 @@ export function CompareView({
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}>
         <Columns2 className="size-4 text-primary" />
-        <span className="flex-1 text-[13px] font-semibold">So sánh 2 phiên</span>
+        <span className="flex-1 text-[14px] font-semibold">So sánh 2 phiên</span>
         <Button variant="ghost" size="icon" className="tap44 size-8" onClick={onClose} data-testid="cmp-close">
           <X className="size-4" />
         </Button>
@@ -101,7 +101,7 @@ export function CompareView({
           data-testid="cmp-picker">
           <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5"
             style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}>
-            <span className="flex-1 text-[13px] font-semibold">
+            <span className="flex-1 text-[14px] font-semibold">
               Chọn phiên cho cột {picking === 'left' ? 'trái' : 'phải'}
             </span>
             <Button variant="ghost" size="icon" className="tap44 size-8" onClick={() => setPicking(null)}>
@@ -113,10 +113,10 @@ export function CompareView({
               <button key={s.sid} onClick={() => pick(s.sid)} data-testid="cmp-option"
                 className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-left transition-colors hover:bg-accent/40">
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px]">{s.title || s.sid.slice(0, 8)}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">{s.project}</span>
+                  <span className="block truncate text-[14px]">{s.title || s.sid.slice(0, 8)}</span>
+                  <span className="block truncate text-[12px] text-muted-foreground">{s.project}</span>
                 </span>
-                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{s.msgs} tin</span>
+                <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">{s.msgs} tin</span>
               </button>
             ))}
           </div>

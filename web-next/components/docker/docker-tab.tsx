@@ -92,7 +92,7 @@ export function DockerTab() {
       <>
         <PageHeader title="Docker" desc="Container đang chạy trên máy này." />
         <div className="px-4 md:px-6">
-          <p className="py-8 text-center text-[13px] text-muted-foreground">Đang tải…</p>
+          <p className="py-8 text-center text-[14px] text-muted-foreground">Đang tải…</p>
         </div>
       </>
     );
@@ -110,7 +110,7 @@ export function DockerTab() {
         <div className="flex flex-col gap-4 px-4 pb-24 md:px-6 md:pb-6">
           <Card className="gap-0 p-6 text-center" data-testid="docker-loi">
             <Container className="mx-auto size-8 text-muted-foreground" />
-            <p className="mt-3 text-[13px] text-muted-foreground">{r.error}</p>
+            <p className="mt-3 text-[14px] text-muted-foreground">{r.error}</p>
           </Card>
           <PostgresPanel />
         </div>
@@ -144,7 +144,7 @@ export function DockerTab() {
         <Card className="gap-0 p-0" data-testid="docker-list">
           <div className="flex items-center gap-2 border-b border-border px-4 py-3">
             <Container className="size-4 text-muted-foreground" />
-            <span className="text-[13px] font-semibold">Container</span>
+            <span className="text-[14px] font-semibold">Container</span>
             {cache && cache.Size !== '0B' && (
               <Button variant="outline" size="sm" className="tap44 ml-auto h-8 text-[12px]"
                 disabled={busy === 'prune'} onClick={() => setHoiDon(true)} data-testid="dk-prune">
@@ -155,7 +155,7 @@ export function DockerTab() {
           </div>
 
           {cts.length === 0 && (
-            <p className="px-4 py-8 text-center text-[13px] text-muted-foreground">Chưa có container nào</p>
+            <p className="px-4 py-8 text-center text-[14px] text-muted-foreground">Chưa có container nào</p>
           )}
 
           {cts.map((c) => {
@@ -168,24 +168,24 @@ export function DockerTab() {
                   !chay ? 'bg-status-idle' : sk === 'unhealthy' ? 'bg-status-error'
                     : sk === 'health: starting' ? 'bg-status-run' : 'bg-status-ok')} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium">{c.Names}</span>
-                  <span className="block truncate font-mono text-[11px] text-muted-foreground">{c.Image}</span>
+                  <span className="block truncate text-[14px] font-medium">{c.Names}</span>
+                  <span className="block truncate font-mono text-[12px] text-muted-foreground">{c.Image}</span>
                   {/* CPU/RAM thật từ `docker stats`. Trước đây chỉ biết container CÒN
                       SỐNG hay không — mà khi máy ì thì thứ cần biết là cái nào đang
                       ngốn tài nguyên. Container đã dừng không có số nên không hiện. */}
                   {c.cpu && (
-                    <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 text-[11px] text-muted-foreground"
+                    <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 text-[12px] text-muted-foreground"
                       data-testid="dk-taiNguyen">
                       <span className="tabular-nums">CPU {c.cpu}</span>
                       <span className="tabular-nums">RAM {String(c.ram || '').split(' / ')[0]}</span>
                     </span>
                   )}
                 </span>
-                <Badge variant="outline" className="shrink-0 text-[10.5px]">
+                <Badge variant="outline" className="shrink-0 text-[12px]">
                   {chay ? c.RunningFor || 'đang chạy' : 'đã dừng'}
                 </Badge>
                 {sk && (
-                  <Badge variant="outline" className={cn('hidden shrink-0 text-[10.5px] sm:inline-flex',
+                  <Badge variant="outline" className={cn('hidden shrink-0 text-[12px] sm:inline-flex',
                     sk === 'healthy' ? 'border-status-ok/40 text-status-ok'
                       : sk === 'unhealthy' ? 'border-status-error/40 text-status-error' : 'text-status-run')}>
                     {sk === 'healthy' ? 'khoẻ' : sk === 'unhealthy' ? 'có vấn đề' : 'đang khởi động'}
@@ -230,13 +230,13 @@ export function DockerTab() {
       {log && (
         <Dialog open onOpenChange={() => setLog(null)}>
           <DialogContent className="max-h-[85dvh] max-w-[760px] overflow-hidden" data-testid="dk-log-dialog">
-            <DialogHeader><DialogTitle className="font-mono text-[13px]">{log.ten}</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="font-mono text-[14px]">{log.ten}</DialogTitle></DialogHeader>
             {log.noiDung ? (
-              <pre className="max-h-[65dvh] overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background/60 p-3 font-mono text-[11.5px] leading-relaxed">
+              <pre className="max-h-[65dvh] overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background/60 p-3 font-mono text-[12px] leading-relaxed">
                 {log.noiDung}
               </pre>
             ) : (
-              <div className="flex items-center gap-2 py-6 text-[13px] text-muted-foreground">
+              <div className="flex items-center gap-2 py-6 text-[14px] text-muted-foreground">
                 <Loader2 className="size-4 animate-spin text-primary" /> Đang đọc log…
               </div>
             )}
@@ -248,7 +248,7 @@ export function DockerTab() {
         <Dialog open onOpenChange={() => setHoiDon(false)}>
           <DialogContent className="max-w-[400px]" data-testid="dk-prune-dialog">
             <DialogHeader><DialogTitle>Dọn build cache?</DialogTitle></DialogHeader>
-            <p className="text-[13px] leading-relaxed text-muted-foreground">
+            <p className="text-[14px] leading-relaxed text-muted-foreground">
               Xoá {cache?.Size} cache dựng image. Container đang chạy và dữ liệu KHÔNG bị ảnh hưởng —
               chỉ là lần build sau sẽ lâu hơn vì phải tải lại.
             </p>

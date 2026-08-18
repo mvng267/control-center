@@ -79,15 +79,18 @@ export function CongTac({
 
   return (
     <DropdownMenu>
-      {/* compact = nằm trong dòng trạng thái dưới ô gõ, chỗ đó rất chật nên bỏ viền */}
+      {/* compact = nằm cùng HÀNG với các nút chức năng (`/lệnh`, `@file`, `ảnh`…).
+          Trước đây bỏ viền cho đỡ chật, nhưng đứng cạnh sáu nút có viền thì hai cái
+          này trông như chữ rơi vãi chứ không phải nút. Dùng CHUNG kiểu với chúng:
+          cùng viền, cùng nền, cùng bo góc, cùng cỡ chữ. */}
       <DropdownMenuTrigger
         render={
-          <Button variant={compact ? 'ghost' : 'outline'} size="sm" data-testid={testid}
+          <Button variant="outline" size="sm" data-testid={testid}
             data-gia-tri={cur || 'auto'}
             title={`${nhan}: ${dangChon.label} — ${dangChon.desc}`}
-            className={cn('tap44 shrink-0 gap-1.5', tone,
+            className={cn('tap44 shrink-0 gap-1', tone,
               compact
-                ? 'h-auto px-1 py-0 text-[10.5px] font-normal hover:bg-transparent hover:underline'
+                ? 'h-auto rounded-lg border-border bg-card px-2 py-1 text-[12px] font-normal'
                 : 'h-9 text-[12px]')}>
             {Icon && <Icon className={compact ? 'size-3' : 'size-3.5'} />}
             <span className="truncate" style={{ maxWidth: rongNhan }}>{dangChon.label}</span>
@@ -105,14 +108,14 @@ export function CongTac({
                 ? <MucIcon className={cn('mt-0.5 size-3.5 shrink-0', x.tone || 'text-muted-foreground')} />
                 : <span className="mt-0.5 size-3.5 shrink-0" />}
               <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="flex items-center gap-1.5 text-[13px] font-medium">
+                <span className="flex items-center gap-1.5 text-[14px] font-medium">
                   {x.label}
                   {!!x.id && (
-                    <code className="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{x.id}</code>
+                    <code className="rounded bg-muted px-1 py-px text-[12px] text-muted-foreground">{x.id}</code>
                   )}
                   {cur === x.id && <Check className="size-3.5 text-primary" />}
                 </span>
-                <span className="text-[11.5px] leading-snug text-muted-foreground">{x.desc}</span>
+                <span className="text-[12px] leading-snug text-muted-foreground">{x.desc}</span>
               </span>
             </DropdownMenuItem>
           );

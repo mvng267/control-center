@@ -10,6 +10,7 @@ import { TokenGate } from '@/components/token-gate';
 import { AgyTab } from '@/components/agy/agy-tab';
 import { DockerTab } from '@/components/docker/docker-tab';
 import { StatsTab } from '@/components/stats/stats-tab';
+import { QuotaTab } from '@/components/quota/quota-tab';
 import { HermesTab } from '@/components/hermes/hermes-tab';
 import { SessionList } from '@/components/cli/session-list';
 import { ChatView } from '@/components/cli/chat-view';
@@ -37,9 +38,13 @@ export default function Page() {
     const onKey = (e: KeyboardEvent) => {
       const inField = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName || "");
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPaletteOpen(true); return; }
-      if ((e.metaKey || e.ctrlKey) && "12345".includes(e.key)) {
+      /* Lấy thứ tự từ chính TABS thay vì chép tay danh sách: thêm tab mới mà quên sửa
+         chỗ này thì phím tắt lệch hết — đã suýt xảy ra khi thêm tab Hạn mức. */
+      if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) {
+        const t = TABS[+e.key - 1];
+        if (!t) return;
         e.preventDefault();
-        setTab((["cli","hermes","agy","docker","stats"] as TabId[])[+e.key - 1]);
+        setTab(t.id);
         return;
       }
       if (e.key === "Escape" && !inField && openSid) setOpenSid(null);
@@ -167,6 +172,7 @@ export default function Page() {
         {tab === 'agy' && <AgyTab />}
         {tab === 'docker' && <DockerTab />}
         {tab === 'stats' && <StatsTab sessions={data?.sessions || []} />}
+        {tab === 'quota' && <QuotaTab />}
       </AppShell>
 
       {/* Màn phủ toàn màn, nằm NGOÀI AppShell để thanh tab dưới không đè lên */}

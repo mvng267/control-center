@@ -40,7 +40,7 @@ export function RankList({
 }) {
   const hien = rows.slice(0, max);
   if (!hien.length) {
-    return <p className="py-6 text-center text-[12.5px] text-muted-foreground">{empty}</p>;
+    return <p className="py-6 text-center text-[14px] text-muted-foreground">{empty}</p>;
   }
   /* % tính trên tổng của phần ĐANG HIỆN, không phải tổng tất cả — nếu không thì các
      dòng cộng lại không ra 100% mà người xem chẳng biết phần thiếu đi đâu. */
@@ -56,10 +56,10 @@ export function RankList({
           <div key={r.label + i} data-testid={testid ? testid + '-row' : undefined}
             className="flex flex-col gap-1.5 border-b border-border py-2.5 last:border-0">
             <div className="flex items-baseline gap-2">
-              <span className={cn('min-w-0 flex-1 truncate text-[14px]', mono && 'font-mono text-[13px]')}
+              <span className={cn('min-w-0 flex-1 truncate text-[14px]', mono && 'font-mono text-[14px]')}
                 title={r.label}>
                 {r.label}
-                {r.sub && <span className="ml-1.5 text-[11.5px] text-muted-foreground">{r.sub}</span>}
+                {r.sub && <span className="ml-1.5 text-[12px] text-muted-foreground">{r.sub}</span>}
               </span>
               <span className="shrink-0 text-[14px] font-medium tabular-nums">
                 {r.display ?? r.value.toLocaleString('vi-VN')}
@@ -77,7 +77,7 @@ export function RankList({
         );
       })}
       {an > 0 && (
-        <p className="pt-2 text-[11.5px] text-muted-foreground">
+        <p className="pt-2 text-[12px] text-muted-foreground">
           và {an} mục khác không hiện — phần trăm tính trên {hien.length} mục ở trên
         </p>
       )}

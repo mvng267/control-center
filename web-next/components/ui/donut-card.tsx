@@ -32,7 +32,7 @@ export function DonutCard({
   className?: string;
 }) {
   if (!data.length) {
-    return <p className="py-8 text-center text-[12.5px] text-muted-foreground">Chưa có dữ liệu</p>;
+    return <p className="py-8 text-center text-[14px] text-muted-foreground">Chưa có dữ liệu</p>;
   }
   // gộp phần đuôi thành "Khác" — 34 model mà vẽ 34 lát thì không đọc được lát nào
   const sap = [...data].sort((a, b) => b.value - a.value);
@@ -59,7 +59,7 @@ export function DonutCard({
         </ResponsiveContainer>
         {/* số tổng nằm GIỮA vòng — điểm khác biệt chính so với bản cũ */}
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          {tongLabel && <span className="text-[11.5px] text-muted-foreground">{tongLabel}</span>}
+          {tongLabel && <span className="text-[12px] text-muted-foreground">{tongLabel}</span>}
           <span className="text-[19px] font-bold tabular-nums leading-tight" data-testid={testid ? testid + '-total' : undefined}>
             {soGiua}
           </span>
@@ -70,12 +70,12 @@ export function DonutCard({
         {lat.map((d, i) => (
           <div key={d.name + i} className="flex items-center gap-2 border-b border-border py-1.5 last:border-0">
             <span className="size-2 shrink-0 rounded-full" style={{ background: d.fill }} />
-            <span className="min-w-0 flex-1 truncate text-[13px]" title={d.name}>{d.name}</span>
-            <span className="shrink-0 text-[13px] font-medium tabular-nums">
+            <span className="min-w-0 flex-1 truncate text-[14px]" title={d.name}>{d.name}</span>
+            <span className="shrink-0 text-[14px] font-medium tabular-nums">
               {d.value >= 1e6 ? (d.value / 1e6).toFixed(1) + 'M'
                 : d.value >= 1e3 ? (d.value / 1e3).toFixed(1) + 'k' : d.value}
             </span>
-            <span className="w-8 shrink-0 text-right text-[11.5px] tabular-nums text-muted-foreground">
+            <span className="w-8 shrink-0 text-right text-[12px] tabular-nums text-muted-foreground">
               {tong > 0 ? Math.round((d.value / tong) * 100) : 0}%
             </span>
           </div>

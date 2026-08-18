@@ -110,19 +110,19 @@ export function NutCapNhat() {
         <span className="truncate">{chay ? 'Đang cập nhật…' : 'Cập nhật'}</span>
         {/* Cho biết đang chạy bản nào và cài kiểu gì — bấm nút mà không biết mình
             đang ở đâu thì không đoán được nó sẽ làm gì. */}
-        <span className="shrink-0 font-mono text-[10.5px] opacity-60" data-testid="cap-nhat-ban">
+        <span className="shrink-0 font-mono text-[12px] opacity-60" data-testid="cap-nhat-ban">
           {st.kieu === 'git' ? st.git?.ma : 'v' + st.banHienTai}
         </span>
       </button>
 
       {ban && (
-        <p className="px-2.5 text-[10.5px] leading-relaxed text-muted-foreground/70" data-testid="cap-nhat-ban-nhap">
+        <p className="px-2.5 text-[12px] leading-relaxed text-muted-foreground/70" data-testid="cap-nhat-ban-nhap">
           Có sửa chưa commit trong thư mục mã — commit hoặc bỏ đi rồi mới cập nhật được.
         </p>
       )}
 
       {xong && !xong.ok && (
-        <p className="px-2.5 text-[10.5px] leading-relaxed text-status-error" data-testid="cap-nhat-loi">
+        <p className="px-2.5 text-[12px] leading-relaxed text-status-error" data-testid="cap-nhat-loi">
           {xong.error?.slice(0, 180)}
         </p>
       )}
@@ -133,11 +133,11 @@ export function NutCapNhat() {
           suốt vì tiến trình chạy từ ba ngày trước. */}
       {xong?.ok && xong.canKhoiDongLai && (
         <div className="flex flex-col gap-1" data-testid="cap-nhat-xong">
-          <p className="px-2.5 text-[10.5px] leading-relaxed text-muted-foreground">
+          <p className="px-2.5 text-[12px] leading-relaxed text-muted-foreground">
             Đã tải bản mới — khởi động lại để dùng.
           </p>
           <button onClick={khoiDongLai} disabled={dangKhoiDong} data-testid="nut-khoi-dong-lai"
-            className="tap44 flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[13px] text-status-ok transition-colors hover:bg-sidebar-accent/60">
+            className="tap44 flex h-8 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[14px] text-status-ok transition-colors hover:bg-sidebar-accent/60">
             {dangKhoiDong
               ? <Loader2 className="size-4 shrink-0 animate-spin" />
               : <Power className="size-4 shrink-0" />}

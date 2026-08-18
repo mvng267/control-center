@@ -43,9 +43,9 @@ export function MentionHint({
             className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors',
               i === active ? 'bg-accent' : 'hover:bg-accent/50')}>
             <FileCode2 className="size-3.5 shrink-0 text-tool-accent" />
-            <span className="shrink-0 font-mono text-[13px] font-medium">{f.slice(cat + 1)}</span>
+            <span className="shrink-0 font-mono text-[14px] font-medium">{f.slice(cat + 1)}</span>
             {cat > 0 && (
-              <span className="min-w-0 flex-1 truncate text-right font-mono text-[11px] text-muted-foreground">
+              <span className="min-w-0 flex-1 truncate text-right font-mono text-[12px] text-muted-foreground">
                 {f.slice(0, cat)}
               </span>
             )}

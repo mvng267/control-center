@@ -100,11 +100,19 @@ export function SessionCard({
          phiên nào còn sống, không phải soi từng chấm nhỏ trong hàng số liệu.
          `thoNhe` là keyframes riêng ở globals.css — animate-pulse của Tailwind nhấp
          nháy đều và gắt, dùng cho cả dòng thì rối mắt. */
+      /* Hiệu ứng vào: thẻ hiện dần + trồi lên nhẹ. Trước đây đổi bộ lọc thì cả danh
+         sách thay đột ngột, mắt không bám được cái gì vừa đổi. Giữ NGẮN (150ms) và
+         chỉ khi VÀO — cuộn danh sách dài mà mỗi thẻ đều nhảy thì rối hơn là đẹp.
+         `motion-safe:` để người bật "giảm chuyển động" trong iOS không phải chịu.
+
+         CHỈ áp cho thẻ KHÔNG chạy: `animate-tho` (nhịp thở vô hạn) dùng chung thuộc
+         tính `animation` với `animate-in`, hai cái đè nhau thì mất nhịp thở — mà nhịp
+         thở mới là thứ cho biết phiên còn sống. */
       className={cn(
         'group relative flex min-w-0 cursor-pointer flex-col gap-1.5 rounded-xl border border-l-[3px] bg-card px-3 py-2.5 transition-colors',
         dangChay
           ? 'border-l-status-ok border-border animate-tho'
-          : 'border-l-border/60 border-border',
+          : 'border-l-border/60 border-border motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-150',
         chon ? 'border-primary' : 'hover:border-primary/40 hover:bg-accent/30',
       )}>
 
@@ -138,13 +146,13 @@ export function SessionCard({
         {/* KHÔNG shrink-0: tiêu đề dài mà không co được thì nó đẩy dự án và thời gian
             tràn ra ngoài, chữ chồng lên nhau (đo trên iPhone 390px). Cho co + truncate,
             tiêu đề vẫn được ưu tiên chỗ vì các phần khác đều shrink-0. */}
-        <span className="min-w-0 truncate text-[13.5px] font-medium" data-testid="session-title"
+        <span className="min-w-0 truncate text-[14px] font-medium" data-testid="session-title"
           title={s.title || s.sid}>
           {s.title || s.sid.slice(0, 8)}
         </span>
 
         {s.unread > 0 && (
-          <span className="shrink-0 rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
+          <span className="shrink-0 rounded-full bg-destructive px-1.5 text-[12px] font-semibold text-white">
             {s.unread}
           </span>
         )}
@@ -152,12 +160,12 @@ export function SessionCard({
         {/* Thư mục gốc đã xoá -> --resume trượt, tin nhắn RƠI VÀO HƯ KHÔNG. */}
         {s.duAn && !s.duAn.conTonTai && (
           <span data-testid="card-mat" title="Thư mục gốc đã bị xoá — nhắn vào phiên này sẽ không tới nơi"
-            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-error/12 px-1.5 py-px text-[10.5px] font-medium text-status-error">
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-error/12 px-1.5 py-px text-[12px] font-medium text-status-error">
             <TriangleAlert className="size-3" />đã xoá
           </span>
         )}
 
-        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+        <span className="ml-auto shrink-0 text-[12px] tabular-nums text-muted-foreground">
           {truoc(s.mtimeMs)}
         </span>
         <div onClick={(e) => e.stopPropagation()}>{menu}</div>
@@ -167,7 +175,7 @@ export function SessionCard({
           Trước đây nhét chung dòng 1 và chặn ở 7rem, nên tên miền dài
           hay "chu-repo/ten-repo · main" gần như luôn bị truncate. */}
       {!anDuAn && (
-        <div className="flex min-w-0 items-center gap-1.5 pl-4 text-[11.5px] text-muted-foreground"
+        <div className="flex min-w-0 items-center gap-1.5 pl-4 text-[12px] text-muted-foreground"
           data-testid="card-project">
           <Terminal className="size-3 shrink-0 opacity-50" />
           <span className="shrink-0 font-medium text-foreground/65">{s.duAn?.ten || s.project}</span>
@@ -187,14 +195,14 @@ export function SessionCard({
           {s.dangChay ? (
             <>
               <Zap className="size-3 shrink-0 animate-pulse text-status-ok" />
-              <span className="truncate text-[11.5px] text-status-ok" data-testid="card-lenh">
+              <span className="truncate text-[12px] text-status-ok" data-testid="card-lenh">
                 đang chạy {s.dangChay}
               </span>
             </>
           ) : s.tinCuoi ? (
             <>
               <CornerDownRight className="size-3 shrink-0 text-muted-foreground/40" />
-              <p className="truncate text-[11.5px] leading-snug text-muted-foreground">
+              <p className="truncate text-[12px] leading-snug text-muted-foreground">
                 <span className={cn('font-medium', s.vaiCuoi === 'user' ? 'text-primary' : 'text-tool-accent')}>
                   {s.vaiCuoi === 'user' ? cauHinh.nguoiDung + ': ' : 'Claude: '}
                 </span>
@@ -202,7 +210,7 @@ export function SessionCard({
               </p>
             </>
           ) : (
-            <span className={cn('text-[11.5px]', tt.chu)}>{tt.nhan}</span>
+            <span className={cn('text-[12px]', tt.chu)}>{tt.nhan}</span>
           )}
         </div>
 
@@ -210,7 +218,7 @@ export function SessionCard({
 
       {/* DÒNG 4: số liệu — dòng RIÊNG nên hiện đủ, không phải ẩn dần theo bề rộng
           như hồi còn chen chung với câu cuối. */}
-      <div className="flex min-w-0 items-center gap-3 pl-4 text-[11px] tabular-nums text-muted-foreground">
+      <div className="flex min-w-0 items-center gap-3 pl-4 text-[12px] tabular-nums text-muted-foreground">
         <span className="inline-flex items-center gap-1" title={s.msgs + ' tin nhắn'}>
           <MessageSquare className="size-3 opacity-60" />{s.luot || s.msgs} lượt
         </span>
@@ -248,7 +256,7 @@ export function SessionCard({
           Hai loại khác nhau: duyệt kế hoạch, và Claude hỏi để chọn phương án. */}
       {s.choDuyet && (
         <div data-testid="card-plan" data-cho={s.cho || 'ke-hoach'}
-          className="ml-4 flex items-center gap-1.5 rounded-md border border-primary/35 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+          className="ml-4 flex items-center gap-1.5 rounded-md border border-primary/35 bg-primary/10 px-2 py-0.5 text-[12px] font-medium text-primary">
           {s.cho === 'cau-hoi'
             ? <><CircleHelp className="size-3 shrink-0" /> Claude đang hỏi — cần chọn</>
             : <><ClipboardList className="size-3 shrink-0" /> Đang chờ duyệt kế hoạch</>}

@@ -22,7 +22,7 @@ export function ThinkCard({ text }: { text: string }) {
   const peek = flat.length > PEEK ? flat.slice(0, PEEK) + '…' : flat;
 
   return (
-    <div data-testid="think-card" data-open={open} className="w-full text-[13px] leading-relaxed">
+    <div data-testid="think-card" data-open={open} className="w-full text-[14px] leading-relaxed">
       <button onClick={() => setOpen((v) => !v)} data-testid="think-toggle"
         className="tap44 flex w-full items-start gap-2 text-left transition-colors md:hover:bg-accent/25">
         <span className="shrink-0 select-none text-muted-foreground/70">✻</span>
@@ -30,7 +30,7 @@ export function ThinkCard({ text }: { text: string }) {
           <span className="not-italic">Đang nghĩ…</span>
           {!open && peek && <span className="text-muted-foreground/70"> {peek}</span>}
         </span>
-        <span className="shrink-0 select-none text-[11px] text-muted-foreground/50">{open ? '−' : '+'}</span>
+        <span className="shrink-0 select-none text-[12px] text-muted-foreground/50">{open ? '−' : '+'}</span>
       </button>
 
       {open && (

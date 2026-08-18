@@ -22,8 +22,8 @@ export function TokenGate() {
       data-testid="token-gate"
     >
       <div className="w-full max-w-[340px] rounded-2xl border border-border bg-card p-5 shadow-2xl">
-        <div className="mb-1 text-[15px] font-semibold">Nhập mã truy cập</div>
-        <p className="mb-3 text-[12.5px] leading-relaxed text-muted-foreground">
+        <div className="mb-1 text-[14px] font-semibold">Nhập mã truy cập</div>
+        <p className="mb-3 text-[14px] leading-relaxed text-muted-foreground">
           Mã in ra ở cửa sổ chạy dashboard (dòng “mã truy cập”). Nhập một lần, máy này nhớ luôn.
         </p>
         <Input

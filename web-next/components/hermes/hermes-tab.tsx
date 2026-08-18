@@ -117,7 +117,7 @@ export function HermesTab() {
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input value={q} onChange={(e) => setQ(e.target.value)} data-testid="hermes-search"
-                placeholder="Tìm hội thoại…" className="h-11 w-[180px] pl-8 text-[16px] md:h-8 md:text-[12.5px]" />
+                placeholder="Tìm hội thoại…" className="h-11 w-[180px] pl-8 text-[16px] md:h-8 md:text-[14px]" />
             </div>
             </>
           } />
@@ -126,7 +126,7 @@ export function HermesTab() {
 
       <div className="mx-auto flex max-w-[1000px] flex-col gap-2 px-4 md:px-6" data-testid="hermes-list">
         {shown.length === 0 && (
-          <div className="py-10 text-center text-[13px] text-muted-foreground">
+          <div className="py-10 text-center text-[14px] text-muted-foreground">
             {needle ? `Không có hội thoại nào khớp “${q}”` : 'Chưa có hội thoại nào'}
           </div>
         )}
@@ -139,12 +139,12 @@ export function HermesTab() {
                 <MessageSquare className="size-4" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-semibold">{niceTitle(c)}</span>
-                <span className="block truncate text-[11.5px] text-muted-foreground">
+                <span className="block truncate text-[14px] font-semibold">{niceTitle(c)}</span>
+                <span className="block truncate text-[12px] text-muted-foreground">
                   {firstLine(c) || `${c.source} · ${c.count} tin`}
                 </span>
               </span>
-              <span className="shrink-0 text-[10.5px] tabular-nums text-muted-foreground">
+              <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">
                 {c.lastTs ? new Date(c.lastTs).toLocaleDateString('vi-VN') : ''}
               </span>
             </div>
@@ -161,7 +161,7 @@ export function HermesTab() {
         <Button variant="ghost" size="icon" className="tap44 size-8" onClick={() => setOpenId(null)}>
           <ArrowLeft className="size-4" />
         </Button>
-        <span className="truncate text-[13px] font-medium">{conv ? niceTitle(conv) : ''}</span>
+        <span className="truncate text-[14px] font-medium">{conv ? niceTitle(conv) : ''}</span>
       </div>
 
       {/* testid này là ĐỊA CHỈ cho use-soft-keyboard: bàn phím bật thì nó cuộn hộp

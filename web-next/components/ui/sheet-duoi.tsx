@@ -45,7 +45,7 @@ export function SheetDuoi({ mo, onDong, tieuDe, children, testid }: {
         <div className="flex justify-center pb-1 pt-2.5">
           <span aria-hidden className="h-1 w-9 rounded-full bg-muted-foreground/30" />
         </div>
-        <div className="px-4 pb-1 text-[12.5px] font-semibold text-muted-foreground">{tieuDe}</div>
+        <div className="px-4 pb-1 text-[14px] font-semibold text-muted-foreground">{tieuDe}</div>
         <div className="p-2">{children}</div>
       </div>
     </div>
@@ -67,11 +67,11 @@ export function MucSheet({ Icon, nhan, mo, onClick, testid, ky }: {
         'transition-colors hover:bg-accent/60 active:scale-[0.99]')}>
       <Icon className="size-4 shrink-0 text-muted-foreground" />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex items-center gap-1.5 text-[13.5px] font-medium">
+        <span className="flex items-center gap-1.5 text-[14px] font-medium">
           {nhan}
-          {!!ky && <code className="rounded bg-muted px-1 py-px font-mono text-[11px] text-muted-foreground">{ky}</code>}
+          {!!ky && <code className="rounded bg-muted px-1 py-px font-mono text-[12px] text-muted-foreground">{ky}</code>}
         </span>
-        {!!mo && <span className="truncate text-[11.5px] text-muted-foreground">{mo}</span>}
+        {!!mo && <span className="truncate text-[12px] text-muted-foreground">{mo}</span>}
       </span>
     </button>
   );

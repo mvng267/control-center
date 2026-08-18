@@ -66,6 +66,30 @@ events"). Hàng ngắn thì nới bằng đệm thật.
 **KHÔNG sửa file `.jsonl` của Claude CLI.** Đó là dữ liệu gốc, CLI ghi đè bất cứ lúc
 nào. Thứ dashboard cần lưu để ở `~/.claude/dashboard-*.json`.
 
+**`settings.json` bị chính Claude CLI ghi lại mỗi lần chạy `claude -p`.** Đo được:
+mtime nhảy 8 giây sau đúng một lệnh, trong khi dashboard không đụng gì. Nên bài test
+nào canh "dashboard có ghi vào settings.json không" mà đo `mtime` sẽ **dương tính
+giả** — và dashboard lại có endpoint gọi `claude -p /usage` (tab Hạn mức), nên chỉ cần
+mở tab đó là đỏ oan. Đo **nội dung** file, đừng đo mốc thời gian.
+
+**`src/server/index.js` có một byte NUL, nên `grep` THƯỜNG trả rỗng mà không báo lỗi.**
+Byte đó nằm ở `khoa = a.hookName + '\0' + body` — dấu phân cách chủ ý trong khoá gộp
+hook lỗi, hoàn toàn hợp lệ. Nhưng `file` xếp cả file là *binary data*, nên `grep permFor`
+trả về **rỗng, exit 1**, đúng như thể hàm đó không tồn tại. Đã vài lần kết luận nhầm
+"không tìm thấy hàm" vì lý do này. **Luôn dùng `grep -a`** với file này.
+
+**Test nhảy kết quả giữa các lần chạy = server cũ còn nghe cổng test.** Cùng một commit
+đã chạy ra 68/69, rồi 53/68, rồi 190/190, rồi TimeoutError — đọc mã không thấy sai vì mã
+không sai. Bắt được thật: một tiến trình giữ cổng 7797 suốt 12 phút, và một `test-all`
+cũ vẫn chạy nền. Bộ test mới bind cổng thất bại rồi lặng lẽ nói chuyện với server CŨ (mã
+cũ, khoá VAPID cũ). `scripts/test-all.js` giờ có `donCong()` dọn trước khi chạy — nếu
+vẫn thấy kết quả nhảy, kiểm `lsof -ti:7896,7897,7797` trước khi nghi mã.
+
+**Bài test lấy `ss[0]` là bài test ngẫu nhiên.** Danh sách phiên xoay theo thời gian nên
+phiên đầu lúc là dự án thật, lúc là phiên chạy ở thư mục nhà (server chặn đọc file →
+cả khối đỏ), lúc là phiên chỉ toàn câu chữ (không có tool → bài đòi icon đỏ). Lọc theo
+điều kiện bài đó CẦN, đừng lấy phần tử đầu.
+
 **`hostAllowed` không phải cơ chế bảo mật** — nó chỉ đọc header `Host` mà client tự
 khai được. Token mới là.
 

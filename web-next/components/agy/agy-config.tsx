@@ -55,13 +55,13 @@ export function AgyConfig() {
     <Card className="gap-0 p-4" data-testid="agy-config">
       <div className="mb-1 flex items-center gap-2">
         <SlidersHorizontal className="size-4 text-muted-foreground" />
-        <span className="text-[13px] font-semibold">Cấu hình</span>
+        <span className="text-[14px] font-semibold">Cấu hình</span>
         <Button variant="outline" size="sm" className="tap44 ml-auto h-7 text-[12px]"
           data-testid="agy-restart" onClick={restart}>
           <RotateCw className="size-3.5" /> Restart
         </Button>
       </div>
-      <p className="mb-3 truncate font-mono text-[11px] text-muted-foreground" title={cfg.file}>{cfg.file}</p>
+      <p className="mb-3 truncate font-mono text-[12px] text-muted-foreground" title={cfg.file}>{cfg.file}</p>
 
       <div className="flex flex-col gap-3">
         {cfg.fields.map((f) => {
@@ -70,20 +70,20 @@ export function AgyConfig() {
             <div key={f.key} className="flex flex-col gap-1.5" data-testid="agy-field" data-key={f.key}>
               <div className="flex items-baseline gap-2">
                 <span className="font-mono text-[12px] font-medium">{f.key}</span>
-                {changed && <span className="text-[10.5px] text-amber-500">chưa lưu</span>}
+                {changed && <span className="text-[12px] text-amber-500">chưa lưu</span>}
               </div>
               <div className="flex items-center gap-2">
                 <Input value={draft[f.key] ?? ''} data-testid={'field-' + f.key}
                   onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
                   onKeyDown={(e) => e.key === 'Enter' && save(f)}
-                  className="h-11 flex-1 font-mono text-[16px] md:h-8 md:text-[12.5px]" />
+                  className="h-11 flex-1 font-mono text-[16px] md:h-8 md:text-[14px]" />
                 <Button size="icon" variant={changed ? 'default' : 'ghost'} className="tap44 size-8 shrink-0"
                   disabled={!changed || saving === f.key} onClick={() => save(f)}
                   data-testid={'save-' + f.key} title="Lưu">
                   <Check className="size-3.5" />
                 </Button>
               </div>
-              <p className="text-[11.5px] leading-relaxed text-muted-foreground">{f.desc}</p>
+              <p className="text-[12px] leading-relaxed text-muted-foreground">{f.desc}</p>
             </div>
           );
         })}

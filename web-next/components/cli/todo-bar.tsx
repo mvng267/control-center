@@ -35,13 +35,13 @@ export function TodoBar({ todos }: { todos: Todo[] }) {
         className="flex w-full items-center gap-2 rounded-[10px] border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/40">
         <ListChecks className="size-4 shrink-0 text-primary" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[12.5px] font-medium">{now}</span>
+          <span className="block truncate text-[14px] font-medium">{now}</span>
           <span className="mt-1 block h-1 overflow-hidden rounded-full bg-muted">
             <span className="block h-full rounded-full bg-primary transition-[width] duration-500"
               style={{ width: pct + '%' }} />
           </span>
         </span>
-        <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">{done}/{todos.length}</span>
+        <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">{done}/{todos.length}</span>
         <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
 
@@ -50,7 +50,7 @@ export function TodoBar({ todos }: { todos: Todo[] }) {
         <div className="mt-1.5 flex flex-col gap-0.5 rounded-[10px] border border-border bg-card px-3 py-2.5 font-mono"
           data-testid="todo-list">
           {todos.map((t, i) => (
-            <div key={i} className="flex items-start gap-2 text-[12.5px]">
+            <div key={i} className="flex items-start gap-2 text-[14px]">
               <span className={cn('shrink-0 select-none', TONE[t.status])}>
                 {t.status === 'completed' ? <SquareCheck className="size-3.5" /> : <Square className="size-3.5" />}
               </span>

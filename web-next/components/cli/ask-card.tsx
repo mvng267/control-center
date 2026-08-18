@@ -77,7 +77,7 @@ export function AskCard({
         <CircleHelp className="size-3.5 shrink-0 text-primary" />
         <span className="text-[12px] font-semibold text-primary">Claude hỏi</span>
         {khoa && (
-          <span className="ml-auto text-[11px] text-muted-foreground">
+          <span className="ml-auto text-[12px] text-muted-foreground">
             {daGui ? 'đã gửi' : 'đã trả lời'}
           </span>
         )}
@@ -110,8 +110,8 @@ export function AskCard({
         {hoi.map((q, qi) => (
           <div key={qi} className={cn('flex-col gap-2', qi === tab ? 'flex' : 'hidden')}>
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-[13px] font-medium leading-snug">{q.hoi}</span>
-              {q.nhieu && <span className="text-[11px] text-muted-foreground">(chọn nhiều được)</span>}
+              <span className="text-[14px] font-medium leading-snug">{q.hoi}</span>
+              {q.nhieu && <span className="text-[12px] text-muted-foreground">(chọn nhiều được)</span>}
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -126,15 +126,15 @@ export function AskCard({
                       khoa ? 'cursor-default opacity-70' : 'hover:bg-accent/50',
                     )}>
                     <span className={cn(
-                      'mt-[2px] flex size-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-semibold',
+                      'mt-[2px] flex size-4 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold',
                       on ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground',
                     )}>
                       {on ? <Check className="size-2.5" /> : oi + 1}
                     </span>
                     <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="text-[12.5px] font-medium leading-snug">{o.nhan}</span>
+                      <span className="text-[14px] font-medium leading-snug">{o.nhan}</span>
                       {o.mo && (
-                        <span className="text-[11.5px] leading-relaxed text-muted-foreground">{o.mo}</span>
+                        <span className="text-[12px] leading-relaxed text-muted-foreground">{o.mo}</span>
                       )}
                     </span>
                   </button>
@@ -150,7 +150,7 @@ export function AskCard({
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <button onClick={gui} disabled={!dayDu} data-testid="ask-send"
               className={cn(
-                'tap44 flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-3 py-2 text-[12.5px] font-medium transition-colors',
+                'tap44 flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-3 py-2 text-[14px] font-medium transition-colors',
                 dayDu ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
               )}>
               <Send className="size-3.5" /> Gửi lựa chọn
@@ -158,7 +158,7 @@ export function AskCard({
             {/* Còn câu bỏ trống thì NÓI RÕ còn mấy câu. Nút xám mà không giải thích
                 thì tưởng hỏng — nhất là khi câu chưa trả lời nằm ở tab khác, khuất
                 khỏi tầm mắt. */}
-            <span className="text-[11px] leading-snug text-muted-foreground">
+            <span className="text-[12px] leading-snug text-muted-foreground">
               {dayDu
                 ? 'Gửi thành một tin nhắn mới — dashboard không nối được vào lượt đang chờ như terminal'
                 : `Còn ${hoi.filter((_, i) => (chon[i]?.size || 0) === 0).length} câu chưa chọn`}

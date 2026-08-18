@@ -40,7 +40,7 @@ export function SlashHint({
           onMouseDown={(e) => { e.preventDefault(); onPick(c); }}   // giữ focus ở ô nhập
           className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors',
             i === active ? 'bg-accent' : 'hover:bg-accent/50')}>
-          <span className="shrink-0 font-mono text-[13px] font-medium">{c.label}</span>
+          <span className="shrink-0 font-mono text-[14px] font-medium">{c.label}</span>
           <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">{c.desc}</span>
           {i === active && <CornerDownLeft className="size-3.5 shrink-0 text-muted-foreground" />}
         </button>

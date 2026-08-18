@@ -40,7 +40,38 @@ function traPasscode() {
     if (passBackup) fs.writeFileSync(PASS_FILE, passBackup, { mode: 0o600 });
     else fs.rmSync(PASS_FILE, { force: true });
   } catch {}
+  traTab();
 }
+
+/* Trả lại cấu hình TAB đúng như người dùng để. Bài "tắt tab thì tab biến khỏi thanh
+   bên" phải bật `stats` lên mới thử được, và các bài sau (biểu đồ, xếp hạng) cũng cần
+   nó bật — nhưng Vinh có thể vốn đã TẮT tab đó. Ghi thẳng file thay vì bấm qua giao
+   diện: nếu bộ chết giữa chừng thì thao tác giao diện không bao giờ chạy tới. */
+const CAUHINH_FILE = path.join(os.homedir(), '.claude', 'dashboard-cauhinh.json');
+let cauHinhBackup = null;
+try { cauHinhBackup = fs.readFileSync(CAUHINH_FILE, 'utf8'); } catch {}
+function traTab() {
+  try {
+    if (cauHinhBackup !== null) fs.writeFileSync(CAUHINH_FILE, cauHinhBackup);
+    else fs.rmSync(CAUHINH_FILE, { force: true });
+  } catch {}
+}
+
+/* BẬT SẴN tab stats trước khi mở trang. Nhiều bài phía sau bấm thẳng `nav-stats`
+   (biểu đồ, thanh xếp hạng) mà KHÔNG nằm trong khối `if` nào — Vinh tắt tab đó thì
+   chúng chờ mãi rồi ném TimeoutError, kéo đỏ cả bộ dù mã không sai.
+   Ghi thẳng file thay vì bấm qua giao diện: `docTabBat()` đọc lại file mỗi request nên
+   ăn ngay, không cần khởi động lại server, và không phụ thuộc thao tác nào chạy trước. */
+function batTabStats() {
+  try {
+    let j = {};
+    try { j = JSON.parse(fs.readFileSync(CAUHINH_FILE, 'utf8')); } catch {}
+    j.tabBat = { ...(j.tabBat || {}), stats: true };
+    fs.mkdirSync(path.dirname(CAUHINH_FILE), { recursive: true });
+    fs.writeFileSync(CAUHINH_FILE, JSON.stringify(j, null, 2));
+  } catch {}
+}
+batTabStats();
 
 /* Trả mã KỂ CẢ KHI CHẾT GIỮA CHỪNG. Trước đây traPasscode chỉ chạy ở cuối hàm main,
    nên hễ bộ này ném lỗi (Playwright timeout chẳng hạn) là file mã do chính nó tạo
@@ -147,6 +178,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
          vuông đứng im tới khi mạng về thì người dùng tưởng bấm trượt rồi bấm lại.
          Đã gặp thật: bản đầu chờ server nên Playwright báo "clicking did not change
          its state". */
+      // `batTabStats()` ở đầu file đã bảo đảm tab này bật, không phụ thuộc cài đặt Vinh
       const truocTat = await page.locator('[data-testid=nav-stats]').count();
       await page.uncheck('[data-testid=cau-hinh-bat-stats]');
       await page.waitForTimeout(1200);
@@ -165,6 +197,9 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await page.waitForTimeout(800);
       ok('bật lại thì tab hiện lại',
         (await page.locator('[data-testid=nav-stats]').count()) === 1, '');
+      /* Giữ BẬT tới hết bộ vì các bài sau còn cần tab này (biểu đồ, thanh xếp hạng).
+         `traTab()` ở cuối trả lại đúng cấu hình người dùng — kể cả khi bộ chết giữa
+         chừng, vì nó ghi thẳng file chứ không bấm qua giao diện. */
     }
 
     // Chart: lưới nét đứt 4 8, KHÔNG có trục Y (Atlas không có)
@@ -269,8 +304,16 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     });
     /* Trước đây bài này đòi CẢ khung dùng monospace. Giờ chia đôi: mã giữ phông đều,
        câu văn dùng chữ thường — nên kiểm ĐÚNG hai thứ đó thay vì kiểm cả khung. */
-    ok('ten tool/duong dan van dung phong chu deu', cli.monoTenTool,
-      JSON.stringify(cli).slice(0, 120));
+    /* Chỉ đo được khi phiên CÓ tool. Danh sách phiên xoay theo thời gian nên phiên đầu
+       lúc là dự án thật, lúc là phiên chỉ toàn câu chữ — gặp cái sau thì `monoTenTool`
+       false vì không có tên tool nào để đo, bài đỏ oan. Cùng lý do với bài `icon ⏺`
+       ngay dưới, ở đó đã xử lý đúng. */
+    if (n) {
+      ok('ten tool/duong dan van dung phong chu deu', cli.monoTenTool,
+        JSON.stringify(cli).slice(0, 120));
+    } else {
+      ok('ten tool/duong dan van dung phong chu deu', true, 'bo qua: phien khong co tool');
+    }
     ok('cau van KHONG dung phong chu deu (doc de hon tren dien thoai)',
       cli.monoVanBan === false, 'monoVanBan=' + cli.monoVanBan);
 
@@ -2367,7 +2410,17 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     // Token hiện ở CẢ HAI cỡ; số lượt chỉ desktop (màn hẹp nhường chỗ cho repo+model,
     // và danh sách phiên đã hiện số lượt sẵn).
     ok(`chat ${ten}: đầu trang có token`, !!meta.tok, meta.tok);
-    if (!touch) ok('chat desktop: đầu trang có số lượt', !!meta.luot, meta.luot);
+    /* Số lượt chỉ hiện khi phiên ĐÃ CÓ lượt nào — `!!h?.usage?.turns` ở chat-view.
+       Phiên đầu danh sách xoay theo thời gian, trúng phiên vừa mở chưa hỏi gì thì
+       turns=0 và bài này đỏ oan. Lọc theo điều kiện bài CẦN, đừng đòi phiên bất kỳ. */
+    if (!touch) {
+      /* `meta.tok` là CHUỖI đã rút gọn ("8.2M", "0"). Phiên chưa có lượt nào thì nó là
+         "0" — mà chuỗi "0" TRUTHY, nên `if (meta.tok)` vẫn vào nhánh đòi số lượt và
+         bài đỏ oan. Phải so với "0" tường minh. */
+      const coDuLieu = !!meta.tok && meta.tok !== '0';
+      if (coDuLieu) ok('chat desktop: đầu trang có số lượt', !!meta.luot, meta.luot);
+      else ok('chat desktop: đầu trang có số lượt', true, 'bỏ qua: phiên chưa có lượt nào');
+    }
 
     /* Dòng phụ đề phải nằm gọn MỘT dòng. Lúc mới thêm nó để flex-wrap, trên iPhone
        390px nó tách làm 2 dòng, ăn 39px và đẩy khung đọc từ 688px xuống 593px —
@@ -2439,7 +2492,8 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
           .find((x) => x.getAttribute('data-role') === 'user');
         if (!u) return null;
         const cs = getComputedStyle(u);
-        return { position: cs.position, top: cs.top, z: cs.zIndex, bg: cs.backgroundColor };
+        return { position: cs.position, top: cs.top, z: cs.zIndex, bg: cs.backgroundColor,
+          padL: parseFloat(cs.paddingLeft), padT: parseFloat(cs.paddingTop) };
       });
       if (!st) {
         ok('luot cua minh dinh dau khung khi cuon', true, 'bo qua: doan nay khong co luot user');
@@ -2449,7 +2503,51 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         // nen duc: thieu thi chu ben duoi troi xuyen qua, doc thanh hai lop chong nhau
         ok('luot dinh co nen duc (khong loi chu ben duoi)',
           !!st.bg && !/transparent|rgba\(0, 0, 0, 0\)/.test(st.bg), st.bg);
+        /* Co NEN thi phai co DEM. Thieu thi chu dinh sat mep nen, nhin nhu khoi bi cat
+           cut — Vinh bao "bao quanh nhung ko co padding". */
+        ok('luot dinh co dem, chu khong dinh sat mep nen',
+          st.padL >= 4 && st.padT >= 0, `padL=${st.padL} padT=${st.padT}`);
       }
+
+      /* HANG NUT duoi o go phai DONG BO. Vinh bao ba thu lech nhau cung luc:
+           - nut `/lenh` `@file` `!bash` `#ghi nho` co CA icon vector LAN ky tu — hai
+             dau hieu cho cung mot thu, ma ky tu moi la cai duoc chen vao o nhap;
+           - nut anh la nut icon tron 44px khong vien, dung canh may nut co vien;
+           - hai cong tac ben phai (quyen, model) bo vien nen trong nhu chu roi vai.
+         Do CHIEU CAO + VIEN cua ca hang: chung phai bang nhau tuyet doi.
+
+         PHAI noi man ra truoc: doan nay chay o 390px, ma hang nut dung `hidden sm:flex`
+         nen o do no an het, chi con nut "Chuc nang" mo sheet. Do o 390 thi bai nao
+         cung roi vao nhanh "bo qua" — test xanh gia. */
+      await page.setViewportSize({ width: 1024, height: 844 });
+      await page.waitForTimeout(600);
+      const hang = await page.evaluate(() => {
+        const ds = [...document.querySelectorAll(
+          '[data-testid^=goi-y-],[data-testid=chat-perm],[data-testid=chat-model-btn]')];
+        return ds.map((e) => ({
+          id: e.getAttribute('data-testid'),
+          h: Math.round(e.getBoundingClientRect().height),
+          v: getComputedStyle(e).borderTopWidth,
+          svg: e.querySelectorAll('svg').length,
+        }));
+      });
+      if (hang.length < 3) {
+        ok('hang nut duoi o go dong bo', true, 'bo qua: man hep, hang nut an trong sheet');
+      } else {
+        const cao = [...new Set(hang.map((x) => x.h))];
+        const vien = [...new Set(hang.map((x) => x.v))];
+        ok('moi nut duoi o go cung chieu cao va cung vien',
+          cao.length === 1 && vien.length === 1 && vien[0] !== '0px',
+          `cao=${cao.join('/')} vien=${vien.join('/')}`);
+        // nut ky tu (/ @ ! #) khong duoc kem icon vector nua
+        const kyTu = hang.filter((x) => /goi-y-(lenh|file|bash|ghi)/.test(x.id || ''));
+        ok('nut ky tu khong con icon trung (chi con ky tu)',
+          kyTu.every((x) => x.svg === 0),
+          kyTu.map((x) => x.id + ':' + x.svg + 'svg').join(' ') || 'khong thay nut');
+      }
+      // tra lai 390px: doan nay nam trong khoi "mobile", bai sau con do theo be rong do
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.waitForTimeout(400);
     }
     await ctx.close();
   }

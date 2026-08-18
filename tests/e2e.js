@@ -28,6 +28,14 @@ function fixLine(type, content, ts) {
   return JSON.stringify({ type, timestamp: ts, message: { role: type, content } });
 }
 function writeFixture() {
+  /* Xoá SẠCH trước khi dựng, không chỉ dọn ở cuối.
+
+     Phần dọn cuối file chỉ chạy khi test kết thúc bình thường. Lần chạy nào bị giết
+     giữa chừng (hết giờ, Ctrl-C, cổng bận) là fixture nằm lại — đo thật: file còn 4
+     dòng trong khi bài đòi `total === 3`, nên lần chạy SAU đỏ ở
+     "history trả parts có cấu trúc" mà nhìn mã thì không thấy sai gì.
+     Cùng họ với đống rác cổng đã dọn trong scripts/test-all.js. */
+  try { fs.rmSync(FIX_DIR, { recursive: true, force: true }); } catch {}
   fs.mkdirSync(FIX_DIR, { recursive: true });
   const T = '2026-08-08T02:00:0';
   const lines = [

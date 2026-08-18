@@ -101,9 +101,9 @@ export function AgyControl({ rotation, onDone }: { rotation?: string; onDone?: (
     <Card className="gap-0 p-4" data-testid="agy-control">
       <div className="mb-1 flex items-center gap-2">
         <Shuffle className="size-4 text-muted-foreground" />
-        <span className="text-[13px] font-semibold">Điều khiển</span>
+        <span className="text-[14px] font-semibold">Điều khiển</span>
       </div>
-      <p className="mb-3 text-[11.5px] leading-relaxed text-muted-foreground">
+      <p className="mb-3 text-[12px] leading-relaxed text-muted-foreground">
         Chỉ những lệnh đảo ngược được. Tắt gateway, tạo lại API key và xoá account
         cố ý không có ở đây.
       </p>
@@ -129,7 +129,7 @@ export function AgyControl({ rotation, onDone }: { rotation?: string; onDone?: (
           value={(ROTATIONS.some((x) => x.id === xoay) ? xoay : 'round-robin') as (typeof ROTATIONS)[number]['id']}
           onChange={doiXoay} testid="ctl-rotation" size="sm" className="self-start" />
         {!ROTATIONS.some((x) => x.id === xoay) && (
-          <span className="text-[11px] text-amber-500">
+          <span className="text-[12px] text-amber-500">
             agy đang dùng “{xoay}” — chiến lược này chưa có trong danh sách
           </span>
         )}
@@ -141,14 +141,14 @@ export function AgyControl({ rotation, onDone }: { rotation?: string; onDone?: (
           <Input value={email} onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && kiemTra()}
             placeholder="email@example.com" data-testid="ctl-email"
-            className="h-11 flex-1 text-[16px] md:h-8 md:text-[12.5px]" />
+            className="h-11 flex-1 text-[16px] md:h-8 md:text-[14px]" />
           <Button variant="outline" size="sm" className="tap44 h-8 shrink-0 text-[12px]"
             disabled={!!busy || !email.trim()} onClick={kiemTra} data-testid="ctl-checklive">
             {busy === 'checklive' ? <Loader2 className="size-3.5 animate-spin" /> : <Stethoscope className="size-3.5" />}
             Kiểm tra
           </Button>
         </div>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
+        <p className="text-[12px] leading-relaxed text-muted-foreground">
           Chỉ kiểm được từng account. Quét cả pool mất ~14 phút và bị nhà cung cấp
           chặn tốc độ nên không mở.
         </p>
@@ -160,7 +160,7 @@ export function AgyControl({ rotation, onDone }: { rotation?: string; onDone?: (
             <DialogHeader><DialogTitle>{hoi.tieuDe}</DialogTitle></DialogHeader>
             <div className="flex items-start gap-2">
               <TriangleAlert className="mt-[2px] size-4 shrink-0 text-amber-500" />
-              <p className="text-[13px] leading-relaxed text-muted-foreground">{hoi.noi}</p>
+              <p className="text-[14px] leading-relaxed text-muted-foreground">{hoi.noi}</p>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setHoi(null)}>Hủy</Button>

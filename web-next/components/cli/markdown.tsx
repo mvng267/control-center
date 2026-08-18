@@ -17,7 +17,7 @@ function CodeBlock({ text, lang }: { text: string; lang?: string }) {
   return (
     <div className="relative my-2">
       {lang && (
-        <div className="mb-1 text-[10px] font-medium tracking-wide text-muted-foreground">
+        <div className="mb-1 text-[12px] font-medium tracking-wide text-muted-foreground">
           {lang.toUpperCase()}
         </div>
       )}
@@ -26,12 +26,12 @@ function CodeBlock({ text, lang }: { text: string; lang?: string }) {
           setCopied(true);
           setTimeout(() => setCopied(false), 1200);
         })}
-        className="absolute right-1 top-1 z-10 flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+        className="absolute right-1 top-1 z-10 flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 text-[12px] text-muted-foreground hover:text-foreground"
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
         {copied ? 'Copied!' : 'Copy'}
       </button>
-      <pre className="max-h-[320px] overflow-auto rounded-[10px] border border-border bg-background/60 px-3 py-2.5 font-mono text-[12.5px] leading-relaxed">
+      <pre className="max-h-[320px] overflow-auto rounded-[10px] border border-border bg-background/60 px-3 py-2.5 font-mono text-[14px] leading-relaxed">
         <code>{text}</code>
       </pre>
     </div>
@@ -45,9 +45,9 @@ export function Markdown({ children, className }: { children: string; className?
         remarkPlugins={[remarkGfm]}
         components={{
           p: ({ children }) => <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>,
-          h1: ({ children }) => <h1 className="mb-1.5 mt-3 text-[17px] font-bold first:mt-0">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-1.5 mt-3 text-[15.5px] font-bold first:mt-0">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-1 mt-2.5 text-[14.5px] font-semibold first:mt-0">{children}</h3>,
+          h1: ({ children }) => <h1 className="mb-1.5 mt-3 text-[16px] font-bold first:mt-0">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-1.5 mt-3 text-[16px] font-bold first:mt-0">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-1 mt-2.5 text-[14px] font-semibold first:mt-0">{children}</h3>,
           ul: ({ children }) => <ul className="my-1.5 list-disc space-y-0.5 pl-5">{children}</ul>,
           ol: ({ children }) => <ol className="my-1.5 list-decimal space-y-0.5 pl-5">{children}</ol>,
           li: ({ children }) => <li className="leading-relaxed">{children}</li>,
@@ -66,7 +66,7 @@ export function Markdown({ children, className }: { children: string; className?
           // bảng phải cuộn ngang trong khung riêng, không được đội bong bóng rộng ra
           table: ({ children }) => (
             <div className="my-2 overflow-x-auto rounded-[10px] border border-border">
-              <table className="w-full text-[12.5px]">{children}</table>
+              <table className="w-full text-[14px]">{children}</table>
             </div>
           ),
           thead: ({ children }) => <thead className="border-b border-border bg-muted/40">{children}</thead>,
@@ -79,7 +79,7 @@ export function Markdown({ children, className }: { children: string; className?
             const inline = !cls && !text.includes('\n');
             if (inline) {
               return (
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[12.5px]" {...props}>
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[14px]" {...props}>
                   {children}
                 </code>
               );

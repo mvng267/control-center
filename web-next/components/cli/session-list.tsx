@@ -317,7 +317,7 @@ export function SessionList({
         ].map((t) => (
           <button key={t.id || 'all'} data-testid={'tab-' + (t.id || 'all')} data-active={stat === t.id}
             onClick={() => { setStat(t.id); setPage(0); }}
-            className={cn('relative flex shrink-0 items-center gap-1 whitespace-nowrap px-2 py-2 text-[12px] transition-colors sm:gap-1.5 sm:px-2.5 sm:text-[12.5px]',
+            className={cn('relative flex shrink-0 items-center gap-1 whitespace-nowrap px-2 py-2 text-[12px] transition-colors sm:gap-1.5 sm:px-2.5 sm:text-[14px]',
               stat === t.id
                 ? 'font-medium text-foreground after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary'
                 : 'text-muted-foreground hover:text-foreground')}>
@@ -355,7 +355,7 @@ export function SessionList({
                 placeholder="Tìm phiên…" className="h-11 pl-8 text-[16px] md:h-9 md:text-[14px]" />
             </div>
             <select value={proj} onChange={(e) => { setProj(e.target.value); setPage(0); }} data-testid="project-filter"
-              className="h-11 w-[104px] shrink-0 rounded-lg border border-border bg-card px-2 text-[13px] outline-none sm:h-9 sm:w-auto sm:px-2.5 sm:text-[14px]">
+              className="h-11 w-[104px] shrink-0 rounded-lg border border-border bg-card px-2 text-[14px] outline-none sm:h-9 sm:w-auto sm:px-2.5 sm:text-[14px]">
               <option value="">Mọi dự án</option>
               {projects.map((p) => <option key={p.khoa} value={p.khoa}>{p.nhan}</option>)}
             </select>
@@ -371,7 +371,7 @@ export function SessionList({
                   nhìn danh sách trống mà không hiểu vì sao thiếu phiên. */}
               {soLocBat > 0 && (
                 <span data-testid="loc-dang-bat"
-                  className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                  className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[12px] font-bold text-primary-foreground">
                   {soLocBat}
                 </span>
               )}
@@ -389,7 +389,7 @@ export function SessionList({
           {sel.size > 0 && (
             <div className="flex items-center gap-2 rounded-lg border border-border bg-accent/30 px-3 py-2"
               data-testid="bulk-bar">
-              <span className="text-[13px] font-medium">Đã chọn {sel.size}</span>
+              <span className="text-[14px] font-medium">Đã chọn {sel.size}</span>
               <Button variant="outline" size="sm" className="tap44 ml-auto h-8 text-[12px]"
                 data-testid="bulk-clear" onClick={() => { setSel(new Set()); setCheDoChon(false); }}>
                 Bỏ chọn
@@ -425,7 +425,7 @@ export function SessionList({
                 ăn 45px nhưng chữ bị ẩn, nên chỉ còn MỘT Ô VUÔNG TRƠ TRỌI không ai hiểu
                 để làm gì. Trên điện thoại thay bằng chạm giữ một thẻ để vào chế độ
                 chọn (giống ứng dụng Ảnh); desktop giữ nguyên vì có chỗ. */}
-            <label className="hidden shrink-0 cursor-pointer items-center gap-2 text-[12.5px] text-muted-foreground sm:flex">
+            <label className="hidden shrink-0 cursor-pointer items-center gap-2 text-[14px] text-muted-foreground sm:flex">
               <input type="checkbox" data-testid="sel-all"
                 className="size-4 cursor-pointer accent-primary"
                 checked={view.length > 0 && view.every((s) => sel.has(s.sid))}
@@ -467,20 +467,20 @@ export function SessionList({
                         className="tap44 flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left transition-colors hover:bg-accent/40">
                         <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform',
                           !gap && 'rotate-90')} />
-                        <span className="shrink-0 text-[13px] font-semibold" data-testid="nhom-ten">{g.ten}</span>
+                        <span className="shrink-0 text-[14px] font-semibold" data-testid="nhom-ten">{g.ten}</span>
                         {/* Repo GitHub khi có git; không thì đường dẫn — hai thứ đều
                             trả lời đúng câu "dự án này nằm ở đâu". */}
-                        <span className="truncate text-[11.5px] text-muted-foreground" data-testid="nhom-repo">
+                        <span className="truncate text-[12px] text-muted-foreground" data-testid="nhom-repo">
                           {g.repo ? g.repo + (g.nhanh ? ' · ' + g.nhanh : '') : g.duongDan}
                         </span>
                         {/* Cảnh báo đặt Ở ĐẦU NHÓM, không lặp trên cả 13 thẻ cùng dự án */}
                         {!g.conTonTai && (
                           <span data-testid="nhom-mat" title="Thư mục gốc đã bị xoá — nhắn vào phiên này sẽ không tới nơi"
-                            className="shrink-0 rounded-md bg-status-error/12 px-1.5 py-0.5 text-[10.5px] font-medium text-status-error">
+                            className="shrink-0 rounded-md bg-status-error/12 px-1.5 py-0.5 text-[12px] font-medium text-status-error">
                             thư mục đã xoá
                           </span>
                         )}
-                        <span className="ml-auto shrink-0 whitespace-nowrap text-[11.5px] tabular-nums text-muted-foreground">
+                        <span className="ml-auto shrink-0 whitespace-nowrap text-[12px] tabular-nums text-muted-foreground">
                           {g.ss.length} phiên{g.tok ? ' · ' + gonSo(g.tok) : ''}
                         </span>
                       </button>
@@ -489,7 +489,7 @@ export function SessionList({
                       {!g.laNhap && (
                         <button data-testid="nhom-loc" title={'Chỉ xem ' + g.ten}
                           onClick={() => { setProj(g.khoa); setPage(0); }}
-                          className="tap44 shrink-0 rounded-lg px-2 py-1 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground">
+                          className="tap44 shrink-0 rounded-lg px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground">
                           chỉ xem
                         </button>
                       )}
@@ -541,14 +541,14 @@ export function SessionList({
               Ẩn im lặng thì người dùng đếm tay ra số khác con số đầu trang. */}
           {!hienNhap && soNhap > 0 && (
             <button data-testid="mo-nhap" onClick={() => doiMoNhap(true)}
-              className="tap44 flex w-full items-center justify-center gap-1.5 border-t border-border py-2.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground">
+              className="tap44 flex w-full items-center justify-center gap-1.5 border-t border-border py-2.5 text-[14px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground">
               <ChevronRight className="size-3.5" />
               Hiện thêm {soNhap} phiên nháp (thư mục tạm)
             </button>
           )}
           {hienNhap && soNhap > 0 && !nhapTrungTim && (
             <button data-testid="an-nhap" onClick={() => doiMoNhap(false)}
-              className="tap44 flex w-full items-center justify-center gap-1.5 border-t border-border py-2.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground">
+              className="tap44 flex w-full items-center justify-center gap-1.5 border-t border-border py-2.5 text-[14px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground">
               Ẩn {soNhap} phiên nháp
             </button>
           )}
@@ -562,14 +562,14 @@ export function SessionList({
           <div className={cn('items-center justify-between gap-2 border-t border-border/60 pt-3',
             stat === 'jobs' ? 'hidden' : 'flex')}>
             <div className="flex items-center gap-2">
-              <span className="text-[13px] text-muted-foreground">Dòng mỗi trang</span>
+              <span className="text-[14px] text-muted-foreground">Dòng mỗi trang</span>
               <select value={perPage} data-testid="per-page"
                 onChange={(e) => { setPerPage(+e.target.value); setPage(0); }}
-                className="h-8 rounded-lg border border-border bg-card px-2 text-[13px]">
+                className="h-8 rounded-lg border border-border bg-card px-2 text-[14px]">
                 {[10, 25, 50].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
-            <span className="text-[13px] text-muted-foreground" data-testid="pagination-info">
+            <span className="text-[14px] text-muted-foreground" data-testid="pagination-info">
               {/* perPage, KHÔNG phải hằng PAGE: chọn 50 dòng/trang thì lưới hiện 50 thẻ
                   nhưng dòng này vẫn nói "1 – 10 / 133". */}
               {rows.length ? `${cur * perPage + 1} – ${Math.min((cur + 1) * perPage, rows.length)} / ${rows.length}` : '0'}
@@ -580,7 +580,7 @@ export function SessionList({
                 title="Trang trước" aria-label="Trang trước">
                 <ChevronLeft className="size-4" />
               </Button>
-              <span className="px-2 text-[13px] tabular-nums">{cur + 1} / {pages}</span>
+              <span className="px-2 text-[14px] tabular-nums">{cur + 1} / {pages}</span>
               <Button variant="outline" size="icon" className="tap44 size-8" disabled={cur >= pages - 1}
                 onClick={() => setPage(cur + 1)} data-testid="page-next"
                 title="Trang sau" aria-label="Trang sau">
@@ -612,7 +612,7 @@ export function SessionList({
           để bày đúng bảy dòng này. */}
       <SheetDuoi mo={moMenu} onDong={() => setMoMenu(false)} tieuDe="Sắp xếp và lọc"
         testid="menu-loc">
-        <div className="px-3 pb-1 pt-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="px-3 pb-1 pt-1 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
           Sắp xếp
         </div>
         {SAP_XEP.map(({ k, nhan }) => (
@@ -620,7 +620,7 @@ export function SessionList({
             onClick={() => { setSort((s) => ({ k, dir: s.k === k && s.dir === -1 ? 1 : -1 })); setPage(0); }}
             className="tap44 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-accent/60">
             <Check className={cn('size-4 shrink-0', sort.k === k ? 'text-primary' : 'opacity-0')} />
-            <span className="flex-1 text-[13.5px]">{nhan}</span>
+            <span className="flex-1 text-[14px]">{nhan}</span>
             {/* Bấm lại mục đang chọn để đảo chiều — mũi tên cho biết chiều hiện tại */}
             {sort.k === k && (
               <span className="flex shrink-0 items-center gap-0.5 text-[12px] text-muted-foreground">
@@ -632,7 +632,7 @@ export function SessionList({
           </button>
         ))}
 
-        <div className="mt-1 border-t border-border px-3 pb-1 pt-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="mt-1 border-t border-border px-3 pb-1 pt-2 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
           Lọc
         </div>
         {([
@@ -651,8 +651,8 @@ export function SessionList({
               {x.bat && <Check className="size-3" />}
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-[13.5px] font-medium">{x.nhan}</span>
-              <span className="truncate text-[11.5px] text-muted-foreground">{x.mo}</span>
+              <span className="text-[14px] font-medium">{x.nhan}</span>
+              <span className="truncate text-[12px] text-muted-foreground">{x.mo}</span>
             </span>
             {/* Số phiên khớp — biết trước bật lên còn lại bao nhiêu, đỡ bật rồi tắt */}
             <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">{x.dem}</span>

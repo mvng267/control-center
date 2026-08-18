@@ -26,6 +26,9 @@ const HERMES_MODEL = process.env.HERMES_MODEL || 'tencent/hy3:free';
 const procs = new Map();
 // sid -> timestamp lần cuối user mở chat view (để tính unread badge)
 const lastSeen = new Map();
+/* Hạn mức Claude: { at, data }. Phải cache vì `/usage` spawn `claude -p`, đo thật mất
+   3-5 giây — gọi theo nhịp SSE 2 giây là treo cả dashboard. */
+let quotaCache = null;
 /* Model áp dụng cho task mới (--model khi spawn). null = để CLI dùng model theo cấu
    hình sẵn có của Claude.
    Chỉ nhận tên RÚT GỌN: tên đầy đủ kèm ngày (`claude-opus-4-...`) sẽ sai ngay khi bản
@@ -66,11 +69,12 @@ function tenNguoiDung() {
 const CAUHINH_FILE = path.join(os.homedir(), '.claude', 'dashboard-cauhinh.json');
 // Tab 'cli' KHÔNG có ở đây: quản lý phiên Claude là lý do tồn tại của app, tắt nó đi
 // thì mở dashboard ra không còn gì.
-const TAB_TAT_DUOC = ['hermes', 'agy', 'docker', 'stats'];
+const TAB_TAT_DUOC = ['hermes', 'agy', 'docker', 'stats', 'quota'];
 
-/* Tab nào DÙNG ĐƯỢC trên máy này. 'stats' chỉ đọc dữ liệu Claude nên luôn có. */
+/* Tab nào DÙNG ĐƯỢC trên máy này. 'stats' chỉ đọc dữ liệu Claude nên luôn có.
+   'quota' cần gọi được lệnh `claude` — máy chỉ xem dashboard từ xa thì không có. */
 function tabCoSan() {
-  const co = { cli: true, stats: true, hermes: false, agy: false, docker: false };
+  const co = { cli: true, stats: true, quota: true, hermes: false, agy: false, docker: false };
   try { co.hermes = fs.existsSync(path.join(os.homedir(), '.hermes')); } catch {}
   try { co.agy = fs.existsSync(AGY_DIR); } catch {}
   /* Docker: chỉ kiểm socket có tồn tại, KHÔNG gọi `docker ps` — lệnh đó mất hơn một
@@ -559,9 +563,22 @@ function parseSessionFile(file) {
   });
   const agentChay = agents.filter(a => a.trangThai === 'dang-chay').length;
 
+  /* Phiên do MỘT LỆNH SLASH sinh ra, không phải phiên làm việc.
+
+     Claude CLI tạo một file .jsonl MỚI cho mỗi lần chạy `claude -p /lenh`. Dashboard
+     lại gọi chính CLI để lấy hạn mức và chạy lệnh trong bảng lệnh — nên nó tự đẻ ra
+     phiên rác cho chính mình. Đếm thật trên máy này: 265/410 phiên là loại này,
+     riêng `/usage` đã 183 cái (chip hạn mức ở header gọi định kỳ).
+
+     Dấu hiệu: rất ngắn VÀ lượt đầu của người dùng chỉ là một thẻ <command-name>.
+     Đòi cả hai để không giấu nhầm phiên thật — có phiên người dùng mở bằng lệnh slash
+     rồi nhắn tiếp bình thường, phiên đó dài ra và phải hiện. */
+  const laLenh = msgs.length <= 4
+    && msgs.some(m => m.role === 'user' && /^\s*<command-name>/.test(m.text || ''));
+
   const data = {
     msgs, mtimeMs: st.mtimeMs, title, planFile, usage, model, effort, cho, dangChay,
-    agents, agentChay,
+    agents, agentChay, laLenh,
     tsMs: msgs.map(m => Date.parse(m.ts) || 0),
   };
   // Ghi lại giá trị đã cập nhật trong vòng lặp để lần đọc thêm sau nối tiếp đúng.
@@ -1015,6 +1032,10 @@ async function listSessions() {
       const re = docReTien(full);
       const parsed = parseSessionFile(full);
       if (!parsed) continue;
+      /* Bỏ phiên do một lệnh slash sinh ra. Chúng KHÔNG phải việc của người dùng —
+         chính dashboard đẻ ra khi gọi `claude -p /usage` cho tab Hạn mức và khi chạy
+         lệnh trong bảng lệnh. Không lọc thì danh sách 70% là rác, phiên thật trôi mất. */
+      if (parsed.laLenh) continue;
       if (!re) await nhaNhip();
       /* Tên dự án lấy từ cwd trong chính file, KHÔNG suy từ tên thư mục nữa.
          Tên thư mục là cwd đã bị thay mọi ký tự đặc biệt bằng "-", nên không khôi phục
@@ -2933,6 +2954,63 @@ const server = http.createServer(async (req, res) => {
 
   // ---- chạy lệnh slash của Claude CLI và trả VĂN BẢN (không tạo phiên chat).
   // Dùng cho /context /cost /mcp /doctor… — những lệnh chỉ để xem thông tin. ----
+  /* Hạn mức Claude — đọc từ `/usage` rồi PARSE THÀNH SỐ.
+
+     Cache 60 giây vì `/usage` phải spawn `claude -p`, đo thật mất 3-5 giây. Không thể
+     gọi theo nhịp SSE 2 giây, mà số liệu này cũng chỉ nhích theo phút.
+
+     Trả cả `tho` (văn bản gốc) để phần "gì đang ăn hạn mức" hiện nguyên — phần đó là
+     văn xuôi tự do, parse ra cấu trúc thì vừa mong manh vừa mất chữ. */
+  if (p === '/api/quota') {
+    /* 10 phút, KHÔNG phải 60 giây. Mỗi lần bỏ cache là `claude -p /usage` chạy thật,
+       mà CLI tạo hẳn một file .jsonl mới cho mỗi lần gọi — đếm được 183 phiên rác chỉ
+       riêng từ lệnh này. Hạn mức nhích theo giờ chứ không theo phút, nên hỏi dày hơn
+       cũng chỉ nhận lại đúng con số cũ kèm một file rác. */
+    const GIU = 600000;
+    if (quotaCache && Date.now() - quotaCache.at < GIU && !url.searchParams.get('moi')) {
+      return json(res, 200, { ...quotaCache.data, cache: true });
+    }
+    /* stdin PHẢI đóng ngay. Không đóng thì CLI chờ 3 giây rồi in cảnh báo
+       "no stdin data received in 3s, proceeding without it" — cảnh báo đó lẫn vào
+       stderr, mà ta gộp stdout+stderr nên nó hiện luôn trong khối "gì đang ăn hạn mức"
+       trên giao diện. Đã thấy thật trên màn desktop. */
+    const pr = spawn('claude', ['-p', '/usage'],
+      { cwd: os.homedir(), env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    try { pr.stdin.end(); } catch {}
+    let so = '', se = '';
+    pr.stdout.on('data', (d) => { so += d; });
+    pr.stderr.on('data', (d) => { se += d; });
+    const hen = setTimeout(() => { try { pr.kill('SIGKILL'); } catch {} }, 60000);
+    return pr.on('close', () => {
+      clearTimeout(hen);
+      /* Bỏ mọi dòng cảnh báo của CLI trước khi parse: chúng không phải số liệu, mà
+         hiện ra thì người đọc tưởng dashboard hỏng. */
+      const out = (so + se).split('\n')
+        .filter((d) => !/^\s*(Warning|Note):/i.test(d))
+        .join('\n').trim();
+      if (!out || /isn't available in this environment/i.test(out)) {
+        return json(res, 200, { ok: false, error: 'CLI không trả hạn mức', tho: out.slice(0, 400) });
+      }
+      /* Ba dòng có dạng "Nhãn: N% used · resets <mốc>". Bắt theo mẫu thay vì theo
+         thứ tự dòng: CLI có thể thêm bớt dòng (vd chỉ có Fable khi dùng model đó). */
+      const muc = [];
+      for (const d of out.split('\n')) {
+        const m = d.match(/^\s*(Current [^:]+):\s*(\d+)%\s*used(?:\s*·\s*resets\s+(.+?))?\s*$/i);
+        if (m) muc.push({ ten: m[1].trim(), phanTram: +m[2], datLai: (m[3] || '').trim() });
+      }
+      const data = {
+        ok: muc.length > 0,
+        muc,
+        // dòng đầu cho biết đang dùng gói thuê bao hay trả theo API
+        kieu: (out.split('\n')[0] || '').trim().slice(0, 200),
+        tho: out.slice(0, 4000),
+        luc: Date.now(),
+      };
+      quotaCache = { at: Date.now(), data };
+      json(res, 200, data);
+    });
+  }
+
   if (p === '/api/claude/run' && req.method === 'POST') {
     let body;
     try { body = await readBody(req); } catch { return json(res, 400, { ok: false, error: 'bad json' }); }

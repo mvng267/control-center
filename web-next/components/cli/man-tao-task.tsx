@@ -133,7 +133,7 @@ export function ManTaoTask({
           <ArrowLeft className="size-4" />
         </Button>
         <span className="text-[14px] font-semibold">Giao task mới</span>
-        <span className="ml-auto text-[11.5px] text-muted-foreground">Claude sẽ mở phiên mới</span>
+        <span className="ml-auto text-[12px] text-muted-foreground">Claude sẽ mở phiên mới</span>
       </div>
 
       {/* Ô gõ chiếm TRỌN chỗ còn lại. Đây là điểm khác căn bản so với ô 1 dòng cũ:
@@ -163,7 +163,7 @@ export function ManTaoTask({
           <Segmented items={MODES} value={mode as (typeof MODES)[number]['id']}
             onChange={(v) => setMode(v)} testid="mode-seg" size="sm" />
         </div>
-        <p className="px-0.5 text-[11.5px] text-muted-foreground" data-testid="mode-desc">
+        <p className="px-0.5 text-[12px] text-muted-foreground" data-testid="mode-desc">
           {MODE_DESC[mode] || MODE_DESC['']}
         </p>
 

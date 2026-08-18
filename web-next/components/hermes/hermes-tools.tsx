@@ -83,9 +83,9 @@ export function HermesTools({ onClose }: { onClose: () => void }) {
                     {dangChay === l.id
                       ? <Loader2 className="size-3.5 animate-spin text-primary" />
                       : <l.icon className="size-3.5 text-tool-accent" />}
-                    <span className="text-[13px] font-medium">{l.nhan}</span>
+                    <span className="text-[14px] font-medium">{l.nhan}</span>
                   </span>
-                  <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">{l.mo}</span>
+                  <span className="line-clamp-2 text-[12px] leading-snug text-muted-foreground">{l.mo}</span>
                 </button>
               ))}
             </div>
@@ -93,7 +93,7 @@ export function HermesTools({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <div className="flex items-center gap-2">
-              <span className="text-[13px] font-semibold">{kq.nhan}</span>
+              <span className="text-[14px] font-semibold">{kq.nhan}</span>
               <Button variant="ghost" size="sm" className="tap44 ml-auto h-7 text-[12px]"
                 onClick={() => setKq(null)} data-testid="ht-back">
                 <X className="size-3.5" /> Chọn lệnh khác
@@ -101,11 +101,11 @@ export function HermesTools({ onClose }: { onClose: () => void }) {
             </div>
             {kq.noi ? (
               <pre data-testid="ht-output"
-                className="max-h-[62dvh] overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background/60 p-3 font-mono text-[11.5px] leading-relaxed">
+                className="max-h-[62dvh] overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-border bg-background/60 p-3 font-mono text-[12px] leading-relaxed">
                 {kq.noi}
               </pre>
             ) : (
-              <div className="flex items-center gap-2 py-6 text-[13px] text-muted-foreground">
+              <div className="flex items-center gap-2 py-6 text-[14px] text-muted-foreground">
                 <Loader2 className="size-4 animate-spin text-primary" /> Đang chạy…
               </div>
             )}
