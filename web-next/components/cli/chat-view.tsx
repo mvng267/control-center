@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus, Loader2, Plus, Search, X,
   Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree, Maximize2, Circle, ChevronRight,
-  Bot,
+  Bot, ShieldPlus,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
@@ -28,6 +28,9 @@ import { Badge } from '@/components/ui/badge';
 import { SheetDuoi, MucSheet } from '@/components/ui/sheet-duoi';
 import { useCauHinh } from '@/lib/use-cauhinh';
 import { cn } from '@/lib/utils';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
 /* Bốn ký tự mở đầu mà Claude CLI hiểu. MỘT nguồn duy nhất cho cả hai cách bày: hàng
@@ -52,6 +55,9 @@ interface Msg {
   tuDong?: string;
 }
 
+/** Lệnh bị chặn quyền, server trả kèm /api/history khi Claude đã dừng */
+interface ChanQuyen { ten: string; lenh: string; moTa: string; loi: string }
+
 /* Nhãn cho tin tự động. Claude CLI nhét chúng vào cùng chỗ với câu người gõ, nên nếu
    không gọi tên riêng thì khung chat hiện "mvng: <task-notification>…" — đọc như chính
    mình gõ ra. Đo trên phiên này: 16% lượt user là loại này. */
@@ -70,6 +76,8 @@ interface DuAnChat {
 interface History {
   messages: Msg[]; total: number; start: number; typing: boolean; status: string;
   title: string; error: string | null; awaiting: boolean;
+  /** lệnh bị chặn quyền ở lượt cuối — null nếu không có */
+  chanQuyen?: ChanQuyen | null;
   model: string | null;        // model ĐẶT RIÊNG cho phiên (null = theo model toàn cục)
   modelDaChay?: string | null; // model THẬT của lượt gần nhất, đọc từ .jsonl
   dangChay?: string;           // lệnh đang chạy dở, vd "Bash(npm test)"
@@ -340,6 +348,34 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
      Lưu CHUỖI chứ không lưu chỉ số: server chỉ trả 30 tin gần nhất nên cửa sổ trượt
      mỗi khi có tin mới, chỉ số tụt đi một sau mỗi 2 giây (bẫy đã ghi trong CLAUDE.md). */
   const [cauDinh, setCauDinh] = useState('');
+
+  /* POPUP DUYỆT QUYỀN.
+
+     Dashboard chạy `claude -p` với stdio ignore nên CLI không hỏi quyền được, và bản
+     CLI này cũng không có `--permission-prompt-tool` để nối kênh hỏi ngược — nên không
+     thể chặn TRƯỚC khi chạy như terminal. Cách đi vòng: lượt đầu vẫn hỏng, nhưng thay
+     vì bắt người dùng mở terminal chạy tay, dashboard hỏi ngay tại đây rồi ghi luật
+     vào `.claude/settings.local.json` của dự án. Lần sau lệnh qua được.
+
+     `boQua` nhớ theo NỘI DUNG lệnh chứ không theo cờ bật/tắt: đóng popup rồi mà nhịp
+     SSE sau lại bật lên là không đóng nổi, còn nhớ theo lệnh thì lệnh KHÁC bị chặn vẫn
+     hỏi tiếp — đúng thứ cần. */
+  const [boQua, setBoQua] = useState<string[]>([]);
+  const [dangDuyet, setDangDuyet] = useState(false);
+  const chan = h?.chanQuyen && !boQua.includes(h.chanQuyen.lenh) ? h.chanQuyen : null;
+
+  const duyetQuyen = async () => {
+    if (!chan || dangDuyet) return;
+    setDangDuyet(true);
+    try {
+      const r = await api<{ ok: boolean; luat: string; duAn: string }>(
+        '/api/duyet-quyen/' + sid, { method: 'POST', body: '{}' });
+      setBoQua((x) => [...x, chan.lenh]);
+      toast.success('Đã cho phép ' + r.luat + ' — nhắn "chạy lại đi" để Claude thử tiếp');
+    } catch (e) {
+      toast.error(String((e as Error)?.message || e).slice(0, 140));
+    } finally { setDangDuyet(false); }
+  };
 
   /* Dán / kéo-thả ảnh. Trên terminal Claude nhận ảnh dán thẳng; ở đây trước chỉ có
      nút chọn file, nên chụp màn hình xong phải lưu ra đĩa rồi mới đính được.
@@ -1211,6 +1247,45 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 font-mono text-[16px] outline-none md:text-[14px]" />
         </div>
       )}
+
+      {/* POPUP DUYỆT QUYỀN — hiện khi lượt cuối có lệnh bị CLI chặn.
+          Bày đúng CÂU LỆNH và LUẬT sẽ ghi: đây là thứ mở quyền chạy lệnh, bấm Cho phép
+          mà không biết mình vừa cho phép cái gì là kiểu nút tệ nhất. */}
+      <Dialog open={!!chan} onOpenChange={(v) => { if (!v && chan) setBoQua((x) => [...x, chan.lenh]); }}>
+        <DialogContent className="max-w-[520px]" data-testid="popup-quyen">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[16px]">
+              <ShieldPlus className="size-4 shrink-0 text-status-run" />
+              Claude cần quyền chạy lệnh
+            </DialogTitle>
+            <DialogDescription className="text-[14px]">
+              {chan?.moTa || 'Lệnh bị chặn vì chưa có trong danh sách cho phép.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-2">
+            <div className="text-[12px] font-semibold tracking-wide text-muted-foreground/70">LỆNH</div>
+            <pre className="max-h-[140px] overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border bg-muted/40 p-2.5 font-mono text-[12px] leading-relaxed">
+              {chan?.lenh}
+            </pre>
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
+              Cho phép sẽ ghi luật vào <code className="font-mono">.claude/settings.local.json</code> của
+              dự án này — chỉ dự án này, không phải mọi nơi. Sau đó nhắn “chạy lại đi” để Claude thử tiếp.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" data-testid="quyen-bo-qua"
+              onClick={() => { if (chan) setBoQua((x) => [...x, chan.lenh]); }}>
+              Bỏ qua
+            </Button>
+            <Button onClick={duyetQuyen} disabled={dangDuyet} data-testid="quyen-cho-phep">
+              {dangDuyet ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+              Cho phép
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

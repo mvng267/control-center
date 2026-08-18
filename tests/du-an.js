@@ -432,6 +432,69 @@ async function snapshot() {
     }
   }
 
+  /* ---------- DUYỆT lệnh bị chặn quyền ----------
+     Dashboard chạy `claude -p` với stdio ignore nên CLI không hỏi quyền được, và bản
+     CLI này cũng không có `--permission-prompt-tool`. Cách đi vòng: đọc lỗi đã xảy ra,
+     hỏi người dùng, rồi ghi luật vào `.claude/settings.local.json` của chính dự án —
+     đúng file mà CLI đọc. Lượt đầu vẫn hỏng nhưng không phải rời dashboard. */
+  {
+    const cwd = '/private/tmp/duyet-check';
+    const dir = path.join(PROJECTS_DIR, '-private-tmp-duyet-check');
+    const sid = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(cwd, { recursive: true });
+    const ts = (n) => new Date(Date.now() - n * 1000).toISOString();
+    fs.writeFileSync(path.join(dir, sid + '.jsonl'), [
+      { type: 'user', timestamp: ts(60), cwd, message: { role: 'user', content: 'liệt kê site' } },
+      { type: 'assistant', timestamp: ts(50), cwd, message: {
+        model: 'claude-opus-5', usage: { input_tokens: 5, output_tokens: 5 },
+        content: [{ type: 'tool_use', id: 'q1', name: 'Bash',
+          input: { command: 'ls -d /www/wwwroot/*/', description: 'List sites' } }] } },
+      { type: 'user', timestamp: ts(45), cwd, message: { role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'q1', is_error: true,
+          content: 'This command requires approval' }] } },
+    ].map((d) => JSON.stringify(d)).join('\n') + '\n');
+
+    const H = { 'X-Dash-Token': token, 'Content-Type': 'application/json' };
+    const h = await fetch(URL + '/api/history/' + sid, { headers: H }).then((r) => r.json());
+
+    ok('phát hiện lệnh bị chặn quyền ở lượt cuối',
+      !!h.chanQuyen && /requires approval/i.test(h.chanQuyen.loi || ''),
+      JSON.stringify(h.chanQuyen));
+
+    /* Luật phải suy từ CÂU LỆNH THẬT, không phải `description`. Bản đầu dùng
+       `p.summary` nên ra `Bash(List sites:*)` — vừa không khớp lệnh nào, vừa mở quyền
+       cho một chuỗi vô nghĩa. */
+    ok('trả về câu lệnh thật, không phải mô tả',
+      h.chanQuyen?.lenh === 'ls -d /www/wwwroot/*/',
+      'lenh=' + (h.chanQuyen?.lenh || '') + ' moTa=' + (h.chanQuyen?.moTa || ''));
+
+    const d = await fetch(URL + '/api/duyet-quyen/' + sid, { method: 'POST', headers: H, body: '{}' })
+      .then((r) => r.json());
+    ok('duyệt xong ghi luật vào settings.local.json của DỰ ÁN',
+      d.ok === true && d.luat === 'Bash(ls -d:*)' && d.duAn === cwd, JSON.stringify(d));
+
+    const luat = JSON.parse(fs.readFileSync(path.join(cwd, '.claude', 'settings.local.json'), 'utf8'));
+    ok('file luật đúng cấu trúc CLI đọc được',
+      Array.isArray(luat.permissions?.allow) && luat.permissions.allow.includes('Bash(ls -d:*)'),
+      JSON.stringify(luat).slice(0, 90));
+
+    // duyệt lại cùng lệnh không được sinh bản trùng
+    const d2 = await fetch(URL + '/api/duyet-quyen/' + sid, { method: 'POST', headers: H, body: '{}' })
+      .then((r) => r.json());
+    ok('duyệt hai lần không sinh luật trùng', d2.trung === true && d2.tong === d.tong,
+      JSON.stringify(d2));
+
+    /* Luật do client gửi lên phải bị KIỂM: đây là thứ mở quyền chạy lệnh, nhận chuỗi
+       tuỳ ý thì ai gọi được API cũng ghi được gì vào file quyền cũng được. */
+    const xau = await fetch(URL + '/api/duyet-quyen/' + sid, { method: 'POST', headers: H,
+      body: JSON.stringify({ luat: 'rm -rf /' }) });
+    ok('từ chối luật sai định dạng', xau.status === 400, 'HTTP ' + xau.status);
+
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+
   /* ---------- Ẩn phiên khỏi danh sách ----------
      Đo trên máy này: 12/145 phiên (8%) có thư mục gốc không còn — nhắn vào rơi vào hư
      không mà vẫn chiếm chỗ. Cộng 17 phiên nháp trong /tmp.

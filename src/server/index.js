@@ -684,6 +684,71 @@ function setFav(sid, bat) {
   return true;
 }
 
+/* ---- LỆNH BỊ CHẶN QUYỀN, đang chờ người duyệt ----
+
+   Dashboard chạy `claude -p` với stdio ignore nên CLI không hỏi quyền được — lệnh cần
+   duyệt thì chết ngay với một câu tiếng Anh, và người dùng chỉ còn cách mở terminal
+   chạy tay. CLI này cũng không có `--permission-prompt-tool` để nối kênh hỏi ngược.
+
+   Cách đi vòng: đọc lỗi đã xảy ra, hỏi người dùng, rồi GHI LUẬT vào
+   `.claude/settings.local.json` của chính dự án đó — đúng file mà CLI đọc. Lần chạy
+   sau lệnh qua được. Không phải hỏi-trước-khi-chạy như terminal, nhưng chỉ tốn một
+   lượt thử hỏng và người dùng không phải rời dashboard. */
+const MAU_CHAN_QUYEN = /requires approval|command_substitution|have permission to use|not allowed/i;
+
+/** Lệnh bị chặn GẦN NHẤT trong phiên, hoặc null. Chỉ xét tool cuối — lỗi cũ đã qua. */
+function lenhChoDuyet(parsed) {
+  if (!parsed || !parsed.msgs) return null;
+  for (let i = parsed.msgs.length - 1; i >= 0 && i > parsed.msgs.length - 12; i--) {
+    const parts = parsed.msgs[i].parts || [];
+    for (let j = parts.length - 1; j >= 0; j--) {
+      const p = parts[j];
+      if (p.t !== 'tool') continue;
+      if (p.status !== 'error' || !MAU_CHAN_QUYEN.test(p.result || '')) return null;
+      /* `lenh` phải là CÂU LỆNH THẬT (`p.input`), không phải `p.summary` — summary là
+         phần `description` Claude tự đặt ("List sites on server"), suy luật từ đó ra
+         `Bash(List sites:*)`: vừa không khớp lệnh nào, vừa mở quyền cho một chuỗi vô
+         nghĩa. Đã ra đúng lỗi đó ở bản đầu. */
+      return { ten: p.name, lenh: p.input || '', moTa: p.summary || '', loi: p.result || '' };
+    }
+  }
+  return null;
+}
+
+/* Luật cho phép suy từ lệnh. `Bash(git status:*)` — CLI khớp theo TIỀN TỐ, nên lấy
+   phần đầu lệnh là đủ rộng để lần sau không hỏi lại, mà vẫn hẹp hơn `Bash(*)`.
+   Cắt ở ký tự đầu tiên có thể đổi nghĩa: đường dẫn và cờ thì giữ, còn `|`, `&&`, `$(`
+   thì dừng — cho phép cả chuỗi lệnh nối nhau là mở rộng hơn hẳn thứ người dùng nhìn
+   thấy lúc bấm Duyệt. */
+function luatTuLenh(ten, lenh) {
+  const t = String(lenh || '').trim();
+  if (!t) return '';
+  if (ten !== 'Bash') return ten + '(*)';
+  const dau = t.split(/[|&;><]|\$\(|`/)[0].trim();
+  const tu = dau.split(/\s+/).slice(0, 2).join(' ');
+  return 'Bash(' + tu + ':*)';
+}
+
+/* Ghi luật vào .claude/settings.local.json của DỰ ÁN (không phải ~/.claude): quyền
+   nên gắn với dự án, mở cho một repo không có nghĩa mở cho mọi repo. */
+function themLuat(cwd, luat) {
+  if (!cwd || !luat) return { ok: false, error: 'thiếu dự án hoặc luật' };
+  const thuMuc = path.join(cwd, '.claude');
+  const f = path.join(thuMuc, 'settings.local.json');
+  let j = {};
+  try { j = JSON.parse(fs.readFileSync(f, 'utf8')); } catch {}
+  if (!j.permissions) j.permissions = {};
+  const ds = Array.isArray(j.permissions.allow) ? j.permissions.allow : [];
+  if (ds.indexOf(luat) >= 0) return { ok: true, trung: true, tong: ds.length };
+  ds.push(luat);
+  j.permissions.allow = ds;
+  try {
+    fs.mkdirSync(thuMuc, { recursive: true });
+    fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
+  } catch (e) { return { ok: false, error: String(e.message || e) }; }
+  return { ok: true, tong: ds.length, file: f };
+}
+
 /* ---- phiên đã ẩn ----
    Đo trên máy này: 12/145 phiên (8%) có thư mục gốc không còn — nhắn vào rơi vào hư
    không, mà vẫn chiếm chỗ trong danh sách. Cộng 17 phiên nháp trong /tmp nữa.
@@ -2562,6 +2627,10 @@ const server = http.createServer(async (req, res) => {
       error: se && Date.now() - se.at < 120000 ? se.msg : null,
       // đang chờ duyệt kế hoạch: có file plan ở lượt cuối và Claude đã dừng
       awaiting: !!(parsed && parsed.planFile && !typing),
+      /* Lệnh bị CHẶN QUYỀN ở lượt cuối — client hiện popup hỏi có duyệt không.
+         Chỉ gửi khi Claude đã DỪNG: đang chạy mà bật popup thì nó chen ngang giữa
+         lúc đọc, mà lúc đó cũng chưa chắc lượt này đã hỏng hẳn. */
+      chanQuyen: (!typing && parsed) ? lenhChoDuyet(parsed) : null,
       usage: parsed ? parsed.usage : null, // token đã dùng (thay cho /cost)
       /* Dự án của phiên: tên thư mục thật + repo GitHub + nhánh + thư mục còn tồn
          tại không. Danh sách phiên đã hiện đủ những thứ này, nhưng MỞ phiên ra thì
@@ -2715,6 +2784,36 @@ const server = http.createServer(async (req, res) => {
     const bat = !!body.bat;
     if (!setFav(sid, bat)) return json(res, 500, { error: 'không ghi được file ghim' });
     return json(res, 200, { ok: true, fav: bat, tong: loadFav().length });
+  }
+
+  /* ---- DUYỆT lệnh bị chặn quyền ----
+     Ghi luật vào `.claude/settings.local.json` của dự án rồi báo lại. KHÔNG tự chạy
+     lại lệnh: người dùng có thể muốn sửa câu lệnh trước, và tự động chạy lại thứ vừa
+     bị chặn là đúng loại hành vi không nên tự ý làm. */
+  if ((m = p.match(/^\/api\/duyet-quyen\/([\w-]+)$/)) && req.method === 'POST') {
+    const sid = m[1];
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+
+    const file = findSessionFile(sid);
+    const parsed = file ? parseSessionFile(file) : null;
+    if (!parsed) return json(res, 404, { error: 'không thấy phiên' });
+    const cho = lenhChoDuyet(parsed);
+    if (!cho) return json(res, 409, { error: 'phiên này không có lệnh nào đang chờ duyệt' });
+
+    /* Luật do CLIENT gửi lên nhưng phải kiểm lại: đây là thứ mở quyền chạy lệnh, không
+       thể tin chuỗi tuỳ ý. Chỉ nhận đúng dạng `Ten(...)` và độ dài hợp lý. */
+    const luat = String(body.luat || luatTuLenh(cho.ten, cho.lenh)).trim();
+    if (!/^[A-Za-z_]+\([^)\n]{1,200}\)$/.test(luat)) {
+      return json(res, 400, { error: 'luật không hợp lệ: ' + luat.slice(0, 60) });
+    }
+    /* Thư mục dự án lấy từ `sessionCwd` — hàm sẵn có đọc trường cwd trong .jsonl.
+       `parsed` không mang cwd (nó chỉ giữ tin nhắn và siêu dữ liệu hiển thị). */
+    const duAn = sessionCwd(sid);
+    if (!duAn) return json(res, 409, { error: 'không xác định được thư mục dự án của phiên' });
+    const kq = themLuat(duAn, luat);
+    if (!kq.ok) return json(res, 500, kq);
+    return json(res, 200, { ok: true, luat, trung: !!kq.trung, tong: kq.tong, duAn });
   }
 
   /* ---- ẩn / bỏ ẩn phiên ----
