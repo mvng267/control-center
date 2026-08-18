@@ -648,6 +648,9 @@ export function SessionList({
         </div>
         {SAP_XEP.map(({ k, nhan }) => (
           <button key={k} type="button" data-testid={'sort-' + k} data-active={sort.k === k}
+            /* KHÔNG đóng menu sau khi chọn — có chủ ý. Menu này có CẢ sắp xếp lẫn bốn
+               bộ lọc, mà hai thứ đó thường đi cùng nhau ("sắp theo dự án, và chỉ xem
+               phiên đã ghim"). Đóng ngay thì mỗi lựa chọn phải mở lại một lần. */
             onClick={() => { setSort((s) => ({ k, dir: s.k === k && s.dir === -1 ? 1 : -1 })); setPage(0); }}
             className="tap44 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-accent/60">
             <Check className={cn('size-4 shrink-0', sort.k === k ? 'text-primary' : 'opacity-0')} />

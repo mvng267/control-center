@@ -246,6 +246,9 @@ Nhóm này sinh ra từ một câu hỏi đo được: dashboard chỉ hiện **
 | 205 | Nút **ảnh** giống hệt các nút cùng hàng | trước là nút icon tròn 44px không viền, đứng cạnh thì lạc | ui-new |
 | 206 | Công tắc quyền/model **có viền** như nút bên cạnh | bỏ viền thì trông như chữ rơi vãi, không ra nút | ui-new |
 | 207 | Tab Hạn mức không lẫn **cảnh báo của CLI** | đóng stdin + lọc dòng `Warning:` | du-an |
+| 208 | **Ghim phiên** (sao trên thẻ) — phiên ghim luôn ở đầu | bấm sao, phiên nhảy lên đầu bất kể sắp xếp gì | du-an |
+| 209 | Lọc **chỉ phiên đã ghim** trong menu ⇅ | nhớ qua localStorage như các bộ lọc khác | du-an |
+| 210 | Ghim hai lần không sinh bản trùng | mảng lưu thứ tự ghim, không phải Set | du-an |
 
 ---
 

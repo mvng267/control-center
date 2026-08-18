@@ -2243,6 +2243,14 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
        "ẩn thư mục đã xoá": đo trên máy này 24/136 phiên (18%) có thư mục gốc không
        còn — nhắn vào rơi vào hư không, mà trước đây không có cách nào giấu đi. */
     {
+      /* Đóng menu nếu bài trước để nó mở. Menu KHÔNG tự đóng khi chọn sắp xếp (có chủ
+         ý: người dùng thường chọn sắp xếp rồi bật luôn bộ lọc trong cùng một lần mở),
+         nên lớp nền `sheet-nen` còn đó và che mất nút `mo-loc` — bấm vào là chờ 30 giây
+         rồi TimeoutError, kéo đỏ cả bộ. Đã xảy ra thật. */
+      await page.keyboard.press('Escape').catch(() => {});
+      await page.waitForSelector('[data-testid=sheet-nen]', { state: 'detached', timeout: 5000 })
+        .catch(() => {});
+      await page.waitForTimeout(300);
       // về "Mới nhất" cho khỏi vướng gom nhóm của bài trước
       await page.click('[data-testid=mo-loc]');
       await page.waitForSelector('[data-testid=menu-loc]', { timeout: 10000 });
@@ -2327,7 +2335,14 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     /* Tab Thống kê gom donut theo cùng trường project nên sai theo đúng một kiểu:
        lát "6debb715b13d/scratchpad", "cmdtest" (thư mục nháp do test sinh),
        và "Van thong plastic" bị tách thành hai lát. */
-    await page.click('text=Thống kê');
+    /* Dùng TESTID, không dùng `text=`: chữ "Thống kê" xuất hiện ở nhiều nơi (sidebar,
+       lối tắt "Xem nhanh"), mà lối tắt lại nằm dưới nên Playwright chọn nhầm rồi chờ
+       mãi. Kèm đóng overlay còn sót từ bài trước — menu lọc không tự đóng nên lớp nền
+       của nó che cả sidebar. */
+    await page.keyboard.press('Escape').catch(() => {});
+    await page.waitForSelector('[data-testid=sheet-nen]', { state: 'detached', timeout: 5000 })
+      .catch(() => {});
+    await page.click('[data-testid=nav-stats]');
     await page.waitForTimeout(1800);
     const nhan = await page.$$eval('.recharts-legend-item-text, .recharts-cartesian-axis-tick-value',
       (es) => es.map((e) => e.textContent || ''));

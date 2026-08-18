@@ -146,6 +146,20 @@ function donCong() {
   for (const m of ['tests/e2e.js', 'tests/ui-new.js', 'tests/du-an.js', 'tests/push.js']) {
     if (im(`pgrep -f "${m}"`)) im(`pkill -f "${m}"`);
   }
+  /* Chrome mồ côi của Playwright. Bộ test bị ngắt giữa chừng (Ctrl-C, phiên đóng) thì
+     trình duyệt không được `.close()`, tiến trình sống mãi. Đo thật: tải máy lên 19.42
+     trên MacBook 8 core, và lần chạy sau bị hệ điều hành ngắt vì hết tài nguyên —
+     nhìn hệt như mã hỏng.
+     CHỈ giết Chrome do Playwright bật (đường dẫn `ms-playwright` hoặc cờ headless),
+     tuyệt đối không đụng Chrome người dùng đang mở. */
+  const chrome = im("ps -eo pid,command | grep -i chrom | grep -v grep")
+    .split('\n').filter((l) => /ms-playwright|--headless|--remote-debugging-pipe/.test(l))
+    .map((l) => l.trim().split(/\s+/)[0]).filter(Boolean);
+  if (chrome.length) {
+    console.log(`  (dọn ${chrome.length} Chrome mồ côi của Playwright)`);
+    im('kill -9 ' + chrome.join(' '));
+  }
+
   // 7797 = cổng của tests/push.js, hai cổng kia là của chính test-all
   for (const c of [CONG_CU, CONG_MOI, 7797, 7869]) {
     const pid = im(`lsof -ti:${c}`);
