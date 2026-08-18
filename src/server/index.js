@@ -694,6 +694,16 @@ function datPhien(sid, khoa, gia) {
   try { ghiJson(PHIEN_FILE, t); } catch { return false; }
   return true;
 }
+/* Bỏ dấu tiếng Việt để tìm không dấu vẫn ra: gõ "ke hoach" phải khớp "kế hoạch".
+   Trên iPhone gõ không dấu nhanh hơn hẳn, mà tên phiên và nội dung đều có dấu.
+   `đ` phải xử lý riêng — NFD không tách nó thành d + dấu như các chữ khác.
+   Giao diện đã có bản y hệt (session-list.tsx); giữ hai bản vì backend zero dependency
+   và web-next build riêng, không chia sẻ module được. */
+function boDau(s) {
+  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+}
+
 // sid rỗng (lệnh một phát chưa gắn phiên nào) -> rơi thẳng về mặc định chung
 function permFor(sid) {
   const r = sid && loadPhien()[sid];
@@ -2321,6 +2331,42 @@ const server = http.createServer(async (req, res) => {
     try { entry.proc.kill('SIGTERM'); } catch { try { process.kill(-entry.proc.pid, 'SIGTERM'); } catch {} }
     procs.delete(sid);
     return json(res, 200, { ok: true });
+  }
+
+  /* Tìm trong NỘI DUNG một phiên.
+
+     Ô tìm ở danh sách phiên chỉ quét siêu dữ liệu + tin CUỐI, nên muốn tìm lại điều đã
+     bàn ở giữa phiên thì không có đường nào. Cộng với cửa sổ 30 tin, đo trên phiên
+     control: 19.806 lượt, dashboard xem được 0,2% — nội dung cũ vừa không xem được vừa
+     không tìm được, phải tải cả file .md về đọc ngoài app.
+
+     Tìm trên parsed.msgs (đã nằm sẵn trong RAM, không parse lại). Trả về CHỈ SỐ TUYỆT
+     ĐỐI của từng tin khớp + đoạn trích, để client biết phải tải thêm bao nhiêu tin cũ
+     rồi mới nhảy tới được. Bỏ dấu hai đầu: gõ "ke hoach" phải ra "kế hoạch" — trên
+     iPhone gõ không dấu nhanh hơn nhiều. */
+  if ((m = p.match(/^\/api\/tim\/([\w-]+)$/))) {
+    const sid = m[1];
+    const q = boDau(String(url.searchParams.get('q') || '').trim().toLowerCase());
+    if (q.length < 2) return json(res, 400, { error: 'cần ít nhất 2 ký tự' });
+    const file = findSessionFile(sid);
+    if (!file) return json(res, 404, { error: 'không thấy phiên' });
+    const parsed = parseSessionFile(file);
+    if (!parsed) return json(res, 404, { error: 'không đọc được phiên' });
+
+    const ra = [];
+    for (let i = parsed.msgs.length - 1; i >= 0 && ra.length < 50; i--) {
+      const t = String(parsed.msgs[i].text || '');
+      const vt = boDau(t.toLowerCase()).indexOf(q);
+      if (vt < 0) continue;
+      ra.push({
+        i,                                   // chỉ số TUYỆT ĐỐI trong toàn phiên
+        cuoi: parsed.msgs.length - 1 - i,     // cách cuối bao nhiêu tin -> client quy ra ?them=
+        vai: parsed.msgs[i].role,
+        ts: parsed.msgs[i].ts,
+        trich: t.slice(Math.max(0, vt - 40), vt + 80).replace(/\s+/g, ' ').trim(),
+      });
+    }
+    return json(res, 200, { ok: true, tong: parsed.msgs.length, so: ra.length, ket: ra.reverse() });
   }
 
   if ((m = p.match(/^\/api\/history\/([\w-]+)$/))) {

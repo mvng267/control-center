@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus, Loader2, Plus,
+  ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus, Loader2, Plus, Search, X,
   Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree, Maximize2, Circle, ChevronRight,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -201,6 +201,56 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
      Reset khi đổi phiên — nếu không, mở phiên ngắn sau phiên dài sẽ xin thừa. */
   const [them, setThem] = useState(0);
   useEffect(() => { setThem(0); }, [sid]);
+
+  /* Tìm trong NỘI DUNG phiên. Ô tìm ở danh sách chỉ quét tên phiên + tin cuối, nên
+     muốn tìm lại điều đã bàn giữa phiên thì trước đây không có đường nào — cộng với
+     cửa sổ 30 tin, đo trên phiên control 19.806 lượt thì chỉ xem được 0,2%.
+     Server trả CHỈ SỐ TUYỆT ĐỐI + `cuoi` (cách cuối bao nhiêu tin), nên nhảy tới kết
+     quả cũ = tăng `them` cho đủ rồi cuộn — dùng lại đúng cơ chế phân trang đã có. */
+  const [tim, setTim] = useState('');
+  const [moTim, setMoTim] = useState(false);
+  const [ketTim, setKetTim] = useState<{ i: number; cuoi: number; vai: string; ts: string; trich: string }[] | null>(null);
+  const [dangTim, setDangTim] = useState(false);
+  /* Nhảy tới kết quả khoá theo MỐC THỜI GIAN, không theo chỉ số. Cửa sổ 30 tin trượt
+     mỗi khi có tin mới nên mọi chỉ số tụt đi một — đúng bài học đã ghi trong mã cho
+     thẻ tool và bảng câu hỏi. Thêm nữa `groups` là tin ĐÃ GỘP nên chỉ số của nó vốn
+     không khớp với msgs bên server. */
+  const [nhayTs, setNhayTs] = useState<string | null>(null);
+  useEffect(() => { setTim(''); setKetTim(null); setMoTim(false); }, [sid]);
+
+  const chayTim = async (q: string) => {
+    if (q.trim().length < 2) { setKetTim(null); return; }
+    setDangTim(true);
+    try {
+      const r = await api<{ ket: typeof ketTim; so: number }>('/api/tim/' + sid + '?q=' + encodeURIComponent(q));
+      setKetTim(r.ket || []);
+    } catch { setKetTim([]); } finally { setDangTim(false); }
+  };
+
+  /* Nhảy tới một kết quả: xin đủ tin cũ rồi cuộn tới. Phải xin THỪA một nhịp (+10)
+     vì cửa sổ trượt — tin mới về trong lúc đang tải sẽ đẩy mốc đi. */
+  const toiKetQua = (k: { cuoi: number; ts: string }) => {
+    if (k.cuoi >= 30 + them) setThem(Math.ceil((k.cuoi - 20) / 30) * 30 + 30);
+    setNhayTs(k.ts);
+    setMoTim(false);
+  };
+
+  /* Cuộn tới tin vừa chọn SAU khi nó đã được vẽ. Chờ một nhịp vì `them` vừa đổi thì
+     phải qua một vòng tải nữa tin cũ mới về. Tô sáng 2 giây rồi tắt — đủ để mắt bắt
+     được chỗ, không để lại vệt màu vướng mắt khi đọc tiếp. */
+  useEffect(() => {
+    if (!nhayTs) return;
+    const t = setTimeout(() => {
+      /* Lượt bọc bằng `display:contents` (để lưới cha xếp thẳng hàng) nên bản thân nó
+         KHÔNG có hộp — scrollIntoView trên đó không làm gì. Cuộn tới phần tử con đầu
+         tiên, đó mới là thứ có vị trí thật trên màn hình. */
+      const bao = boxRef.current?.querySelector<HTMLElement>(`[data-ts="${nhayTs}"]`);
+      const el = (bao?.firstElementChild as HTMLElement) || bao;
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 350);
+    const x = setTimeout(() => setNhayTs(null), 2400);
+    return () => { clearTimeout(t); clearTimeout(x); };
+  }, [nhayTs, them, h?.messages?.length]);
   const [att, setAtt] = useState<Attachment[]>([]);
   // Sheet chức năng (chỉ mở được trên điện thoại — nút mở có `sm:hidden`)
   const [sheet, setSheet] = useState(false);
@@ -464,6 +514,14 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           </span>
           <Badge variant="outline" className={cn('shrink-0 text-[10.5px]',
             h?.status === 'RUNNING' && 'border-status-ok/40 text-status-ok')}>{h?.status || '…'}</Badge>
+          {/* Tìm trong phiên — đặt cạnh trạng thái vì đây là thao tác trên CẢ phiên,
+              không phải trên lượt đang mở như các nút trong menu ⋯ */}
+          <Button variant="ghost" size="icon" data-testid="chat-tim-btn"
+            className={cn('tap44 size-9 shrink-0', moTim && 'text-primary')}
+            title="Tìm trong phiên này" aria-label="Tìm trong phiên này"
+            onClick={() => setMoTim((v) => !v)}>
+            <Search className="size-4" />
+          </Button>
           {/* Chế độ quyền + mức nghĩ chuyển XUỐNG dòng trạng thái dưới ô gõ, đúng chỗ
               Claude CLI in chúng. Để trên này thì lẫn giữa các nút icon, và trên iPhone
               còn bị đẩy khuất. */}
@@ -535,6 +593,53 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         </div>
       )}
 
+      {/* Bảng tìm — phủ lên đầu vùng cuộn, không đẩy nội dung xuống. Đóng lại là chat
+          nguyên như cũ, không mất chỗ đọc. */}
+      {moTim && (
+        <div className="mx-3 mb-1.5 shrink-0 rounded-lg border border-border bg-card p-2" data-testid="chat-tim">
+          <div className="flex items-center gap-2">
+            <Search className="size-3.5 shrink-0 text-muted-foreground" />
+            <input autoFocus value={tim} data-testid="chat-tim-input"
+              onChange={(e) => { setTim(e.target.value); chayTim(e.target.value); }}
+              onKeyDown={(e) => { if (e.key === 'Escape') setMoTim(false); }}
+              placeholder="Tìm trong phiên này — gõ không dấu cũng được"
+              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/60" />
+            {dangTim && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
+            <button onClick={() => setMoTim(false)} data-testid="chat-tim-dong"
+              className="tap44 shrink-0 px-1 text-muted-foreground hover:text-foreground" aria-label="Đóng tìm kiếm">
+              <X className="size-4" />
+            </button>
+          </div>
+          {ketTim && (
+            <div className="mt-1.5 max-h-[38dvh] overflow-y-auto border-t border-border pt-1.5">
+              {ketTim.length === 0 ? (
+                <p className="px-1 py-2 text-[12px] text-muted-foreground">Không thấy gì khớp.</p>
+              ) : (
+                <>
+                  <p className="px-1 pb-1 text-[11px] text-muted-foreground" data-testid="chat-tim-so">
+                    {ketTim.length} kết quả{ketTim.length >= 50 ? ' (chỉ hiện 50 gần nhất)' : ''}
+                  </p>
+                  {ketTim.map((k) => (
+                    <button key={k.i} onClick={() => toiKetQua(k)} data-testid="chat-tim-ket"
+                      className="flex w-full items-start gap-2 rounded-md px-1 py-1.5 text-left transition-colors hover:bg-accent">
+                      <span className={cn('mt-[3px] shrink-0 text-[11px] font-medium',
+                        k.vai === 'user' ? 'text-primary' : 'text-tool-accent')}>
+                        {k.vai === 'user' ? cauHinh.nguoiDung : 'Claude'}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">{k.trich}</span>
+                      {/* Cách cuối bao nhiêu tin — biết kết quả nằm sâu tới đâu */}
+                      <span className="mt-[2px] shrink-0 text-[10.5px] tabular-nums text-muted-foreground/60">
+                        −{k.cuoi}
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <TodoBar todos={todos} />
 
       <div ref={boxRef} data-testid="chat-bubbles"
@@ -575,7 +680,10 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                Hậu quả đo được: đang chọn dở bảng câu hỏi thì cứ 2 giây mất sạch lựa
                chọn ("Còn 1 câu" -> "Còn 3 câu"), thẻ tool đang mở cũng tự đóng.
                Dùng mốc ĐẦU lượt — nó gắn với chính tin đó, không đổi khi cửa sổ trượt. */
-            <div key={(m.tsDau || m.ts || '') + ':' + (m.role || '')} className="contents">
+            /* data-ts: mốc ĐẦU lượt, để nhảy tới kết quả tìm. Dùng chính giá trị đã
+               làm key nên chắc chắn khớp và không đổi khi cửa sổ trượt. */
+            <div key={(m.tsDau || m.ts || '') + ':' + (m.role || '')} className="contents"
+              data-ts={m.tsDau || m.ts || ''}>
               {showDay && (
                 <div className="my-2 flex items-center gap-2.5 text-[10.5px] text-muted-foreground/70"
                   data-testid="day-divider">

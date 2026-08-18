@@ -382,6 +382,60 @@ async function snapshot() {
     }
   }
 
+  /* ---------- Tìm trong NỘI DUNG phiên ----------
+     Ô tìm ở danh sách chỉ quét siêu dữ liệu + tin CUỐI. Cộng với cửa sổ 30 tin, đo
+     trên phiên control: 19.806 lượt tức dashboard xem được 0,2% — nội dung cũ vừa
+     không xem được vừa không tìm được, phải tải cả file .md về đọc ngoài app.
+
+     Bài quan trọng nhất ở đây là TÌM KHÔNG DẤU: trên iPhone gõ không dấu nhanh hơn
+     hẳn, mà nội dung thì có dấu. Sai chỗ này là tính năng vô dụng trên chính thiết bị
+     Vinh dùng nhiều nhất. */
+  {
+    const dir = path.join(PROJECTS_DIR, '-private-tmp-tim-check');
+    const sid = 'aaaaaaaa-2222-4333-8444-555555555555';
+    const f = path.join(dir, sid + '.jsonl');
+    const gio = Date.now();
+    const dong = (i, chu) => JSON.stringify({
+      type: 'assistant', timestamp: new Date(gio - (60 - i) * 1000).toISOString(),
+      cwd: '/private/tmp/tim-check',
+      message: { model: 'claude-opus-5', usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: 'text', text: chu }] },
+    }) + '\n';
+    const tim = (q) => fetch(URL + '/api/tim/' + sid + '?q=' + encodeURIComponent(q),
+      { headers: { 'X-Dash-Token': token } }).then((r) => r.json());
+
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      // 40 tin nhồi + 1 tin có dấu nằm SÂU (ngoài cửa sổ 30) -> đúng chỗ trước đây mù
+      const ds = [dong(0, 'Đây là kế hoạch triển khai đặc biệt')];
+      for (let i = 1; i <= 40; i++) ds.push(dong(i, 'dòng nhồi số ' + i));
+      fs.writeFileSync(f, ds.join(''));
+      await new Promise((r) => setTimeout(r, 250));
+
+      const a = await tim('ke hoach');
+      ok('tìm KHÔNG DẤU vẫn ra chữ có dấu ("ke hoach" -> "kế hoạch")',
+        a.ok && a.so === 1 && /kế hoạch/.test(a.ket[0].trich), JSON.stringify(a.so ?? a.error));
+
+      ok('kết quả cho biết nằm cách cuối bao nhiêu tin (để client tải thêm)',
+        !!a.ket && a.ket[0].cuoi === 40, a.ket ? 'cuoi=' + a.ket[0].cuoi : '—');
+
+      ok('tìm được tin NGOÀI cửa sổ 30 — thứ trước đây không xem nổi',
+        !!a.ket && a.ket[0].cuoi > 30, a.ket ? 'cách cuối ' + a.ket[0].cuoi + ' tin' : '—');
+
+      const b = await tim('KẾ HOẠCH');
+      ok('không phân biệt hoa thường', b.so === 1, String(b.so));
+
+      const c = await tim('khongcogichuoinay');
+      ok('không khớp thì trả rỗng, không lỗi', c.ok && c.so === 0, String(c.so ?? c.error));
+
+      const d = await tim('a');
+      ok('chặn truy vấn quá ngắn (1 ký tự quét cả phiên là phí)', d.error && !d.ok,
+        JSON.stringify(d.error || d));
+    } finally {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  }
+
   /* ---------- Phiên chờ người bấm: phân biệt với "đã trả lời xong" ----------
      Vinh dùng iPhone là chính. Trước đây mọi lượt kết thúc đều bắn một thông báo y hệt
      "đã trả lời xong", nên phiên ĐANG ĐỨNG CHỜ TAY NGƯỜI (duyệt kế hoạch / chọn phương
