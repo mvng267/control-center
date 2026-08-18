@@ -47,6 +47,12 @@ export interface Session {
   /* Đã ghim chưa. Danh sách xoay theo thời gian nên phiên đang làm dở tụt xuống ngay
      khi mở phiên khác — ghim để nó luôn nằm đầu. */
   fav?: boolean;
+  /* Số PHÚT đã im lặng nếu phiên CÓ VẺ TREO (tiến trình còn sống mà .jsonl không được
+     ghi thêm quá 15 phút). Vắng mặt = bình thường — server chỉ gửi khi khác 0. */
+  treo?: number;
+  /* Đã ẩn khỏi danh sách chưa. Ẩn là ghi riêng của dashboard — KHÔNG xoá .jsonl, phiên
+     vẫn mở được bằng link và vẫn hiện khi bật "Hiện cả phiên đã ẩn". */
+  an?: boolean;
   /* Nhịp token 20 mốc gần nhất (CHÊNH LỆCH giữa hai nhịp SSE, không phải số tổng).
      Server CHỈ gửi cho phiên đang chạy — phiên nghỉ token không đổi nên đường vẽ ra
      phẳng lì, gửi đi chỉ tốn băng thông. */

@@ -2568,8 +2568,12 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
          position:sticky van co offsetParent binh thuong, con position:fixed thi luon
          null — da tung viet nham cach do va duoc mot bai test xanh gia. */
       const st = await page.evaluate(() => {
+        /* Bỏ qua tin TỰ ĐỘNG: chúng mang `data-role=user` nhưng cố ý KHÔNG có nền
+           riêng — nền + đệm là để tách câu MÌNH GÕ khỏi lời Claude, mà
+           `<task-notification>` thì không phải mình gõ. Lấy phần tử đầu tiên khớp
+           `data-role=user` có thể trúng đúng loại đó và bài đỏ oan. */
         const u = [...document.querySelectorAll('[data-testid=msg-wrap]')]
-          .find((x) => x.getAttribute('data-role') === 'user');
+          .find((x) => x.getAttribute('data-role') === 'user' && !x.hasAttribute('data-tu-dong'));
         if (!u) return null;
         const cs = getComputedStyle(u);
         return { position: cs.position, top: cs.top, z: cs.zIndex, bg: cs.backgroundColor,

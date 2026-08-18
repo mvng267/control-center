@@ -78,7 +78,10 @@ export function SessionCard({
   onGiuLau?: () => void; // chạm giữ để vào chế độ chọn (như ứng dụng Ảnh)
 }) {
   const tt = TRANG_THAI[s.status] || TRANG_THAI.IDLE;
-  const dangChay = ['RUNNING', 'ACTIVE'].includes(s.status);
+  /* Phiên CÓ VẺ TREO thì KHÔNG cho thở: nhịp thở là dấu hiệu "còn sống và đang làm",
+     mà đây đúng là trường hợp ngược lại — tiến trình còn nhưng 15 phút không ghi thêm
+     dòng nào. Thở tiếp thì nó trông y hệt phiên khoẻ, đúng cái vấn đề cần sửa. */
+  const dangChay = ['RUNNING', 'ACTIVE'].includes(s.status) && !s.treo;
   const model = gonModel(s.model);
   const cauHinh = useCauHinh();
 
@@ -174,6 +177,18 @@ export function SessionCard({
           title={s.title || s.sid}>
           {s.title || s.sid.slice(0, 8)}
         </span>
+
+        {/* CÓ VẺ TREO — tiến trình còn sống mà .jsonl im quá 15 phút. Mọi đường chạy
+            khác đều có hạn (oneshot 120s, hermes 30s, agy 10 phút), riêng đường chat
+            chính thì không, nên Claude kẹt 40 phút vẫn hiện xanh y hệt phiên khoẻ.
+            Nói rõ SỐ PHÚT: "treo" chung chung thì không biết có nên dừng hay chờ tiếp. */}
+        {!!s.treo && (
+          <span data-testid="chip-treo" title={`Không ghi thêm gì suốt ${s.treo} phút — có thể đã kẹt`}
+            className="flex shrink-0 items-center gap-1 rounded-full border border-status-run/40 bg-status-run/10 px-1.5 text-[12px] text-status-run">
+            <TriangleAlert className="size-3" />
+            {s.treo}p
+          </span>
+        )}
 
         {s.unread > 0 && (
           <span className="shrink-0 rounded-full bg-destructive px-1.5 text-[12px] font-semibold text-white">

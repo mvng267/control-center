@@ -187,3 +187,32 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-tho { animation: none; }
 }
+
+/* ---- THANH CUỘN ----
+   Mặc định của trình duyệt rộng 15px và màu xám đặc, nằm cạnh danh sách phiên thì
+   nặng hơn cả nội dung. Trên macOS nó chỉ hiện khi cuộn nên dễ quên mất, còn trên
+   Windows/Linux thì hiện thường trực — cùng một giao diện mà hai máy nhìn khác hẳn.
+
+   Đặt 8px + màu theo token: đủ để trỏ chuột vào kéo, mà không cướp sự chú ý. Dùng cả
+   hai cú pháp vì `scrollbar-width` (chuẩn) chưa nhận số đo tuỳ ý, còn `::-webkit-*`
+   thì Firefox không hiểu. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent) transparent;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted-foreground) 26%, transparent);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+}
+/* Góc giao nhau giữa thanh dọc và ngang — để trống thì nó ra một ô xám vuông */
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* Hàng cuộn NGANG (tab lọc, meta bar) ẩn hẳn thanh: chúng cao ~30px nên thêm 8px
+   thanh cuộn là chiếm hơn một phần tư chiều cao. Vuốt/lăn vẫn cuộn được. */
+.an-thanh-cuon { scrollbar-width: none; }
+.an-thanh-cuon::-webkit-scrollbar { display: none; }

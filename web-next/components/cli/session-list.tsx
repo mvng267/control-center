@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search, ChevronLeft, ChevronRight, Plus, SlidersHorizontal, Check, ArrowUp, ArrowDown,
-  MoreHorizontal, MessageSquare, Download, Square,
+  MoreHorizontal, MessageSquare, Download, Square, Eye, EyeOff,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -152,6 +152,21 @@ export function SessionList({
       });
   };
 
+  // Hiện cả phiên đã ẩn — nằm cùng menu ⇅ với các bộ lọc khác
+  const [hienAn, setHienAn] = useState(false);
+  /* Ẩn phiên. Cùng lối cập-nhật-lạc-quan với ghim: nhịp SSE 2 giây mới về, chờ nó thì
+     bấm "Ẩn" xong thẻ vẫn nằm đó — người dùng tưởng bấm hụt rồi bấm lại. */
+  const [anTam, setAnTam] = useState<Record<string, boolean>>({});
+  const doiAn = (sid: string, bat: boolean) => {
+    setAnTam((x) => ({ ...x, [sid]: bat }));
+    api('/api/an/' + sid, { method: 'POST', body: JSON.stringify({ bat }) })
+      .then(() => toast(bat ? 'Đã ẩn — bật "Hiện cả phiên đã ẩn" để xem lại' : 'Đã bỏ ẩn'))
+      .catch(() => {
+        setAnTam((x) => ({ ...x, [sid]: !bat }));
+        toast.error('Không ẩn được');
+      });
+  };
+
   useEffect(() => {
     try { setMoNhap(localStorage.getItem('cli-mo-nhap') === '1'); } catch {}
   }, []);
@@ -235,12 +250,19 @@ export function SessionList({
     const needle = boDau(q.trim());
     /* Áp cập nhật lạc quan LÊN TRƯỚC mọi thứ khác: lọc và sắp xếp đều đọc `fav`, nên
        nếu chỉ áp lúc vẽ thì bấm sao xong phiên không nhảy lên đầu ngay. */
-    const dsFav = Object.keys(favTam).length
-      ? sessions.map((s) => (s.sid in favTam ? { ...s, fav: favTam[s.sid] } : s))
+    const dsFav = Object.keys(favTam).length || Object.keys(anTam).length
+      ? sessions.map((s) => {
+        let r = s;
+        if (s.sid in favTam) r = { ...r, fav: favTam[s.sid] };
+        if (s.sid in anTam) r = { ...r, an: anTam[s.sid] };
+        return r;
+      })
       : sessions;
     const out = dsFav.filter((s) => {
       const d = s.duAn;
       if (locFav && !s.fav) return false;
+      // phiên đã ẩn: giấu mặc định, hiện lại khi bật công tắc trong menu ⇅
+      if (s.an && !hienAn) return false;
       if (proj && (d?.khoa || s.project) !== proj) return false;
       if (stat === 'run' && !['RUNNING', 'ACTIVE'].includes(s.status)) return false;
       if (stat === 'idle' && ['RUNNING', 'ACTIVE'].includes(s.status)) return false;
@@ -287,7 +309,7 @@ export function SessionList({
       return String(A).localeCompare(String(B)) * sort.dir;
     });
     return out;
-  }, [sessions, q, proj, stat, sort, locCho, anDaXoa, locChuaDoc, locFav, favTam]);
+  }, [sessions, q, proj, stat, sort, locCho, anDaXoa, locChuaDoc, locFav, favTam, hienAn, anTam]);
 
   // Có kết quả tìm nằm trong nhóm Nháp đang gập -> TỰ BUNG. Gõ tìm mà ra 0 kết quả
   // trong khi phiên đó có thật thì khó hiểu hơn nhiều so với việc lộ mấy phiên nháp.
@@ -317,8 +339,9 @@ export function SessionList({
       chuaDoc: trong.filter((s) => s.unread).length,
       // đếm theo trạng thái ĐANG HIỆN (kể cả cái vừa bấm chưa kịp về từ server)
       fav: trong.filter((s) => (s.sid in favTam ? favTam[s.sid] : s.fav)).length,
+      an: trong.filter((s) => (s.sid in anTam ? anTam[s.sid] : s.an)).length,
     };
-  }, [sessions, hienNhap, favTam]);
+  }, [sessions, hienNhap, favTam, anTam]);
   const soNhap = hop.length - hop.filter((s) => !s.duAn?.laNhap).length;
 
   /* Cột hẹp bên trái không có hàng phân trang (không đủ chỗ), nên phải hiện nhiều hơn
@@ -348,10 +371,9 @@ export function SessionList({
       {/* px-2 + gap-0 trên điện thoại: với px-3/gap-1 thì tab thứ tư ("Việc nền") tràn
           khỏi mép 390px — cuộn ngang được nhưng nhìn vào tưởng chỉ có ba tab, mà tab
           nào cũng phải thấy mới biết là bấm được. */}
-      <div className={cn('flex shrink-0 items-center overflow-x-auto border-b border-border pt-2',
+      <div className={cn('flex shrink-0 items-center overflow-x-auto an-thanh-cuon border-b border-border pt-2',
         // cột hẹp 340px: bỏ đệm ngang và khoảng cách để 4 tab vừa đủ chỗ, không phải cuộn
-        gonGang ? 'gap-0 px-1.5' : 'gap-0 px-2 sm:gap-1 sm:px-3')}
-        style={{ scrollbarWidth: 'none' }} data-testid="tab-loc">
+        gonGang ? 'gap-0 px-1.5' : 'gap-0 px-2 sm:gap-1 sm:px-3')} data-testid="tab-loc">
         {[
           { id: '', nhan: 'Tất cả', so: sessions.length, cham: '' },
           { id: 'run', nhan: 'Đang chạy', so: tally.run, cham: 'bg-status-ok' },
@@ -398,11 +420,18 @@ export function SessionList({
             stat === 'jobs' ? 'hidden' : 'flex')}>
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              {/* h-9 thay h-11: hàng này ăn 44px vĩnh viễn cho thứ phần lớn thời gian
+                  để trống. text-[16px] trên mobile là BẮT BUỘC — dưới 16px thì Safari
+                  iOS tự phóng to trang khi chạm vào ô nhập. */}
               <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} data-testid="search-box"
-                placeholder="Tìm phiên…" className="h-11 pl-8 text-[16px] md:h-9 md:text-[14px]" />
+                placeholder="Tìm phiên…" className="h-9 pl-8 text-[16px] md:text-[14px]" />
             </div>
+            {/* Dropdown dự án CHỈ ở cột rộng. Ở cột hẹp 340px, ô tìm + dropdown + nút
+                menu cộng lại làm ô tìm co còn ~160px — gõ vài chữ là không đọc được
+                mình vừa gõ gì. Lọc theo dự án chuyển vào menu ⇅ cùng các bộ lọc khác. */}
             <select value={proj} onChange={(e) => { setProj(e.target.value); setPage(0); }} data-testid="project-filter"
-              className="h-11 w-[104px] shrink-0 rounded-lg border border-border bg-card px-2 text-[14px] outline-none sm:h-9 sm:w-auto sm:px-2.5 sm:text-[14px]">
+              className={cn('h-9 shrink-0 rounded-lg border border-border bg-card px-2 text-[14px] outline-none sm:w-auto sm:px-2.5',
+                gonGang ? 'hidden' : 'w-[104px]')}>
               <option value="">Mọi dự án</option>
               {projects.map((p) => <option key={p.khoa} value={p.khoa}>{p.nhan}</option>)}
             </select>
@@ -412,7 +441,7 @@ export function SessionList({
                 dùng để nguyên "Mới nhất". Gom vào menu, lấy chỗ đó cho danh sách. */}
             <button type="button" data-testid="mo-loc" onClick={() => setMoMenu(true)}
               title="Sắp xếp và lọc"
-              className="tap44 relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:text-foreground sm:h-9 sm:w-9">
+              className="tap44 relative flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:text-foreground">
               <SlidersHorizontal className="size-4" />
               {/* Chấm báo có lọc đang bật. Không có nó thì bật lọc rồi quên là ngồi
                   nhìn danh sách trống mà không hiểu vì sao thiếu phiên. */}
@@ -468,9 +497,8 @@ export function SessionList({
           {/* Cột hẹp ẩn nốt hàng này: đang mở phiên thì việc chính là ĐỌC chat, còn
               chọn nhiều phiên để thao tác hàng loạt là việc của màn danh sách đầy đủ.
               Giữ lại chỉ tổ ăn mất chiều cao của thẻ phiên trong cột 340px. */}
-          <div className={cn('hidden items-center gap-2 overflow-x-auto sm:flex',
-            (stat === 'jobs' || gonGang) && 'sm:hidden')}
-            style={{ scrollbarWidth: 'none' }}>
+          <div className={cn('hidden items-center gap-2 overflow-x-auto an-thanh-cuon sm:flex',
+            (stat === 'jobs' || gonGang) && 'sm:hidden')}>
             {/* "Chọn cả trang" ẨN HẲN trên điện thoại. Đo trên iPhone 390px: hàng này
                 ăn 45px nhưng chữ bị ẩn, nên chỉ còn MỘT Ô VUÔNG TRƠ TRỌI không ai hiểu
                 để làm gì. Trên điện thoại thay bằng chạm giữ một thẻ để vào chế độ
@@ -558,7 +586,7 @@ export function SessionList({
                             dangMo={s.sid === sidMo}
                 onFav={(bat) => doiFav(s.sid, bat)}
                             onOpen={onOpen}
-                            menu={<RowMenu s={s} onOpen={onOpen} />} />
+                            menu={<RowMenu s={s} onOpen={onOpen} onAn={(bat) => doiAn(s.sid, bat)} />} />
                         ))}
                       </div>
                     )}
@@ -586,7 +614,7 @@ export function SessionList({
                   dangMo={s.sid === sidMo}
                 onFav={(bat) => doiFav(s.sid, bat)}
                   onOpen={onOpen}
-                  menu={<RowMenu s={s} onOpen={onOpen} />} />
+                  menu={<RowMenu s={s} onOpen={onOpen} onAn={(bat) => doiAn(s.sid, bat)} />} />
               ))}
             </div>
           )}
@@ -702,6 +730,19 @@ export function SessionList({
         <div className="mt-1 border-t border-border px-3 pb-1 pt-2 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
           Lọc
         </div>
+        {/* Dropdown dự án chuyển vào ĐÂY khi ở cột hẹp — trên hàng lọc nó làm ô tìm co
+            còn ~160px. Ở cột rộng nó vẫn nằm ngoài (thao tác một chạm), nên chỗ này ẩn
+            đi để không có hai bản cùng lúc. */}
+        {gonGang && (
+          <div className="px-3 pb-2 pt-1">
+            <select value={proj} onChange={(e) => { doiLoc(() => setProj(e.target.value)); }}
+              data-testid="project-filter-menu"
+              className="h-9 w-full rounded-lg border border-border bg-card px-2 text-[14px] outline-none">
+              <option value="">Mọi dự án</option>
+              {projects.map((p) => <option key={p.khoa} value={p.khoa}>{p.nhan}</option>)}
+            </select>
+          </div>
+        )}
         {([
           { id: 'cho', bat: locCho, dat: setLocCho, nhan: 'Chỉ phiên chờ tôi duyệt',
             mo: 'Đang đứng chờ bấm duyệt kế hoạch hoặc trả lời câu hỏi', dem: demLoc.cho },
@@ -711,6 +752,8 @@ export function SessionList({
             mo: 'Có tin mới chưa xem', dem: demLoc.chuaDoc },
           { id: 'fav', bat: locFav, dat: setLocFav, nhan: 'Chỉ phiên đã ghim',
             mo: 'Bấm ngôi sao trên thẻ để ghim', dem: demLoc.fav },
+          { id: 'hien-an', bat: hienAn, dat: setHienAn, nhan: 'Hiện cả phiên đã ẩn',
+            mo: 'Ẩn chỉ giấu khỏi danh sách, không xoá file', dem: demLoc.an },
         ]).map((x) => (
           <button key={x.id} type="button" data-testid={'loc-' + x.id} data-active={x.bat}
             onClick={() => doiLoc(() => x.dat(!x.bat))}
@@ -735,7 +778,11 @@ export function SessionList({
 /* Menu ⋯ cuối mỗi dòng — Atlas có ở mọi bảng. Việc hay làm nhất với một phiên là
    dừng nó hoặc lấy bản ghi ra, mà trước đây phải MỞ phiên rồi mới thấy nút. Ở đây
    làm được ngay từ danh sách. */
-function RowMenu({ s, onOpen }: { s: Session; onOpen: (sid: string) => void }) {
+function RowMenu({ s, onOpen, onAn }: {
+  s: Session; onOpen: (sid: string) => void;
+  /** ẩn / bỏ ẩn phiên khỏi danh sách (không xoá file) */
+  onAn?: (bat: boolean) => void;
+}) {
   const running = ['RUNNING', 'ACTIVE'].includes(s.status);
   const stop = () => {
     api('/api/kill/' + s.sid, { method: 'POST' })
@@ -763,6 +810,18 @@ function RowMenu({ s, onOpen }: { s: Session; onOpen: (sid: string) => void }) {
         {running && (
           <DropdownMenuItem onClick={stop} data-testid="row-stop" className="text-status-error">
             <Square className="size-4" /> Dừng phiên
+          </DropdownMenuItem>
+        )}
+        {/* ẨN — chỉ giấu khỏi danh sách, KHÔNG xoá .jsonl (dữ liệu gốc của CLI).
+            Đo trên máy này: 12/145 phiên có thư mục gốc không còn, cộng 17 phiên nháp
+            trong /tmp — chiếm chỗ mà nhắn vào cũng rơi vào hư không.
+            Cho ẩn phiên BẤT KỲ, không riêng phiên mồ côi: người dùng biết cái nào đáng
+            giữ hơn là máy đoán. */}
+        {!!onAn && (
+          <DropdownMenuItem data-testid="row-an" onClick={() => onAn(!s.an)}>
+            {s.an
+              ? <><Eye className="size-4" /> Bỏ ẩn phiên</>
+              : <><EyeOff className="size-4" /> Ẩn khỏi danh sách</>}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>

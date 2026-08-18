@@ -432,6 +432,107 @@ async function snapshot() {
     }
   }
 
+  /* ---------- Ẩn phiên khỏi danh sách ----------
+     Đo trên máy này: 12/145 phiên (8%) có thư mục gốc không còn — nhắn vào rơi vào hư
+     không mà vẫn chiếm chỗ. Cộng 17 phiên nháp trong /tmp.
+     KHÔNG xoá .jsonl (dữ liệu gốc của CLI, CLAUDE.md cấm đụng): chỉ giấu, có đường
+     bật lại. */
+  {
+    const sid = 'an-test-' + Date.now();
+    const dat = (bat) => fetch(URL + '/api/an/' + sid, {
+      method: 'POST', headers: { 'X-Dash-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bat }),
+    }).then((r) => r.json());
+
+    const a = await dat(true);
+    ok('ẩn được phiên', a.ok === true && a.an === true, JSON.stringify(a));
+
+    const b = await dat(true);
+    ok('ẩn hai lần không sinh bản trùng', b.tong === a.tong, `${a.tong} -> ${b.tong}`);
+
+    const c = await dat(false);
+    ok('bỏ ẩn được', c.ok === true && c.an === false && c.tong === a.tong - 1, JSON.stringify(c));
+
+    /* File .jsonl phải NGUYÊN VẸN sau khi ẩn — đây là điều quan trọng nhất của tính
+       năng này. Ẩn mà lỡ tay xoá dữ liệu gốc thì không có đường lùi. */
+    const dir = path.join(PROJECTS_DIR, '-private-tmp-an-check');
+    const sid2 = '88888888-2222-4333-8444-555555555555';
+    fs.mkdirSync(dir, { recursive: true });
+    const f = path.join(dir, sid2 + '.jsonl');
+    fs.writeFileSync(f, JSON.stringify({
+      type: 'user', timestamp: new Date().toISOString(),
+      cwd: '/private/tmp/an-check', message: { role: 'user', content: 'giữ nguyên tôi' },
+    }) + '\n');
+    const truoc = fs.readFileSync(f, 'utf8');
+    await fetch(URL + '/api/an/' + sid2, {
+      method: 'POST', headers: { 'X-Dash-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bat: true }),
+    });
+    ok('ẩn KHÔNG đụng tới file .jsonl gốc',
+      fs.existsSync(f) && fs.readFileSync(f, 'utf8') === truoc,
+      fs.existsSync(f) ? 'nội dung nguyên vẹn' : 'FILE ĐÃ BIẾN MẤT');
+    await fetch(URL + '/api/an/' + sid2, {
+      method: 'POST', headers: { 'X-Dash-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bat: false }),
+    });
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  /* ---------- Phát hiện phiên TREO ----------
+     Mọi đường chạy khác đều có hạn (oneshot 120s, hermes 30s, agy 10 phút), riêng
+     đường chat chính thì không — Claude kẹt 40 phút vẫn hiện RUNNING xanh y hệt phiên
+     khoẻ, không có cách nào biết trừ khi mở ra xem.
+
+     Kiểm bằng cách NẠP THẲNG hàm chứ không qua HTTP: `treoBaoLau` chỉ trả khác 0 khi
+     tiến trình còn trong `procs`, mà bộ test này không spawn Claude thật. Nạp mã rồi
+     tự nhét một mục vào `procs` là cách duy nhất kiểm được mà không phải chờ 15 phút. */
+  {
+    const GOC = path.join(__dirname, '..', 'src', 'server');
+    const src = fs.readFileSync(path.join(GOC, 'index.js'), 'utf8')
+      .replace(/^#!.*\n/, '')
+      .replace(/server\.listen\([\s\S]*?\n\}\);/, '');
+    const M = { exports: {} };
+    const req = (m) => require(m.startsWith('.') ? path.join(GOC, m) : m);
+    new Function('module', 'exports', 'require', '__dirname', '__filename',
+      src + '\nmodule.exports={treoBaoLau,statusOf,procs,NGUONG_TREO_MS};')
+      (M, M.exports, req, GOC, path.join(GOC, 'index.js'));
+    const { treoBaoLau, statusOf, procs, NGUONG_TREO_MS } = M.exports;
+
+    const sid = 'treo-thu-nghiem-0001';
+    const nay = Date.now();
+
+    // chưa có trong procs -> không phải treo, dù im cả tiếng
+    ok('phiên KHÔNG chạy thì không bao giờ bị gắn cờ treo',
+      treoBaoLau(sid, nay - 60 * 60000) === 0, String(treoBaoLau(sid, nay - 60 * 60000)));
+
+    procs.set(sid, { proc: null, startedAt: nay });
+
+    // đang chạy và vừa ghi -> bình thường
+    ok('phiên đang chạy còn ghi đều thì KHÔNG bị gắn cờ',
+      treoBaoLau(sid, nay - 5000) === 0, String(treoBaoLau(sid, nay - 5000)));
+
+    /* Ngay DƯỚI ngưỡng vẫn phải sạch. Đây là chỗ dễ sai nhất: lượt nặng có agent con
+       chạy nền im lâu nhất 13,5 phút (đo trên máy này) — báo nhầm nhóm đó thì cảnh
+       báo mất nghĩa, người dùng học cách phớt lờ nó. */
+    const duoi = NGUONG_TREO_MS - 30000;
+    ok('ngay DƯỚI ngưỡng vẫn coi là bình thường',
+      treoBaoLau(sid, nay - duoi) === 0, `im ${Math.round(duoi / 60000)} phút -> ${treoBaoLau(sid, nay - duoi)}`);
+
+    // quá ngưỡng -> trả về SỐ PHÚT, không phải boolean
+    const qua = NGUONG_TREO_MS + 5 * 60000;
+    const p = treoBaoLau(sid, nay - qua);
+    ok('quá ngưỡng thì trả về SỐ PHÚT im lặng',
+      p === Math.round(qua / 60000), `mong ${Math.round(qua / 60000)} nhận ${p}`);
+
+    /* `status` PHẢI giữ nguyên 'RUNNING'. Giao diện cũ và bộ lọc "Đang chạy" đều so
+       chuỗi `=== 'RUNNING'`; thêm giá trị mới vào đó là phiên treo biến mất khỏi mọi
+       chỗ đang đếm nó — đúng lúc cần nhìn thấy nhất. */
+    ok('phiên treo VẪN mang status RUNNING (không đổi kiểu cũ)',
+      statusOf(sid, nay - qua) === 'RUNNING', statusOf(sid, nay - qua));
+
+    procs.delete(sid);
+  }
+
   /* ---------- Tin tự động lẫn trong lượt người dùng ----------
      Claude CLI nhét task-notification, system-reminder, /lệnh và kết quả lệnh vào cùng
      một chỗ với câu người thật gõ — cùng `type: 'user'`. Không tách thì khung chat hiện

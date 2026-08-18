@@ -684,6 +684,34 @@ function setFav(sid, bat) {
   return true;
 }
 
+/* ---- phiên đã ẩn ----
+   Đo trên máy này: 12/145 phiên (8%) có thư mục gốc không còn — nhắn vào rơi vào hư
+   không, mà vẫn chiếm chỗ trong danh sách. Cộng 17 phiên nháp trong /tmp nữa.
+
+   KHÔNG xoá file .jsonl: đó là dữ liệu gốc của Claude CLI, CLAUDE.md cấm đụng, và
+   không xoá là đúng — phiên cũ vẫn có thể cần đọc lại. Chỉ giấu khỏi danh sách, có
+   đường bật lại.
+
+   Ẩn được BẤT KỲ phiên nào, không riêng phiên mồ côi: phiên rác do test sinh ra, phiên
+   thử một lần rồi bỏ — người dùng biết cái nào đáng giữ hơn là máy đoán. */
+const AN_FILE = path.join(os.homedir(), '.claude', 'dashboard-an.json');
+let anCache = null;
+function loadAn() {
+  if (anCache) return anCache;
+  try {
+    const j = JSON.parse(fs.readFileSync(AN_FILE, 'utf8'));
+    anCache = Array.isArray(j) ? j.filter((x) => typeof x === 'string') : [];
+  } catch { anCache = []; }
+  return anCache;
+}
+function setAn(sid, bat) {
+  const ds = loadAn().filter((x) => x !== sid);
+  if (bat) ds.push(sid);
+  anCache = ds;
+  try { ghiJson(AN_FILE, ds); } catch { return false; }
+  return true;
+}
+
 /* ---- model riêng từng phiên ----
    /model trước đây đổi model TOÀN CỤC, nên đang chạy Opus cho việc khó mà mở phiên
    khác là dính theo. Lưu riêng theo sid, ưu tiên hơn model toàn cục. */
@@ -1053,10 +1081,41 @@ function findSessionFile(sid) {
   return null;
 }
 
+/* Bao lâu KHÔNG ghi thêm dòng nào thì coi là có vẻ treo.
+
+   Mọi đường chạy khác đều có hạn: oneshot 120 giây, hermes 30, agy 10 phút — riêng
+   đường chat chính thì không, nên Claude kẹt 40 phút vẫn hiện RUNNING xanh y hệt phiên
+   khoẻ. Không có cách nào biết trừ khi mở ra xem.
+
+   Đo trên máy này để chọn ngưỡng: lượt bình thường ghi thêm dòng mỗi vài giây; lượt
+   NẶNG NHẤT (agent con chạy nền) im lâu nhất 13,5 phút. Lấy 15 phút — trên mức đó thì
+   gần như chắc là kẹt, mà vẫn không báo nhầm lượt đang chờ agent.
+
+   KHÔNG tự giết: chỉ báo. Giết nhầm một lượt đang chạy thật thì mất cả công việc đó,
+   còn báo nhầm thì chỉ tốn một cái nhìn.
+
+   Cho phép ghi đè bằng biến môi trường vì test không thể ngồi chờ 15 phút — đây là
+   thứ DUY NHẤT khiến hàm này kiểm được tự động. */
+const NGUONG_TREO_MS = +process.env.NGUONG_TREO_MS || 15 * 60 * 1000;
+
 function statusOf(sid, mtimeMs) {
   if (procs.has(sid)) return 'RUNNING';
   if (mtimeMs && Date.now() - mtimeMs < 15000) return 'ACTIVE';
   return 'IDLE';
+}
+
+/* Trả về số PHÚT đã im lặng nếu phiên có vẻ treo, 0 nếu bình thường.
+
+   KHÔNG thêm giá trị mới vào `status`: giao diện cũ (web/legacy) và cả bộ lọc "Đang
+   chạy" đều so chuỗi `=== 'RUNNING'`, thêm 'TREO' vào đó là phiên treo biến mất khỏi
+   mọi chỗ đang đếm nó. Đây là trường RIÊNG, ai cần thì đọc.
+
+   Dùng mtime của FILE chứ không dùng `startedAt`: lượt dài mà vẫn ghi đều thì khoẻ,
+   còn lượt vừa chạy mà đã im cũng chưa đáng gọi là treo. */
+function treoBaoLau(sid, mtimeMs) {
+  if (!procs.has(sid) || !mtimeMs) return 0;
+  const im = Date.now() - mtimeMs;
+  return im > NGUONG_TREO_MS ? Math.round(im / 60000) : 0;
 }
 
 /* BẤT ĐỒNG BỘ có chủ đích. parseSessionFile đọc + parse TOÀN BỘ file .jsonl; máy này
@@ -1073,6 +1132,7 @@ async function listSessions() {
   // Đọc MỘT LẦN ngoài vòng lặp: hàm này chạy mỗi nhịp SSE (2 giây) qua vài trăm phiên,
   // gọi loadFav() trong vòng lặp là đọc lại cùng một mảng vài trăm lần.
   const dsFav = loadFav();
+  const dsAn = loadAn();   // cùng lý do: đọc một lần, không đọc lại mỗi phiên
   const canDocGit = new Set(); // thư mục chưa có trong gitCache -> để vòng nền đọc sau
   let dirs = [];
   try { dirs = fs.readdirSync(PROJECTS_DIR); } catch { return out; }
@@ -1167,6 +1227,12 @@ async function listSessions() {
           .map(a => a.ten || a.loai || 'agent'),
         // đã ghim chưa — client dùng để vẽ sao đặc và để xếp nhóm ghim lên đầu
         fav: dsFav.indexOf(sid) >= 0,
+        // đã ẩn chưa — client mặc định giấu, có công tắc bật lại
+        ...(dsAn.indexOf(sid) >= 0 ? { an: true } : {}),
+        /* Số PHÚT im lặng nếu có vẻ treo, 0 nếu bình thường. Chỉ gửi khi khác 0 —
+           155 phiên nhân mỗi nhịp SSE 2 giây, thêm một số 0 vô nghĩa cho mỗi phiên là
+           tốn băng thông cho thứ không bao giờ đổi. */
+        ...(treoBaoLau(sid, parsed.mtimeMs) ? { treo: treoBaoLau(sid, parsed.mtimeMs) } : {}),
       });
     }
   }
@@ -2649,6 +2715,18 @@ const server = http.createServer(async (req, res) => {
     const bat = !!body.bat;
     if (!setFav(sid, bat)) return json(res, 500, { error: 'không ghi được file ghim' });
     return json(res, 200, { ok: true, fav: bat, tong: loadFav().length });
+  }
+
+  /* ---- ẩn / bỏ ẩn phiên ----
+     Chỉ ghi vào danh sách riêng của dashboard, KHÔNG đụng file .jsonl. Phiên ẩn vẫn
+     mở được bằng link trực tiếp và vẫn hiện khi bật "Hiện cả phiên đã ẩn". */
+  if ((m = p.match(/^\/api\/an\/([\w-]+)$/)) && req.method === 'POST') {
+    const sid = m[1];
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const bat = !!body.bat;
+    if (!setAn(sid, bat)) return json(res, 500, { error: 'không ghi được file ẩn' });
+    return json(res, 200, { ok: true, an: bat, tong: loadAn().length });
   }
 
   // ---- đổi tên phiên chat (ghi riêng dashboard, không đụng .jsonl của Claude CLI) ----

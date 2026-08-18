@@ -562,8 +562,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             đo ở 390px, sau pl-10 chỉ còn ~310px cho 6 mục nên gần như luôn tràn.
             Dùng mask thay vì thêm phần tử gradient — không đẻ thêm DOM, và khi không
             tràn thì phần mờ rơi vào khoảng trống nên không ai thấy. */}
-        <div className="flex min-w-0 items-center gap-x-2.5 overflow-x-auto whitespace-nowrap pl-10 text-[12px] text-muted-foreground [mask-image:linear-gradient(to_right,black_calc(100%-20px),transparent)]"
-          style={{ scrollbarWidth: 'none' }}
+        <div className="flex min-w-0 items-center gap-x-2.5 overflow-x-auto an-thanh-cuon whitespace-nowrap pl-10 text-[12px] text-muted-foreground [mask-image:linear-gradient(to_right,black_calc(100%-20px),transparent)]"
           data-testid="chat-meta">
           {h?.duAn && (
             <span className="shrink-0 font-medium text-foreground/75" data-testid="chat-du-an">{h.duAn.ten}</span>
@@ -1096,8 +1095,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           </button>
 
           {/* MÁY TÍNH: đủ bề ngang thì bày thẳng, không bắt bấm thêm một lần */}
-          <div className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-x-auto sm:flex"
-            style={{ scrollbarWidth: 'none' }}>
+          <div className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-x-auto an-thanh-cuon sm:flex">
             {CHUC_NANG.map(({ k, nhan, Icon }) => (
               <button key={k} type="button" data-testid={'goi-y-' + nhan}
                 onClick={() => chen(k)}
