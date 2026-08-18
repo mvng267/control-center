@@ -129,6 +129,22 @@ export function SessionList({
   const [anDaXoa, setAnDaXoa] = useState(false);
   const [locChuaDoc, setLocChuaDoc] = useState(false);
   const [moMenu, setMoMenu] = useState(false);
+  // Lọc chỉ xem phiên đã ghim — nằm cùng menu ⇅ với các bộ lọc khác
+  const [locFav, setLocFav] = useState(false);
+
+  /* Ghim/bỏ ghim. Đổi giao diện NGAY rồi mới gọi server: nhịp SSE 2 giây mới về, chờ
+     nó thì bấm sao xong mà ngôi sao đứng im — người dùng tưởng bấm trượt rồi bấm lại,
+     thành ra bật rồi tắt. Cùng lối "cập nhật lạc quan" đã dùng cho công tắc tab. */
+  const [favTam, setFavTam] = useState<Record<string, boolean>>({});
+  const doiFav = (sid: string, bat: boolean) => {
+    setFavTam((x) => ({ ...x, [sid]: bat }));
+    api('/api/fav/' + sid, { method: 'POST', body: JSON.stringify({ bat }) })
+      .catch(() => {
+        // server từ chối -> trả lại như cũ, đừng để giao diện nói dối
+        setFavTam((x) => ({ ...x, [sid]: !bat }));
+        toast.error('Không ghim được');
+      });
+  };
 
   useEffect(() => {
     try { setMoNhap(localStorage.getItem('cli-mo-nhap') === '1'); } catch {}
@@ -153,6 +169,7 @@ export function SessionList({
       setLocCho(!!c.locCho);
       setAnDaXoa(!!c.anDaXoa);
       setLocChuaDoc(!!c.locChuaDoc);
+      setLocFav(!!c.locFav);
     } catch {}
   }, []);
 
@@ -163,10 +180,10 @@ export function SessionList({
     if (!daNap.current) { daNap.current = true; return; }
     try {
       localStorage.setItem('cli-loc', JSON.stringify({
-        sort, proj, perPage, locCho, anDaXoa, locChuaDoc,
+        sort, proj, perPage, locCho, anDaXoa, locChuaDoc, locFav,
       }));
     } catch {}
-  }, [sort, proj, perPage, locCho, anDaXoa, locChuaDoc]);
+  }, [sort, proj, perPage, locCho, anDaXoa, locChuaDoc, locFav]);
 
   // Bật/tắt một bộ lọc thì phải về trang 1 — đang ở trang 5 mà lọc còn 3 kết quả
   // thì màn hình trống trơn, nhìn như hỏng.
@@ -210,8 +227,14 @@ export function SessionList({
   // có rơi vào nhóm Nháp đang gập hay không.
   const hop = useMemo(() => {
     const needle = boDau(q.trim());
-    const out = sessions.filter((s) => {
+    /* Áp cập nhật lạc quan LÊN TRƯỚC mọi thứ khác: lọc và sắp xếp đều đọc `fav`, nên
+       nếu chỉ áp lúc vẽ thì bấm sao xong phiên không nhảy lên đầu ngay. */
+    const dsFav = Object.keys(favTam).length
+      ? sessions.map((s) => (s.sid in favTam ? { ...s, fav: favTam[s.sid] } : s))
+      : sessions;
+    const out = dsFav.filter((s) => {
       const d = s.duAn;
+      if (locFav && !s.fav) return false;
       if (proj && (d?.khoa || s.project) !== proj) return false;
       if (stat === 'run' && !['RUNNING', 'ACTIVE'].includes(s.status)) return false;
       if (stat === 'idle' && ['RUNNING', 'ACTIVE'].includes(s.status)) return false;
@@ -243,6 +266,10 @@ export function SessionList({
       return true;
     });
     out.sort((a, b) => {
+      /* PHIÊN GHIM luôn lên đầu, bất kể đang sắp theo gì. Đó là lý do tồn tại của
+         tính năng: danh sách xoay theo thời gian nên phiên đang làm dở tụt xuống
+         ngay khi mở phiên khác. Ghim rồi mà vẫn phải tìm thì ghim để làm gì. */
+      if (!!a.fav !== !!b.fav) return a.fav ? -1 : 1;
       // 'project' không còn là trường so sánh được trực tiếp cho mọi trường hợp:
       // phải so theo tên dự án thật, nếu không phiên thiếu duAn sẽ nhảy lung tung.
       if (sort.k === 'project') {
@@ -254,7 +281,7 @@ export function SessionList({
       return String(A).localeCompare(String(B)) * sort.dir;
     });
     return out;
-  }, [sessions, q, proj, stat, sort, locCho, anDaXoa, locChuaDoc]);
+  }, [sessions, q, proj, stat, sort, locCho, anDaXoa, locChuaDoc, locFav, favTam]);
 
   // Có kết quả tìm nằm trong nhóm Nháp đang gập -> TỰ BUNG. Gõ tìm mà ra 0 kết quả
   // trong khi phiên đó có thật thì khó hiểu hơn nhiều so với việc lộ mấy phiên nháp.
@@ -282,8 +309,10 @@ export function SessionList({
       cho: trong.filter((s) => s.cho).length,
       daXoa: trong.filter((s) => s.duAn && s.duAn.conTonTai === false).length,
       chuaDoc: trong.filter((s) => s.unread).length,
+      // đếm theo trạng thái ĐANG HIỆN (kể cả cái vừa bấm chưa kịp về từ server)
+      fav: trong.filter((s) => (s.sid in favTam ? favTam[s.sid] : s.fav)).length,
     };
-  }, [sessions, hienNhap]);
+  }, [sessions, hienNhap, favTam]);
   const soNhap = hop.length - hop.filter((s) => !s.duAn?.laNhap).length;
 
   const pages = Math.max(1, Math.ceil(rows.length / perPage));
@@ -505,6 +534,7 @@ export function SessionList({
                               v ? next.add(s.sid) : next.delete(s.sid);
                               setSel(next);
                             }}
+                            onFav={(bat) => doiFav(s.sid, bat)}
                             onOpen={onOpen}
                             menu={<RowMenu s={s} onOpen={onOpen} />} />
                         ))}
@@ -531,6 +561,7 @@ export function SessionList({
                     v ? next.add(s.sid) : next.delete(s.sid);
                     setSel(next);
                   }}
+                  onFav={(bat) => doiFav(s.sid, bat)}
                   onOpen={onOpen}
                   menu={<RowMenu s={s} onOpen={onOpen} />} />
               ))}
@@ -642,6 +673,8 @@ export function SessionList({
             mo: 'Thư mục gốc không còn — nhắn vào rơi vào hư không', dem: demLoc.daXoa },
           { id: 'chua-doc', bat: locChuaDoc, dat: setLocChuaDoc, nhan: 'Chỉ phiên chưa đọc',
             mo: 'Có tin mới chưa xem', dem: demLoc.chuaDoc },
+          { id: 'fav', bat: locFav, dat: setLocFav, nhan: 'Chỉ phiên đã ghim',
+            mo: 'Bấm ngôi sao trên thẻ để ghim', dem: demLoc.fav },
         ]).map((x) => (
           <button key={x.id} type="button" data-testid={'loc-' + x.id} data-active={x.bat}
             onClick={() => doiLoc(() => x.dat(!x.bat))}

@@ -432,6 +432,36 @@ async function snapshot() {
     }
   }
 
+  /* ---------- Ghim phiên (favorite) ----------
+     Danh sách xoay theo thời gian: phiên đang làm dở tụt xuống ngay khi mở phiên khác,
+     và 18% danh sách là phiên của dự án đã xoá. Ghim để phiên hay quay lại luôn ở đầu.
+
+     Lưu MẢNG chứ không phải object vì cần giữ thứ tự ghim. Ghi riêng của dashboard
+     (`dashboard-fav.json`), không đụng .jsonl của CLI. */
+  {
+    const sid = 'fav-test-' + Date.now();
+    const dat = (bat) => fetch(URL + '/api/fav/' + sid, {
+      method: 'POST', headers: { 'X-Dash-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bat }),
+    }).then((r) => r.json());
+
+    const a = await dat(true);
+    ok('ghim được phiên', a.ok === true && a.fav === true, JSON.stringify(a));
+
+    // Ghim LẠI cùng một phiên không được đẩy thêm bản trùng vào mảng
+    const b = await dat(true);
+    ok('ghim hai lần không sinh bản trùng', b.tong === a.tong, `${a.tong} -> ${b.tong}`);
+
+    const c = await dat(false);
+    ok('bỏ ghim được', c.ok === true && c.fav === false && c.tong === a.tong - 1,
+      JSON.stringify(c));
+
+    // Phải thấy trong danh sách phiên — client dùng trường này để vẽ sao và xếp đầu
+    const snapFav = await snapshot();
+    ok('danh sách phiên có trường fav', (snapFav.data.sessions || []).every((s) => 'fav' in s),
+      'kiểm ' + (snapFav.data.sessions || []).length + ' phiên');
+  }
+
   /* ---------- Hạn mức Claude ----------
      Hết hạn mức là thứ CHẶN việc, mà trước đây chỉ biết khi Claude đột ngột trả lỗi
      giữa lượt — trên iPhone càng khó đoán vì không thấy terminal.

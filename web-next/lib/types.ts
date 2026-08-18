@@ -44,6 +44,9 @@ export interface Session {
      giây cho 155 phiên là phí). */
   agentChay?: number;
   agentTen?: string[];
+  /* Đã ghim chưa. Danh sách xoay theo thời gian nên phiên đang làm dở tụt xuống ngay
+     khi mở phiên khác — ghim để nó luôn nằm đầu. */
+  fav?: boolean;
   /* Nhịp token 20 mốc gần nhất (CHÊNH LỆCH giữa hai nhịp SSE, không phải số tổng).
      Server CHỈ gửi cho phiên đang chạy — phiên nghỉ token không đổi nên đường vẽ ra
      phẳng lì, gửi đi chỉ tốn băng thông. */

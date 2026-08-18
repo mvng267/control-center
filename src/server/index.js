@@ -630,6 +630,31 @@ function titleOf(sid, parsedTitle) {
   return loadTitles()[sid] || parsedTitle || '';
 }
 
+/* ---- phiên yêu thích ----
+   Danh sách phiên xoay theo thời gian: phiên đang làm dở tụt xuống dưới ngay khi mở
+   phiên khác, và đo được 18% danh sách là phiên của dự án đã xoá. Ghim lại thì phiên
+   hay quay lại luôn nằm đầu, không phải tìm.
+
+   Lưu MẢNG chứ không phải object: cần biết thứ tự ghim để phiên ghim sau không nhảy
+   lên trước phiên ghim trước. Ghi riêng của dashboard, không đụng .jsonl của CLI. */
+const FAV_FILE = path.join(os.homedir(), '.claude', 'dashboard-fav.json');
+let favCache = null;
+function loadFav() {
+  if (favCache) return favCache;
+  try {
+    const j = JSON.parse(fs.readFileSync(FAV_FILE, 'utf8'));
+    favCache = Array.isArray(j) ? j.filter((x) => typeof x === 'string') : [];
+  } catch { favCache = []; }
+  return favCache;
+}
+function setFav(sid, bat) {
+  const ds = loadFav().filter((x) => x !== sid);
+  if (bat) ds.push(sid);
+  favCache = ds;
+  try { ghiJson(FAV_FILE, ds); } catch { return false; }
+  return true;
+}
+
 /* ---- model riêng từng phiên ----
    /model trước đây đổi model TOÀN CỤC, nên đang chạy Opus cho việc khó mà mở phiên
    khác là dính theo. Lưu riêng theo sid, ưu tiên hơn model toàn cục. */
@@ -1016,6 +1041,9 @@ const nhaNhip = () => new Promise(r => setImmediate(r));
 
 async function listSessions() {
   const out = [];
+  // Đọc MỘT LẦN ngoài vòng lặp: hàm này chạy mỗi nhịp SSE (2 giây) qua vài trăm phiên,
+  // gọi loadFav() trong vòng lặp là đọc lại cùng một mảng vài trăm lần.
+  const dsFav = loadFav();
   const canDocGit = new Set(); // thư mục chưa có trong gitCache -> để vòng nền đọc sau
   let dirs = [];
   try { dirs = fs.readdirSync(PROJECTS_DIR); } catch { return out; }
@@ -1108,6 +1136,8 @@ async function listSessions() {
         agentTen: (parsed.agents || [])
           .filter(a => a.trangThai === 'dang-chay').slice(0, 3)
           .map(a => a.ten || a.loai || 'agent'),
+        // đã ghim chưa — client dùng để vẽ sao đặc và để xếp nhóm ghim lên đầu
+        fav: dsFav.indexOf(sid) >= 0,
       });
     }
   }
@@ -2577,6 +2607,19 @@ const server = http.createServer(async (req, res) => {
     if (amdl) aargs.push('--model', amdl);
     spawnClaude(aargs, sid, { task: msg });
     return json(res, 200, { ok: true, sid });
+  }
+
+  /* ---- ghim / bỏ ghim phiên ----
+     Không nhận `bat` từ client rồi tin theo: gửi cùng một giá trị hai lần thì trạng
+     thái lệch với thứ đang hiện trên màn. Nhận `bat` tường minh (true/false), client
+     tự biết nó đang ở đâu vì SSE đã trả `fav`. */
+  if ((m = p.match(/^\/api\/fav\/([\w-]+)$/)) && req.method === 'POST') {
+    const sid = m[1];
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
+    const bat = !!body.bat;
+    if (!setFav(sid, bat)) return json(res, 500, { error: 'không ghi được file ghim' });
+    return json(res, 200, { ok: true, fav: bat, tong: loadFav().length });
   }
 
   // ---- đổi tên phiên chat (ghi riêng dashboard, không đụng .jsonl của Claude CLI) ----

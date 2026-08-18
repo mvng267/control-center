@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import {
   MessageSquare, Coins, CornerDownRight, ClipboardList, Cpu,
-  Terminal, TriangleAlert, Zap, CircleHelp, Bot,
+  Terminal, TriangleAlert, Zap, CircleHelp, Bot, Star,
 } from 'lucide-react';
 import type { Session } from '@/lib/types';
 import { useCauHinh } from '@/lib/use-cauhinh';
@@ -61,11 +61,13 @@ function gonModel(m?: string | null) {
 }
 
 export function SessionCard({
-  s, chon, onChon, onOpen, menu, truoc, anDuAn, cheDoChon, onGiuLau,
+  s, chon, onChon, onOpen, menu, truoc, anDuAn, cheDoChon, onGiuLau, onFav,
 }: {
   s: Session;
   chon: boolean;
   onChon: (v: boolean) => void;
+  /** ghim / bỏ ghim phiên — không truyền thì nút sao vẫn vẽ nhưng bấm không làm gì */
+  onFav?: (bat: boolean) => void;
   onOpen: (sid: string) => void;
   menu: React.ReactNode;
   truoc: (ms: number) => string;
@@ -142,6 +144,21 @@ export function SessionCard({
             cùng nên phải soi mới thấy. */}
         <i data-testid="card-cham" title={tt.nhan}
           className={cn('size-2 shrink-0 rounded-full', tt.cham, dangChay && 'animate-pulse')} />
+
+        {/* Sao ghim — CHỈ hiện khi đã ghim, hoặc khi rê chuột vào thẻ. Hiện thường
+            trực trên mọi thẻ thì một danh sách 300 phiên có 300 ngôi sao xám, rối hơn
+            là tiện. `stopPropagation` bắt buộc: cả thẻ là vùng bấm mở phiên.
+            Trên điện thoại không có hover nên sao luôn hiện mờ — vẫn bấm được. */}
+        <button type="button" data-testid="card-fav" data-fav={!!s.fav}
+          title={s.fav ? 'Bỏ ghim' : 'Ghim lên đầu danh sách'}
+          aria-label={s.fav ? 'Bỏ ghim phiên' : 'Ghim phiên'}
+          onClick={(e) => { e.stopPropagation(); onFav?.(!s.fav); navigator.vibrate?.(10); }}
+          className={cn('-m-1 shrink-0 p-1 transition-colors',
+            s.fav
+              ? 'text-status-run'
+              : 'text-muted-foreground/35 hover:text-status-run sm:opacity-0 sm:group-hover:opacity-100')}>
+          <Star className={cn('size-3.5', s.fav && 'fill-current')} />
+        </button>
 
         {/* KHÔNG shrink-0: tiêu đề dài mà không co được thì nó đẩy dự án và thời gian
             tràn ra ngoài, chữ chồng lên nhau (đo trên iPhone 390px). Cho co + truncate,
