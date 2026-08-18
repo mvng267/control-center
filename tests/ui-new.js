@@ -1182,6 +1182,46 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       await mp.close();
     }
 
+    /* ---- BỐ CỤC HAI CỘT kiểu Telegram ----
+       Trước đây mở phiên là danh sách BIẾN MẤT, nên nhảy sang phiên khác phải bấm quay
+       lại rồi tìm — mà theo dõi nhiều phiên chạy song song là việc thường xuyên.
+       Chia từ 1280px trở lên — KHÔNG phải 1024. Sidebar trái ăn 256px cố định, nên ở
+       1024 phần còn lại chỉ 768: chia 340 cho danh sách thì khung chat còn 429px và
+       hàng nút dưới ô gõ bị cắt mất chữ (đo thật trên iPad ngang: `!bash` hiện thành
+       `! bas`). Dưới ngưỡng giữ lối cũ — toàn màn hình + nút quay lại. */
+    for (const [ten, w, haiCot] of [['1280', 1280, true], ['1440', 1440, true], ['1279', 1279, false], ['iPhone', 390, false]]) {
+      const cx = await browser.newContext({ viewport: { width: w, height: 850 } });
+      const pg = await cx.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForSelector('[data-testid=session-row]:visible', { timeout: 30000 });
+      await pg.waitForTimeout(1200);
+      await pg.locator('[data-testid=session-row]:visible').first().click();
+      await pg.waitForSelector('[data-testid=chat-view]', { timeout: 25000 });
+      await pg.waitForTimeout(1500);
+      const bc = await pg.evaluate(() => {
+        const l = document.querySelector('[data-testid=cli-list]');
+        const c = document.querySelector('[data-testid=chat-view]');
+        const nut = document.querySelector('[data-testid=new-session]');
+        const nb = nut ? nut.getBoundingClientRect() : null;
+        const cb = c ? c.getBoundingClientRect() : null;
+        return {
+          rongDs: l ? Math.round(l.getBoundingClientRect().width) : 0,
+          rongChat: cb ? Math.round(cb.width) : 0,
+          // nút tròn "giao việc mới" thuộc DANH SÁCH, không được đè lên khung chat
+          nutDeChat: !!(nb && cb && nb.width && nb.x + nb.width > cb.x && nb.x < cb.x + cb.width),
+          tran: document.documentElement.scrollWidth > window.innerWidth,
+        };
+      });
+      ok(`${ten}px: ${haiCot ? 'HAI cột (danh sách + chat)' : 'MỘT cột (chat toàn màn)'}`,
+        haiCot ? bc.rongDs > 250 && bc.rongChat > 300 : bc.rongDs === 0 && bc.rongChat > 0,
+        `ds=${bc.rongDs} chat=${bc.rongChat}`);
+      // Đã gặp thật ở 1440px: `fixed right-4` neo vào mép PHẢI CỬA SỔ nên nút xanh
+      // nằm đè góc phải dưới khung chat, che mất nội dung.
+      ok(`${ten}px: nut giao viec khong de len khung chat`, !bc.nutDeChat, String(bc.nutDeChat));
+      ok(`${ten}px: khong tran ngang`, !bc.tran, String(bc.tran));
+      await cx.close();
+    }
+
     /* Desktop KHÔNG được ẩn — header là chỗ duy nhất biết đang ở tab nào. */
     {
       const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -1447,16 +1487,26 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       const bd = await pg.evaluate(() => {
         const box = document.querySelector('[data-testid=chat-bubbles]');
         const o = document.querySelector('[data-testid=chat-input]').closest('div');
+        const ds = document.querySelector('[data-testid=cli-list]');
         return {
           rongChat: Math.round(box.getBoundingClientRect().width),
           rongMan: window.innerWidth,
           rongO: Math.round(o.getBoundingClientRect().width),
+          // cot danh sach ben trai (bo cuc hai cot) — 0 neu man hep, khong chia cot
+          rongDs: ds ? Math.round(ds.getBoundingClientRect().width) : 0,
         };
       });
-      // Trừ hao sidebar 256px + lề; cốt lõi là KHÔNG còn bị chặn ở 920px
-      ok('khung chat dung tron be ngang (khong ke.p 920px)',
-        bd.rongChat > 920, bd.rongChat + 'px / man ' + bd.rongMan + 'px');
-      ok('khung go cung dan het be ngang', bd.rongO > 920, bd.rongO + 'px');
+      /* Y DINH GOC cua bai nay: chan viec ke.p khung chat vao `max-w-[920px]` — da tung
+         co that, man 1440 ma chat chi rong 920, hai ben trong hoac.
+         Gio bo cuc HAI COT co y lam chat hep di (danh sach chiem ~340px), nen khong the
+         doi `> 920` nua. Doi dung thu can: chat phai dung HET phan con lai sau khi tru
+         sidebar 256px va cot danh sach — tuc khong con tran ke.p nao khac. */
+      const conLai = bd.rongMan - 256 - bd.rongDs;
+      ok('khung chat dung tron phan con lai (khong bi ke.p)',
+        bd.rongChat >= conLai - 8,
+        `chat=${bd.rongChat} conLai=${conLai} (man ${bd.rongMan} - sidebar 256 - ds ${bd.rongDs})`);
+      ok('khung go rong bang khung chat', Math.abs(bd.rongO - bd.rongChat) <= 32,
+        `o=${bd.rongO} chat=${bd.rongChat}`);
 
       ok('co hang 2 duoi o go (nut chuc nang + che do)',
         (await pg.locator('[data-testid=goi-y]').count()) === 1);
@@ -2528,8 +2578,12 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
       if (!st) {
         ok('luot cua minh dinh dau khung khi cuon', true, 'bo qua: doan nay khong co luot user');
       } else {
-        ok('luot cua minh dinh dau khung khi cuon (sticky)',
-          st.position === 'sticky' && st.top === '0px', JSON.stringify(st));
+        /* Luot user KHONG con tu `sticky` nua — co y. Cho moi luot cung `top-0` thi CSS
+           khong day nhau, chung CHONG thanh tung lop che het noi dung khi cuon phien
+           dai. Viec giu cau hoi tren cung gio do thanh `cau-dinh` lam (bai ngay duoi),
+           dung kieu Claude CLI: MOT dong duy nhat. */
+        ok('luot cua minh KHONG tu dinh (de thanh cau-dinh lo)',
+          st.position === 'static', JSON.stringify(st));
         // nen duc: thieu thi chu ben duoi troi xuyen qua, doc thanh hai lop chong nhau
         ok('luot dinh co nen duc (khong loi chu ben duoi)',
           !!st.bg && !/transparent|rgba\(0, 0, 0, 0\)/.test(st.bg), st.bg);
@@ -2604,9 +2658,30 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
           kyTu.every((x) => x.svg === 0),
           kyTu.map((x) => x.id + ':' + x.svg + 'svg').join(' ') || 'khong thay nut');
       }
+      /* Phien dang mo phai duoc TO SANG trong danh sach — cuon mot luc la mat dau minh
+         dang doc cai nao. Do NEN that, khong do class: class co ca `hover:bg-accent/30`
+         nen dem theo chuoi thi the nao cung khop het 128 the.
+         (Bo cuc hai cot da co bo bai rieng o tren, khong lam lai o day.) */
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.waitForTimeout(900);
+      const toSang = await page.evaluate(() => {
+        const nen = [...document.querySelectorAll('[data-testid=session-row]')]
+          .map((e) => getComputedStyle(e).backgroundColor);
+        const dem = {};
+        nen.forEach((n) => { dem[n] = (dem[n] || 0) + 1; });
+        return { soMau: Object.keys(dem).length, the: nen.length,
+          itNhat1: Object.values(dem).filter((n) => n === 1).length };
+      });
+      if (!toSang.the) {
+        ok('dung MOT the duoc to sang (phien dang mo)', true, 'bo qua: khong co the nao');
+      } else {
+        ok('dung MOT the duoc to sang (phien dang mo)',
+          toSang.soMau >= 2 && toSang.itNhat1 >= 1, JSON.stringify(toSang));
+      }
+
       // tra lai 390px: doan nay nam trong khoi "mobile", bai sau con do theo be rong do
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.waitForTimeout(400);
+      await page.waitForTimeout(500);
     }
     await ctx.close();
   }

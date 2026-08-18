@@ -61,10 +61,12 @@ function gonModel(m?: string | null) {
 }
 
 export function SessionCard({
-  s, chon, onChon, onOpen, menu, truoc, anDuAn, cheDoChon, onGiuLau, onFav,
+  s, chon, onChon, onOpen, menu, truoc, anDuAn, cheDoChon, onGiuLau, onFav, dangMo,
 }: {
   s: Session;
   chon: boolean;
+  /** phiên này đang mở ở cột chat bên phải — tô sáng để không mất dấu khi cuộn */
+  dangMo?: boolean;
   onChon: (v: boolean) => void;
   /** ghim / bỏ ghim phiên — không truyền thì nút sao vẫn vẽ nhưng bấm không làm gì */
   onFav?: (bat: boolean) => void;
@@ -115,7 +117,12 @@ export function SessionCard({
         dangChay
           ? 'border-l-status-ok border-border animate-tho'
           : 'border-l-border/60 border-border motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-150',
-        chon ? 'border-primary' : 'hover:border-primary/40 hover:bg-accent/30',
+        /* `dangMo` = phiên đang hiện ở cột chat bên phải (bố cục hai cột kiểu Telegram).
+           Khác hẳn `chon` — cái đó là chọn-nhiều-để-thao-tác. Cuộn danh sách một lúc mà
+           không đánh dấu thì mất dấu mình đang đọc phiên nào. */
+        dangMo && 'border-primary bg-accent/50',
+        chon && 'border-primary',
+        !chon && !dangMo && 'hover:border-primary/40 hover:bg-accent/30',
       )}>
 
       {/* DÒNG 1: chọn + trạng thái + tiêu đề + dự án + số liệu + thời gian */}

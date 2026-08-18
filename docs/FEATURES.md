@@ -249,6 +249,15 @@ Nhóm này sinh ra từ một câu hỏi đo được: dashboard chỉ hiện **
 | 208 | **Ghim phiên** (sao trên thẻ) — phiên ghim luôn ở đầu | bấm sao, phiên nhảy lên đầu bất kể sắp xếp gì | du-an |
 | 209 | Lọc **chỉ phiên đã ghim** trong menu ⇅ | nhớ qua localStorage như các bộ lọc khác | du-an |
 | 210 | Ghim hai lần không sinh bản trùng | mảng lưu thứ tự ghim, không phải Set | du-an |
+| 211 | **Tin tự động tách khỏi tin mình gõ** | `<task-notification>`, `/lệnh`… mang nhãn riêng + icon bot, không gắn tên người dùng | du-an |
+| 212 | Câu người gõ KHÔNG bị nhận nhầm là tin tự động | kể cả câu mở đầu bằng `<` mà không khớp mẫu nào | du-an |
+| 213 | **Chỉ MỘT thanh câu hỏi dính trên cùng** | kiểu Claude CLI — trước đây mọi lượt user đều sticky nên chồng lớp | ui-new |
+| 214 | Tin tự động không bị dính lên thanh câu hỏi | chỉ câu người gõ mới mang `data-tom-tat` | ui-new |
+| 215 | **Bố cục HAI CỘT kiểu Telegram** từ 1024px | trái danh sách, phải chat — không phải bấm quay lại mới đổi phiên | ui-new |
+| 216 | Phiên đang mở được tô sáng trong danh sách | viền + nền, khác với chọn-nhiều | ui-new |
+| 217 | Cột hẹp tự gọn: ẩn phân trang, chọn-cả-trang | 200 phiên/trang rồi cuộn, kiểu Telegram | ui-new |
+| 218 | Nút giao việc không đè lên khung chat | `fixed right-4` từng neo vào mép cửa sổ | ui-new |
+| 219 | Chưa chọn phiên -> desktop hiện lời mời | màn rộng mà nửa phải trắng trơn nhìn như hỏng | ui-new |
 
 ---
 

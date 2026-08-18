@@ -85,6 +85,33 @@ cũ vẫn chạy nền. Bộ test mới bind cổng thất bại rồi lặng l�
 cũ, khoá VAPID cũ). `scripts/test-all.js` giờ có `donCong()` dọn trước khi chạy — nếu
 vẫn thấy kết quả nhảy, kiểm `lsof -ti:7896,7897,7797` trước khi nghi mã.
 
+**Nhiều phần tử cùng `sticky top-0` thì CHỒNG lên nhau, không đẩy nhau.** Đã cho mọi
+lượt user `sticky top-0` để câu hỏi dính đầu khung — cuộn phiên dài ra một chồng box
+xếp lớp che hết nội dung. CSS chỉ đẩy nhau khi các phần tử sticky nằm trong những khối
+cha KHÁC nhau. Muốn giữ đúng MỘT dòng trên cùng (kiểu Claude CLI) thì phải vẽ một thanh
+riêng rồi tự tính xem lượt nào đã cuộn qua mép trên — xem `cau-dinh` trong
+`chat-view.tsx`.
+
+**Chú thích JSX `{/* … */}` KHÔNG đặt được giữa các thuộc tính.** Viết
+`{...(a ? {x:1} : {})}` rồi chèn chú thích ngay sau là cú pháp hỏng — Turbopack báo
+`Expected '</', got '}'`, mà thông báo đó không chỉ ra dòng thật. Tệ hơn: có lần build
+vẫn qua nhưng thuộc tính KHÔNG được render, nên selector trong test tìm mãi không thấy
+và mất một vòng truy lỗi. Đặt chú thích TRƯỚC thẻ, hoặc dùng `/* … */` trần giữa các
+thuộc tính.
+
+**Tin mang vai `user` chưa chắc do người gõ.** Claude CLI nhét `<task-notification>`,
+`<system-reminder>`, `<command-name>`, `<local-command-stdout>`,
+`<local-command-caveat>`, `<user-prompt-submit-hook>` vào cùng `type: 'user'`. Đo trên
+phiên control: 16% lượt user là loại này. Vẽ giống nhau thì khung chat hiện
+"mvng: <task-notification>…", đọc như chính mình gõ ra. Dùng `loaiTuDong()` trong
+`index.js`; câu mở đầu bằng `<` mà không khớp mẫu nào thì CỨ coi là người gõ — giấu
+nhầm câu thật tệ hơn để lọt vài tin máy.
+
+**Máy nghẽn làm test đỏ mà đọc mã không thấy sai.** Đo thật: tải 14–24 trên 8 core,
+riêng `WindowServer` ăn 130% CPU. Bộ test đỏ ở `waitForSelector 20000ms` trong khi mở
+tay cùng trang thì mọi thứ hiện đủ, không lỗi JS. `tests/ui-new.js` giờ đặt hạn chờ
+mặc định 60s cho cả bộ. Playwright bị ngắt giữa chừng còn để lại Chrome mồ côi —
+`test-all` tự dọn, hoặc chạy `lsof -ti:7896,7897` rồi `ps | grep ms-playwright`.
 **Bài test lấy `ss[0]` là bài test ngẫu nhiên.** Danh sách phiên xoay theo thời gian nên
 phiên đầu lúc là dự án thật, lúc là phiên chạy ở thư mục nhà (server chặn đọc file →
 cả khối đỏ), lúc là phiên chỉ toàn câu chữ (không có tool → bài đòi icon đỏ). Lọc theo

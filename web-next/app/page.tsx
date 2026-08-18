@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppShell, TABS, type TabId } from '@/components/layout/app-shell';
 import { ManCauHinh } from '@/components/layout/man-cau-hinh';
@@ -26,6 +26,26 @@ import { toast } from 'sonner';
 export default function Page() {
   const [tab, setTab] = useState<TabId>('cli');
   const [openSid, setOpenSid] = useState<string | null>(null);
+
+  /* Màn có đủ rộng cho HAI CỘT không.
+
+     1280px chứ không phải 1024 (`lg`): sidebar trái đã ăn 256px cố định, nên ở 1024
+     phần còn lại chỉ 768 — chia 340 cho danh sách thì khung chat còn 429px và hàng
+     nút dưới ô gõ bị cắt mất chữ (đo trên iPad ngang: `!bash` hiện thành `! bas`).
+     Ở 1280 thì còn 1024 để chia, chat được ~684px — đủ cho cả hàng nút lẫn bảng.
+     Phải hỏi bằng JS chứ không chỉ dùng class `hidden lg:flex`: ẩn bằng CSS thì
+     SessionList VẪN dựng và vẫn vẽ lại 128 thẻ mỗi nhịp SSE 2 giây, chỉ là không ai
+     nhìn thấy — trên iPhone đó là công vô ích liên tục.
+     Khởi tạo `false` để lần dựng đầu ở server và ở trình duyệt ra cùng kết quả
+     (Next.js static export sẽ cảnh báo hydration mismatch nếu lệch). */
+  const [manRong, setManRong] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1280px)');
+    const dat = () => setManRong(mq.matches);
+    dat();
+    mq.addEventListener('change', dat);
+    return () => mq.removeEventListener('change', dat);
+  }, []);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [taoMa, setTaoMa] = useState(false);
@@ -164,10 +184,48 @@ export default function Page() {
           try { await api('/api/passcode/lock', { method: 'POST', body: '{}' }); } catch {}
           location.reload();
         }}>
-        {tab === 'cli' && (openSid
-          ? <ChatView sid={openSid} onBack={() => setOpenSid(null)} perm={data?.perm} effort={data?.effort} />
-          : <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} perm={data?.perm} effort={data?.effort} model={data?.model}
-              onOpen={setOpenSid} quick={quick} />)}
+        {/* HAI CỘT kiểu Telegram trên màn rộng: danh sách trái, khung chat phải.
+            Trước đây mở phiên là danh sách BIẾN MẤT, nên muốn nhảy sang phiên khác phải
+            bấm quay lại rồi tìm — mà theo dõi nhiều phiên chạy song song là việc thường
+            xuyên ở đây.
+            Từ `lg` (1024px) trở lên mới chia: dưới ngưỡng đó, hai cột đều hẹp tới mức
+            không cột nào dùng được. Điện thoại giữ nguyên lối cũ — mở phiên là toàn
+            màn hình, có nút quay lại. */}
+        {tab === 'cli' && (
+          <div className="flex h-full min-h-0 w-full">
+            {/* Cột danh sách. Trên mobile ẩn hẳn khi đang mở phiên (không phải chỉ
+                `hidden`, mà không render — giữ lại thì SSE vẫn vẽ nền cho một cột vô
+                hình). Trên desktop luôn hiện. */}
+            {(!openSid || manRong) && (
+              <div className={cn('h-full min-h-0 min-w-0',
+                openSid
+                  ? 'flex w-[340px] shrink-0 flex-col border-r border-border 2xl:w-[380px]'
+                  : 'flex w-full flex-col')}>
+                <SessionList sessions={data?.sessions || []} jobs={data?.jobs || []} perm={data?.perm}
+                  effort={data?.effort} model={data?.model} onOpen={setOpenSid} quick={quick}
+                  sidMo={openSid} gonGang={!!openSid} />
+              </div>
+            )}
+
+            {/* Cột chat. Khi chưa chọn phiên nào, desktop hiện lời mời thay vì khoảng
+                trống — màn rộng mà nửa phải trắng trơn thì nhìn như hỏng. */}
+            {openSid ? (
+              <div className="h-full min-h-0 min-w-0 flex-1">
+                <ChatView sid={openSid} onBack={() => setOpenSid(null)} perm={data?.perm}
+                  effort={data?.effort} />
+              </div>
+            ) : (
+              <div data-testid="chua-chon-phien"
+                className="hidden min-w-0 flex-1 flex-col items-center justify-center gap-2 border-l border-border bg-muted/20 xl:flex">
+                <MessageSquare className="size-8 text-muted-foreground/30" />
+                <p className="text-[14px] text-muted-foreground">Chọn một phiên để xem</p>
+                <p className="text-[12px] text-muted-foreground/60">
+                  {(data?.sessions || []).length} phiên · {(data?.sessions || []).filter((s) => s.status === 'RUNNING').length} đang chạy
+                </p>
+              </div>
+            )}
+          </div>
+        )}
         {tab === 'hermes' && <HermesTab />}
         {tab === 'agy' && <AgyTab />}
         {tab === 'docker' && <DockerTab />}

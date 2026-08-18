@@ -102,12 +102,18 @@ function gomNhom(ss: Session[]): Nhom[] {
 }
 
 export function SessionList({
-  sessions, jobs, perm, effort, model, onOpen, quick,
+  sessions, jobs, perm, effort, model, onOpen, quick, sidMo, gonGang,
 }: {
   sessions: Session[]; jobs: Job[]; perm?: string; effort?: string;
   model?: string | null;   // model toàn cục — chuyển tiếp cho màn giao task
   onOpen: (sid: string) => void;
   quick?: { q: string; n: number };   // lối tắt "Xem nhanh" ở sidebar
+  /** phiên đang mở ở cột chat — tô sáng để biết mình đang đọc cái nào (kiểu Telegram) */
+  sidMo?: string | null;
+  /* Cột hẹp bên trái khi đang mở phiên: bỏ những thứ chỉ hợp với màn rộng (đầu trang,
+     dải tóm tắt, phân trang) và ép mỗi hàng một thẻ. Không gọn lại thì cột 340px phải
+     cuộn ngang mới đọc được. */
+  gonGang?: boolean;
 }) {
   const [q, setQ] = useState('');
   const [proj, setProj] = useState('');
@@ -315,9 +321,13 @@ export function SessionList({
   }, [sessions, hienNhap, favTam]);
   const soNhap = hop.length - hop.filter((s) => !s.duAn?.laNhap).length;
 
-  const pages = Math.max(1, Math.ceil(rows.length / perPage));
+  /* Cột hẹp bên trái không có hàng phân trang (không đủ chỗ), nên phải hiện nhiều hơn
+     rồi để người dùng cuộn — kiểu Telegram. 200 là trần an toàn: đo trên máy này 155
+     phiên, mà mỗi thẻ chỉ là DOM tĩnh nên cuộn vẫn mượt. */
+  const soMoiTrang = gonGang ? 200 : perPage;
+  const pages = Math.max(1, Math.ceil(rows.length / soMoiTrang));
   const cur = Math.min(page, pages - 1);
-  const view = rows.slice(cur * perPage, cur * perPage + perPage);
+  const view = rows.slice(cur * soMoiTrang, cur * soMoiTrang + soMoiTrang);
 
   /* Gom nhóm CHỈ khi đang sắp xếp theo dự án. Đã thử gom cả khi sắp "Mới nhất":
      10 phiên mới nhất rơi vào 6 dự án khác nhau, nên đầu nhóm ăn chỗ mà mỗi nhóm chỉ
@@ -328,7 +338,9 @@ export function SessionList({
   const nhomView = useMemo(() => (gomTheoNhom ? gomNhom(view) : []), [view, gomTheoNhom]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="cli-list">
+    /* `relative`: neo cho nút tròn nổi ở chế độ hai cột — nếu không nó rơi ra mép phải
+       cửa sổ và đè lên khung chat. */
+    <div className="relative flex h-full min-h-0 flex-col" data-testid="cli-list">
       {/* HÀNG TAB thay cho tiêu đề "Phiên Claude" + mô tả + dải tóm tắt.
           Đo trên iPhone 390px: ba khối đó đẩy thẻ phiên đầu tiên xuống 296px — 35%
           màn hình chỉ để tới được danh sách. Tab vừa gọn hơn vừa nói đúng việc:
@@ -336,7 +348,9 @@ export function SessionList({
       {/* px-2 + gap-0 trên điện thoại: với px-3/gap-1 thì tab thứ tư ("Việc nền") tràn
           khỏi mép 390px — cuộn ngang được nhưng nhìn vào tưởng chỉ có ba tab, mà tab
           nào cũng phải thấy mới biết là bấm được. */}
-      <div className="flex shrink-0 items-center gap-0 overflow-x-auto border-b border-border px-2 pt-2 sm:gap-1 sm:px-3"
+      <div className={cn('flex shrink-0 items-center overflow-x-auto border-b border-border pt-2',
+        // cột hẹp 340px: bỏ đệm ngang và khoảng cách để 4 tab vừa đủ chỗ, không phải cuộn
+        gonGang ? 'gap-0 px-1.5' : 'gap-0 px-2 sm:gap-1 sm:px-3')}
         style={{ scrollbarWidth: 'none' }} data-testid="tab-loc">
         {[
           { id: '', nhan: 'Tất cả', so: sessions.length, cham: '' },
@@ -346,12 +360,16 @@ export function SessionList({
         ].map((t) => (
           <button key={t.id || 'all'} data-testid={'tab-' + (t.id || 'all')} data-active={stat === t.id}
             onClick={() => { setStat(t.id); setPage(0); }}
-            className={cn('relative flex shrink-0 items-center gap-1 whitespace-nowrap px-2 py-2 text-[12px] transition-colors sm:gap-1.5 sm:px-2.5 sm:text-[14px]',
+            className={cn('relative flex shrink-0 items-center gap-1 whitespace-nowrap py-2 transition-colors',
+              /* Cột hẹp giữ 12px và đệm nhỏ: ở 14px thì bốn tab cộng lại vượt 340px,
+                 tab "Việc nền" bị cắt mất chữ — nhìn vào tưởng chỉ có ba tab. */
+              gonGang ? 'gap-1 px-1.5 text-[12px]' : 'gap-1 px-2 text-[12px] sm:gap-1.5 sm:px-2.5 sm:text-[14px]',
               stat === t.id
                 ? 'font-medium text-foreground after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary'
                 : 'text-muted-foreground hover:text-foreground')}>
             {!!t.cham && <span className={cn('size-1.5 rounded-full', t.cham)} />}
-            {t.nhan}
+            {/* Cột hẹp rút nhãn: "Việc nền" -> "Nền", "Đang chạy" -> "Chạy" */}
+            {gonGang ? (t.id === 'jobs' ? 'Nền' : t.id === 'run' ? 'Chạy' : t.id === 'idle' ? 'Nghỉ' : 'Tất cả') : t.nhan}
             <b className="tabular-nums opacity-60">{t.so}</b>
           </button>
         ))}
@@ -447,8 +465,11 @@ export function SessionList({
           {/* Hàng này ẩn hẳn trên điện thoại: "Chọn cả trang" vốn đã `sm:flex`, nên ở
               390px nó chỉ còn mỗi chữ "Mới nhất ↓" mà vẫn ăn 26px. Muốn biết đang sắp
               xếp theo gì thì mở menu — trong đó có dấu ✓. */}
+          {/* Cột hẹp ẩn nốt hàng này: đang mở phiên thì việc chính là ĐỌC chat, còn
+              chọn nhiều phiên để thao tác hàng loạt là việc của màn danh sách đầy đủ.
+              Giữ lại chỉ tổ ăn mất chiều cao của thẻ phiên trong cột 340px. */}
           <div className={cn('hidden items-center gap-2 overflow-x-auto sm:flex',
-            stat === 'jobs' && 'sm:hidden')}
+            (stat === 'jobs' || gonGang) && 'sm:hidden')}
             style={{ scrollbarWidth: 'none' }}>
             {/* "Chọn cả trang" ẨN HẲN trên điện thoại. Đo trên iPhone 390px: hàng này
                 ăn 45px nhưng chữ bị ẩn, nên chỉ còn MỘT Ô VUÔNG TRƠ TRỌI không ai hiểu
@@ -534,7 +555,8 @@ export function SessionList({
                               v ? next.add(s.sid) : next.delete(s.sid);
                               setSel(next);
                             }}
-                            onFav={(bat) => doiFav(s.sid, bat)}
+                            dangMo={s.sid === sidMo}
+                onFav={(bat) => doiFav(s.sid, bat)}
                             onOpen={onOpen}
                             menu={<RowMenu s={s} onOpen={onOpen} />} />
                         ))}
@@ -561,7 +583,8 @@ export function SessionList({
                     v ? next.add(s.sid) : next.delete(s.sid);
                     setSel(next);
                   }}
-                  onFav={(bat) => doiFav(s.sid, bat)}
+                  dangMo={s.sid === sidMo}
+                onFav={(bat) => doiFav(s.sid, bat)}
                   onOpen={onOpen}
                   menu={<RowMenu s={s} onOpen={onOpen} />} />
               ))}
@@ -590,8 +613,10 @@ export function SessionList({
 
           {/* phân trang */}
           {/* Tab "Việc nền" không phân trang phiên — ẩn cả hàng này */}
+          {/* Cột hẹp cũng ẩn: "Dòng mỗi trang" + "1 – 10 / 133" nằm cạnh nhau cần
+              ~300px, ở 340px là vỡ thành hai hàng và ăn mất chỗ của thẻ phiên. */}
           <div className={cn('items-center justify-between gap-2 border-t border-border/60 pt-3',
-            stat === 'jobs' ? 'hidden' : 'flex')}>
+            stat === 'jobs' || gonGang ? 'hidden' : 'flex')}>
             <div className="flex items-center gap-2">
               <span className="text-[14px] text-muted-foreground">Dòng mỗi trang</span>
               <select value={perPage} data-testid="per-page"
@@ -623,12 +648,20 @@ export function SessionList({
       </div>
       {/* NÚT TRÒN NỔI — thay nút "Giao việc" cũ nằm trên tiêu đề (tiêu đề đã bỏ).
           Đặt cách đáy 74px để không đè thanh tab dưới (58px + safe-area) và không
-          che nút phân trang. Luôn với tới được bằng ngón cái. */}
+          che nút phân trang. Luôn với tới được bằng ngón cái.
+
+          Ở bố cục HAI CỘT (đang mở phiên) thì `fixed right-4` neo vào mép PHẢI cửa sổ,
+          tức nằm đè lên khung chat chứ không phải cột danh sách — thấy rõ trên ảnh
+          chụp 1440px: nút xanh che góc phải dưới của khung chat. Lúc đó chuyển thành
+          nút nhỏ nằm TRONG cột trái. */}
       <button data-testid="new-session" onClick={() => setTaoTask(true)}
         title="Giao việc mới cho Claude" aria-label="Giao việc mới cho Claude"
-        className="fixed right-4 z-40 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 active:scale-95 md:bottom-6"
-        style={{ bottom: 'calc(74px + env(safe-area-inset-bottom))' }}>
-        <Plus className="size-6" />
+        className={cn('z-40 flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 active:scale-95',
+          gonGang
+            ? 'absolute bottom-4 right-4 size-12'
+            : 'fixed right-4 size-14 md:bottom-6')}
+        style={gonGang ? undefined : { bottom: 'calc(74px + env(safe-area-inset-bottom))' }}>
+        <Plus className={gonGang ? 'size-5' : 'size-6'} />
       </button>
 
       {/* Giao việc là một MÀN RIÊNG, không phải thanh dẹt chiếm 109px dưới đáy danh
