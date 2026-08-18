@@ -232,6 +232,27 @@ function mocCuoi(file, size) {
   } catch { try { if (fd !== undefined) fs.closeSync(fd); } catch {} return ''; }
 }
 
+/* Lượt mang vai 'user' nhưng KHÔNG phải người gõ.
+
+   Claude CLI nhét mấy loại này vào cùng một chỗ với câu người dùng thật, nên nếu vẽ
+   giống nhau thì khung chat hiện "mvng: <task-notification>…" — nhìn như chính mình
+   gõ ra cái đó. Đo trên phiên này: 1.847/7.187 lượt user (26%) là tin tự động.
+
+   Trả về NHÃN để giao diện vẽ khác (không phải boolean): mỗi loại đáng một cách hiện
+   riêng, và biết loại nào cũng đỡ phải đoán lại từ chuỗi ở phía client. */
+function loaiTuDong(text) {
+  const t = (text || '').trimStart();
+  if (t.startsWith('<task-notification>')) return 'tac-vu';      // agent nền xong/hỏng
+  if (t.startsWith('<system-reminder>')) return 'nhac';          // nhắc của hệ thống
+  if (t.startsWith('<command-name>')) return 'lenh';             // gõ /lệnh
+  if (t.startsWith('<local-command-stdout>')) return 'ket-qua';  // kết quả lệnh
+  if (t.startsWith('<user-prompt-submit-hook>')) return 'hook';  // hook chèn thêm
+  if (t.startsWith('<local-command-caveat>')) return 'ket-qua';  // ghi chú kèm kết quả lệnh
+  // Caveat có chủ ý: chuỗi bắt đầu bằng '<' mà không khớp mẫu nào ở trên vẫn coi là
+  // người gõ. Thà lọt vài cái còn hơn giấu nhầm câu thật của người dùng.
+  return '';
+}
+
 function parseSessionFile(file) {
   let st;
   try { st = fs.statSync(file); } catch { cache.delete(file); return null; }
@@ -502,7 +523,11 @@ function parseSessionFile(file) {
     // isSidechain = lượt của subagent (Task/Agent), không phải hội thoại chính.
     // 4.023 dòng trên máy này. Không đánh dấu thì lời của subagent trộn lẫn vào
     // lời Claude, đọc không hiểu ai đang nói.
-    msgs.push({ role: obj.type, text, ts: obj.timestamp || null, parts, sub: !!obj.isSidechain });
+    msgs.push({
+      role: obj.type, text, ts: obj.timestamp || null, parts, sub: !!obj.isSidechain,
+      // vai trò 'user' nhưng KHÔNG phải người gõ — xem loaiTuDong()
+      tuDong: obj.type === 'user' ? loaiTuDong(text) : '',
+    });
   }
   // tsMs: timestamp (ms) từng message — precompute 1 lần để đếm unread không tốn Date.parse mỗi tick
   /* Tiêu đề: tên NGƯỜI DÙNG đặt trên CLI thắng ai-title do máy sinh. Trước đây chỉ
@@ -606,7 +631,11 @@ function getHistory(sid, them) {
   const parsed = parseSessionFile(file);
   if (!parsed) return null;
   const n = CUA_SO + Math.max(0, Math.min(+them || 0, 970));   // trần 1000 tin/lần
-  return parsed.msgs.slice(-n).map(m => ({ role: m.role, content: m.text, ts: m.ts, parts: m.parts }));
+  return parsed.msgs.slice(-n).map(m => ({
+    role: m.role, content: m.text, ts: m.ts, parts: m.parts,
+    // tin mang vai 'user' nhưng do máy sinh ra — giao diện vẽ khác câu người gõ
+    ...(m.tuDong ? { tuDong: m.tuDong } : {}),
+  }));
 }
 
 /* ---- tên tự đặt: ghi riêng của dashboard, ĐÈ ai-title của Claude CLI ----

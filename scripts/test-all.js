@@ -109,7 +109,7 @@ function donNen() {
      Chỉ xoá thư mục có tên rõ ràng là của test, KHÔNG quét bừa .claude/projects. */
   const DU_AN = path.join(HOME, '.claude', 'projects');
   const RAC = ['-tmp-e2e-tools', '-private-tmp-inc-check', '-private-tmp-agent-check',
-    '-private-tmp-cho-check', '-private-tmp-tim-check', '-private-tmp-lenh-check'];
+    '-private-tmp-cho-check', '-private-tmp-tim-check', '-private-tmp-lenh-check', '-private-tmp-tudong-check'];
   for (const t of RAC) {
     try { fs.rmSync(path.join(DU_AN, t), { recursive: true, force: true }); } catch {}
   }

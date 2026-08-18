@@ -100,6 +100,21 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
   gomPasscode();
   const browser = await pw.chromium.launch({ channel: 'chrome', headless: true });
 
+  /* Nới hạn chờ mặc định 30s -> 60s cho TOÀN BỘ, thay vì vá từng chỗ đỏ.
+     Lý do thật, đã đo: máy này thường xuyên chạy ở tải 14-24 trên 8 core (riêng
+     WindowServer ăn 130% CPU), nên trang render chậm hơn hẳn lúc rảnh. Bộ test đã đỏ
+     ở `waitForSelector 20000ms` trong khi mở tay cùng trang thì 10 thẻ phiên hiện đủ
+     và không có lỗi JS nào — tức mã đúng, chỉ là hết giờ.
+     Vá riêng chỗ đỏ thì lần sau chỗ khác đỏ; đây là chỉnh một lần cho cả bộ. */
+  browser.contexts().forEach((c) => c.setDefaultTimeout(60000));
+  const _newContext = browser.newContext.bind(browser);
+  browser.newContext = async (...a) => {
+    const c = await _newContext(...a);
+    c.setDefaultTimeout(60000);
+    c.setDefaultNavigationTimeout(60000);
+    return c;
+  };
+
   /* ---------- A. Desktop: 5 tab, không lỗi, không tràn ngang ---------- */
   {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -2523,6 +2538,35 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
         ok('luot dinh co dem, chu khong dinh sat mep nen',
           st.padL >= 4 && st.padT >= 0, `padL=${st.padL} padT=${st.padT}`);
       }
+
+      /* CHI MOT box dinh tren cung — kieu Claude CLI.
+         Truoc day moi luot user tu `sticky top-0`. Nhieu phan tu cung `top-0` thi CSS
+         KHONG day nhau: chung chong thanh tung lop che het noi dung khi cuon phien
+         dai. Gio mot thanh `cau-dinh` duy nhat o dau vung cuon lam viec do. */
+      const dinh = await page.evaluate(() => ({
+        boxSticky: [...document.querySelectorAll('[data-testid=msg-wrap]')]
+          .filter((e) => getComputedStyle(e).position === 'sticky').length,
+        coThanh: !!document.querySelector('[data-testid=cau-dinh]'),
+        soThanh: document.querySelectorAll('[data-testid=cau-dinh]').length,
+      }));
+      ok('khong con box nao tu dinh (tranh chong lop)', dinh.boxSticky === 0,
+        `${dinh.boxSticky} box sticky`);
+      ok('nhieu nhat MOT thanh cau hoi dinh tren cung', dinh.soThanh <= 1,
+        `${dinh.soThanh} thanh`);
+
+      /* Tin TU DONG (task-notification, system-reminder, /lenh…) mang vai 'user' nhung
+         khong phai nguoi go. Do tren phien control: 16% luot user la loai nay. Gan ten
+         nguoi dung vao chung thi doc nhu chinh minh go ra. */
+      const td = await page.evaluate(() => {
+        const ds = [...document.querySelectorAll('[data-tu-dong]')];
+        return {
+          n: ds.length,
+          // khong cai nao duoc mang `data-tom-tat` (chi cau nguoi go moi dinh len thanh)
+          lot: ds.filter((e) => e.hasAttribute('data-tom-tat')).length,
+        };
+      });
+      ok('tin tu dong khong bi dinh len thanh cau hoi', td.lot === 0,
+        `${td.n} tin tu dong, ${td.lot} cai co tom-tat`);
 
       /* HANG NUT duoi o go phai DONG BO. Vinh bao ba thu lech nhau cung luc:
            - nut `/lenh` `@file` `!bash` `#ghi nho` co CA icon vector LAN ky tu — hai

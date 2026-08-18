@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus, Loader2, Plus, Search, X,
   Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree, Maximize2, Circle, ChevronRight,
+  Bot,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ToolCard, type ToolPart } from './tool-card';
@@ -47,7 +48,20 @@ interface Msg {
   role: string; content: string; ts: string | null; parts?: Part[]; n?: number; sub?: boolean;
   /** mốc ĐẦU lượt — bất biến qua các vòng gộp, dùng làm React key */
   tsDau?: string | null;
+  /** vai 'user' nhưng do MÁY sinh: 'tac-vu' | 'nhac' | 'lenh' | 'ket-qua' | 'hook' */
+  tuDong?: string;
 }
+
+/* Nhãn cho tin tự động. Claude CLI nhét chúng vào cùng chỗ với câu người gõ, nên nếu
+   không gọi tên riêng thì khung chat hiện "mvng: <task-notification>…" — đọc như chính
+   mình gõ ra. Đo trên phiên này: 16% lượt user là loại này. */
+const NHAN_TU_DONG: Record<string, string> = {
+  'tac-vu': 'Tác vụ nền',
+  nhac: 'Nhắc hệ thống',
+  lenh: 'Lệnh',
+  'ket-qua': 'Kết quả lệnh',
+  hook: 'Hook',
+};
 interface Usage { turns: number; inTok: number; outTok: number; cacheRead: number; cacheWrite: number }
 interface DuAnChat {
   ten: string; khoa: string; duongDan: string;
@@ -318,6 +332,14 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   const [pending, setPending] = useState<Msg[]>([]);
   const boxRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+
+  /* Câu hỏi đang đọc — hiện ở thanh dính trên đầu khung.
+     Phiên dài thì câu mình hỏi trôi mất từ lâu, đọc giữa chừng câu trả lời không còn
+     nhớ đang hỏi gì, mà cuộn ngược lên tìm thì mất chỗ đang đọc. Claude CLI giữ đúng
+     một dòng trên cùng; đây là bản tương đương.
+     Lưu CHUỖI chứ không lưu chỉ số: server chỉ trả 30 tin gần nhất nên cửa sổ trượt
+     mỗi khi có tin mới, chỉ số tụt đi một sau mỗi 2 giây (bẫy đã ghi trong CLAUDE.md). */
+  const [cauDinh, setCauDinh] = useState('');
 
   /* Dán / kéo-thả ảnh. Trên terminal Claude nhận ảnh dán thẳng; ở đây trước chỉ có
      nút chọn file, nên chụp màn hình xong phải lưu ra đĩa rồi mới đính được.
@@ -646,6 +668,21 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
         onScroll={(e) => {
           const el = e.currentTarget;
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+
+          /* Tìm lượt của MÌNH gần nhất đã cuộn qua khỏi mép trên. Đó là câu đang được
+             trả lời ở phần màn hình hiện tại — thứ cần dính lại.
+             Duyệt NGƯỢC và dừng ngay ở cái đầu tiên khớp: danh sách tối đa vài trăm
+             phần tử và hàm này chạy mỗi khung hình cuộn, không được quét cả mảng. */
+          const dsLuot = el.querySelectorAll<HTMLElement>('[data-testid=msg-wrap][data-role=user]:not([data-tu-dong])');
+          let moi = '';
+          for (let i = dsLuot.length - 1; i >= 0; i--) {
+            // offsetTop tính theo el vì el là offsetParent (nó có position:relative)
+            if (dsLuot[i].offsetTop - el.scrollTop < 4) {
+              moi = dsLuot[i].dataset.tomTat || '';
+              break;
+            }
+          }
+          setCauDinh((cu) => (cu === moi ? cu : moi));
         }}
         /* Chữ THƯỜNG cho câu văn, monospace giữ lại cho mã và tên lệnh.
            Trước đây cả khung dùng font-mono để "đúng chất CLI". Nhưng phần lớn nội
@@ -654,7 +691,21 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
            kết quả tool vẫn monospace (do Markdown và ToolCard tự đặt), nên chỗ nào
            thật sự cần cột thẳng hàng thì vẫn thẳng.
            Full-width: terminal không kẹp nội dung vào giữa. */
-        className="flex w-full min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-4">
+        className="relative flex w-full min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-4">
+        {/* MỘT thanh duy nhất giữ câu hỏi đang được trả lời — kiểu Claude CLI.
+            Trước đây mỗi lượt user tự `sticky top-0`, mà nhiều phần tử cùng `top-0`
+            thì CSS không đẩy nhau: chúng chồng thành từng lớp che hết nội dung khi
+            cuộn phiên dài.
+            `sticky -top-4` bù đúng `py-4` của khung, để thanh chạm sát mép trên. */}
+        {!!cauDinh && (
+          <div data-testid="cau-dinh" title={cauDinh}
+            className="sticky -top-4 z-20 -mx-4 flex shrink-0 items-center gap-1.5 border-b border-border bg-card/95 px-4 py-2 backdrop-blur">
+            <ChevronRight className="size-3 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
+              {cauDinh}
+            </span>
+          </div>
+        )}
         {/* Xem lại tin cũ. Trước đây server trả CỨNG 30 tin cuối và không có đường nào
             lấy thêm — đo trên phiên control: 19.806 lượt, tức chỉ xem được 0,2% nội
             dung, muốn đọc lại điều đã bàn trước đó phải tải cả file .md về đọc ngoài.
@@ -707,6 +758,13 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               ) : (
               <div data-testid="msg-wrap" data-role={m.role}
                 data-gap={gapLuot.has(m.tsDau || m.ts || '')}
+                data-tu-dong={m.tuDong || undefined}
+                /* data-tom-tat: trích sẵn câu ở đây để thanh dính không phải đọc lại
+                   nội dung DOM mỗi khung hình cuộn. Trả `undefined` chứ không phải ''
+                   — React bỏ hẳn thuộc tính, nên `:not([data-tu-dong])` lọc đúng. */
+                data-tom-tat={m.role === 'user' && !m.tuDong
+                  ? (m.content || '').replace(/\s+/g, ' ').trim().slice(0, 200)
+                  : undefined}
                 /* Lượt của MÌNH dính ở đầu khung khi cuộn qua. Phiên dài thì câu hỏi
                    trôi mất từ lâu, đọc giữa chừng không còn nhớ đang hỏi gì — mà cuộn
                    ngược lên tìm thì mất chỗ đang đọc. Sticky giữ nó trên đầu tới khi
@@ -715,11 +773,15 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                    Chỉ áp cho lượt user: lượt Claude thường cao hơn cả màn hình, dính
                    lại thì che mất phần đang đọc. */
                 className={cn('flex w-full flex-col border-t border-border/50 pt-1.5',
-                  /* Lượt user có NỀN riêng nên phải có đệm riêng: nếu không, chữ dính
-                     sát mép nền — nhìn như khối bị cắt cụt. Đệm ngang âm (-mx-2) rồi
-                     bù lại bằng px-2 để nền rộng hơn cột chữ một chút, mép nền không
-                     cắt đúng vào chữ đầu dòng. */
-                  m.role === 'user' && '-mx-2 sticky top-0 z-10 rounded-lg bg-card px-2 pb-1.5')}>
+                  /* Lượt của MÌNH có nền + đệm riêng để tách khỏi lời Claude. Đệm ngang
+                     âm (-mx-2) rồi bù bằng px-2: nền rộng hơn cột chữ một chút nên mép
+                     nền không cắt đúng vào chữ đầu dòng.
+
+                     KHÔNG `sticky` ở đây nữa. Cho mọi lượt user cùng `top-0` thì CSS
+                     không đẩy chúng đi — chúng CHỒNG lên nhau, cuộn một phiên dài là
+                     một chồng box xếp lớp che hết nội dung. Claude CLI chỉ giữ MỘT
+                     dòng trên cùng; thanh `cau-dinh` ở đầu vùng cuộn làm đúng việc đó. */
+                  m.role === 'user' && !m.tuDong && '-mx-2 rounded-lg bg-card px-2 pb-1.5')}>
                 {/* DÒNG TIÊU ĐỀ LƯỢT — vùng bấm gập DUY NHẤT.
                     Không cho bấm cả lượt: bên trong đã có 5 thứ bấm được (thẻ tool,
                     bảng chọn, thẻ kế hoạch, nút chép, dòng ghi chú), bấm cả khối thì
@@ -748,12 +810,20 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                           {/* Icon vector thay `❯`/`⏺`. Vẫn giữ ý nghĩa cũ — mũi tên
                               cho lượt mình, chấm tròn cho lượt Claude — nhưng nét rõ
                               ở mọi cỡ chữ thay vì phụ thuộc font hệ thống. */}
+                          {/* Tin TỰ ĐỘNG mang vai 'user' nhưng không phải người gõ.
+                              Gắn tên Vinh vào `<task-notification>` thì đọc như chính
+                              mình gõ ra cái đó — đo được 16% lượt user là loại này.
+                              Nhãn riêng + màu xám để mắt bỏ qua được ngay. */}
                           <span className={cn('flex shrink-0 items-center gap-1 font-medium',
-                            m.role === 'user' ? 'text-primary' : 'text-tool-accent')}>
-                            {m.role === 'user'
-                              ? <ChevronRight className="size-3" />
-                              : <Circle className="size-2.5 fill-current" />}
-                            {m.role === 'user' ? cauHinh.nguoiDung : 'Claude'}
+                            m.tuDong ? 'text-muted-foreground/60'
+                              : m.role === 'user' ? 'text-primary' : 'text-tool-accent')}>
+                            {m.tuDong
+                              ? <Bot className="size-3" />
+                              : m.role === 'user'
+                                ? <ChevronRight className="size-3" />
+                                : <Circle className="size-2.5 fill-current" />}
+                            {m.tuDong ? NHAN_TU_DONG[m.tuDong] || 'Hệ thống'
+                              : m.role === 'user' ? cauHinh.nguoiDung : 'Claude'}
                           </span>
                           {m.ts && <span className="shrink-0 tabular-nums">{clock(m.ts)}</span>}
                           {!!soTool && <span className="shrink-0">· {soTool} thẻ</span>}

@@ -432,6 +432,52 @@ async function snapshot() {
     }
   }
 
+  /* ---------- Tin tự động lẫn trong lượt người dùng ----------
+     Claude CLI nhét task-notification, system-reminder, /lệnh và kết quả lệnh vào cùng
+     một chỗ với câu người thật gõ — cùng `type: 'user'`. Không tách thì khung chat hiện
+     "mvng: <task-notification>…", đọc như chính mình gõ ra. Đo trên phiên control:
+     4/25 lượt user (16%) là loại này. */
+  {
+    const dir = path.join(PROJECTS_DIR, '-private-tmp-tudong-check');
+    const sid = '99999999-1111-4222-8333-444444444444';
+    fs.mkdirSync(dir, { recursive: true });
+    const dong = (text, i) => JSON.stringify({
+      type: 'user', timestamp: new Date(Date.now() - (9 - i) * 60000).toISOString(),
+      cwd: '/private/tmp/tudong-check',
+      message: { role: 'user', content: text },
+    });
+    const mau = [
+      ['<task-notification><task-id>x</task-id></task-notification>', 'tac-vu'],
+      ['<system-reminder>nhắc gì đó</system-reminder>', 'nhac'],
+      ['<command-name>/usage</command-name>', 'lenh'],
+      ['<local-command-stdout>kết quả</local-command-stdout>', 'ket-qua'],
+      ['<local-command-caveat>Caveat: …</local-command-caveat>', 'ket-qua'],
+      ['câu này tôi gõ thật', ''],
+      ['<không phải thẻ hệ thống nào cả', ''],
+    ];
+    fs.writeFileSync(path.join(dir, sid + '.jsonl'),
+      mau.map(([t], i) => dong(t, i)).join('\n') + '\n');
+
+    const h = await fetch(URL + '/api/history/' + sid, { headers: { 'X-Dash-Token': token } })
+      .then((r) => r.json());
+    const ms = (h.messages || []).filter((m) => m.role === 'user');
+
+    ok('đọc đủ 7 lượt user của phiên thử', ms.length === 7, ms.length + ' lượt');
+
+    const sai = mau.map(([, mong], i) => [i, mong, ms[i]?.tuDong || ''])
+      .filter(([, mong, that]) => mong !== that);
+    ok('phân loại đúng cả 5 kiểu tin tự động', sai.length === 0,
+      sai.map(([i, mong, that]) => `#${i} mong "${mong}" nhận "${that}"`).join('; ') || 'khớp hết');
+
+    /* Câu người gõ TUYỆT ĐỐI không được đánh dấu tự động — giấu nhầm câu thật thì
+       tệ hơn hẳn để lọt vài tin máy. Kể cả câu mở đầu bằng '<' mà không khớp mẫu nào. */
+    ok('câu người gõ không bị nhận nhầm là tin tự động',
+      !ms[5]?.tuDong && !ms[6]?.tuDong,
+      `#5="${ms[5]?.tuDong || ''}" #6="${ms[6]?.tuDong || ''}"`);
+
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
   /* ---------- Ghim phiên (favorite) ----------
      Danh sách xoay theo thời gian: phiên đang làm dở tụt xuống ngay khi mở phiên khác,
      và 18% danh sách là phiên của dự án đã xoá. Ghim để phiên hay quay lại luôn ở đầu.
