@@ -28,7 +28,8 @@ const procs = new Map();
 const lastSeen = new Map();
 /* Hạn mức Claude: { at, data }. Phải cache vì `/usage` spawn `claude -p`, đo thật mất
    3-5 giây — gọi theo nhịp SSE 2 giây là treo cả dashboard. */
-let quotaCache = null;
+let quotaCache = { at: 0, data: null };
+const QUOTA_CACHE_MS = 60000;
 /* Model áp dụng cho task mới (--model khi spawn). null = để CLI dùng model theo cấu
    hình sẵn có của Claude.
    Chỉ nhận tên RÚT GỌN: tên đầy đủ kèm ngày (`claude-opus-4-...`) sẽ sai ngay khi bản
@@ -1489,6 +1490,27 @@ function spawnClaude(args, sid, meta) {
 /* ---------------- oneshot / jobs ---------------- */
 
 // Chạy claude 1-shot lấy stdout — dùng cho enhance/summary. Timeout 120s.
+function getQuota() {
+  const now = Date.now();
+  if (quotaCache.at && now - quotaCache.at < QUOTA_CACHE_MS && quotaCache.data) {
+    return quotaCache.data;
+  }
+  // Parse `/usage` output — sync call via spawn
+  try {
+    const out = require('child_process').spawnSync('claude', ['-p', '/usage'], {
+      cwd: os.homedir(),
+      encoding: 'utf8',
+      timeout: 5000,
+      env: process.env
+    });
+    if (out.status === 0 && out.stdout) {
+      quotaCache = { at: now, data: out.stdout };
+      return out.stdout;
+    }
+  } catch (e) {}
+  return null;
+}
+
 function runOneshot(prompt) {
   const id = crypto.randomUUID();
   const rec = { status: 'running', output: '' };
@@ -2703,6 +2725,12 @@ const server = http.createServer(async (req, res) => {
     const query = url.searchParams.get('q') || '';
     const results = searchHistory(sid, query);
     return json(res, 200, { results });
+  }
+
+  // ---- hạn mức (/usage output) ----
+  if (p === '/api/quota') {
+    const quota = getQuota();
+    return json(res, 200, { quota });
   }
 
   // ---- model riêng cho 1 phiên (để trống = dùng lại model toàn cục) ----
