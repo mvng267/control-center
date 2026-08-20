@@ -642,6 +642,29 @@ function getHistory(sid, them, offset = 0) {
   return { msgs, total, start: remaining };
 }
 
+function searchHistory(sid, query) {
+  if (!query || query.length < 2) return [];
+  const file = findSessionFile(sid);
+  if (!file) return [];
+  const parsed = parseSessionFile(file);
+  if (!parsed) return [];
+  const needle = query.toLowerCase();
+  const results = [];
+  parsed.msgs.forEach((m, idx) => {
+    const text = (m.text || '').toLowerCase();
+    if (text.includes(needle)) {
+      const excerpt = m.text.slice(0, 80).replace(/\n/g, ' ');
+      results.push({
+        i: idx,
+        vai: m.role,
+        trich: excerpt,
+        cuoi: parsed.msgs.length - idx - 1,
+      });
+    }
+  });
+  return results.slice(-50);  // trả 50 kết quả gần nhất
+}
+
 /* ---- tên tự đặt: ghi riêng của dashboard, ĐÈ ai-title của Claude CLI ----
    Không sửa file .jsonl của Claude CLI (nó là dữ liệu gốc, CLI có thể ghi đè bất cứ lúc nào). */
 const TITLES_FILE = path.join(os.homedir(), '.claude', 'dashboard-titles.json');
@@ -2673,6 +2696,13 @@ const server = http.createServer(async (req, res) => {
          xem là mấy cái vừa chạy. Đảo ngược để mới nhất lên đầu. */
       agents: parsed ? (parsed.agents || []).slice(-20).reverse() : [],
     });
+  }
+  // ---- tìm trong phiên ----
+  if ((m = p.match(/^\/api\/search\/([\w-]+)$/)) && req.method === 'GET') {
+    const sid = m[1];
+    const query = url.searchParams.get('q') || '';
+    const results = searchHistory(sid, query);
+    return json(res, 200, { results });
   }
 
   // ---- model riêng cho 1 phiên (để trống = dùng lại model toàn cục) ----
