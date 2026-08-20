@@ -204,9 +204,10 @@ export function ToolCardContent({
   const soTodo = part.todos?.length || 0;
   const tt = { dong: [''], con: 0 }; // reuse tomTat result từ ToolCardResult
 
+  if (!open) return null;
+
   return (
-    <div className={cn('collapse-smooth overflow-hidden', open ? 'max-h-[800px]' : 'max-h-0')}>
-      <div className="min-w-0 pl-[18px]">
+    <div className="min-w-0 pl-[18px]">
         {soTodo ? (
           <div className="mt-1 flex flex-col gap-0.5">
             {part.todos!.map((t, i) => (
@@ -271,9 +272,8 @@ export function ToolCardContent({
             ))}
           </div>
         )}
-      </div>
 
-      {zoom && <ImageZoom src={zoom} onClose={() => setZoom(null)} />}
+        {zoom && <ImageZoom src={zoom} onClose={() => setZoom(null)} />}
     </div>
   );
 }
