@@ -5,6 +5,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* Motion: increase duration + add ease-out for spring-like feel */
+  --transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); /* ease-out */
+  --transition-duration: 200ms;
+
   /* trạng thái dùng chung — chip, badge, tool card đều đọc từ đây */
   --color-status-ok: var(--status-ok);
   --color-status-run: var(--status-run);
@@ -216,3 +220,34 @@
    thanh cuộn là chiếm hơn một phần tư chiều cao. Vuốt/lăn vẫn cuộn được. */
 .an-thanh-cuon { scrollbar-width: none; }
 .an-thanh-cuon::-webkit-scrollbar { display: none; }
+
+/* Motion layer: apply ease-out + duration globally, override with specifics */
+@layer components {
+  /* Buttons: scale + color on hover */
+  button, [role="button"] {
+    transition: all var(--transition-duration) var(--transition-timing-function);
+  }
+
+  /* Interactive elements: color + background smooth */
+  a, [role="link"], .clickable {
+    transition: color var(--transition-duration) var(--transition-timing-function),
+                background-color var(--transition-duration) var(--transition-timing-function);
+  }
+
+  /* Collapse/expand: smooth max-height + opacity */
+  .collapse-smooth {
+    transition: max-height var(--transition-duration) var(--transition-timing-function),
+                opacity var(--transition-duration) var(--transition-timing-function);
+  }
+
+  /* Hover: scale + shadow together */
+  .hover-lift {
+    transition: transform var(--transition-duration) var(--transition-timing-function),
+                box-shadow var(--transition-duration) var(--transition-timing-function);
+  }
+
+  /* Stagger: children inherit delay via CSS variable */
+  .stagger-children > * {
+    animation: var(--child-animation, none);
+  }
+}

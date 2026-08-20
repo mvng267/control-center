@@ -819,7 +819,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                      không đẩy chúng đi — chúng CHỒNG lên nhau, cuộn một phiên dài là
                      một chồng box xếp lớp che hết nội dung. Claude CLI chỉ giữ MỘT
                      dòng trên cùng; thanh `cau-dinh` ở đầu vùng cuộn làm đúng việc đó. */
-                  m.role === 'user' && !m.tuDong && '-mx-2 rounded-lg bg-card px-2 pb-1.5')}>
+                  m.role === 'user' && !m.tuDong && 'sticky top-0 z-10 -mx-2 rounded-lg bg-card/95 px-2 pb-1.5')}>
                 {/* DÒNG TIÊU ĐỀ LƯỢT — vùng bấm gập DUY NHẤT.
                     Không cho bấm cả lượt: bên trong đã có 5 thứ bấm được (thẻ tool,
                     bảng chọn, thẻ kế hoạch, nút chép, dòng ghi chú), bấm cả khối thì
@@ -1244,7 +1244,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') setMoRong(false); }}
             placeholder="Viết dài thoải mái…"
-            className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 font-mono text-[16px] outline-none md:text-[14px]" />
+            className="min-h-0 max-h-[35dvh] flex-1 resize-none bg-transparent px-4 py-3 font-mono text-[16px] outline-none md:text-[14px]" />
         </div>
       )}
 

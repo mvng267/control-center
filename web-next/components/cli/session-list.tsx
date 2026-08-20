@@ -574,8 +574,9 @@ export function SessionList({
                     </div>
                     {!gap && (
                       <div className="flex flex-col gap-2">
-                        {g.ss.map((s) => (
-                          <SessionCard key={s.sid} s={s} truoc={ago} anDuAn
+                        {g.ss.map((s, idx) => (
+                          <div key={s.sid} style={{ animationDelay: `${idx * 20}ms` }}>
+                            <SessionCard s={s} truoc={ago} anDuAn
                             chon={sel.has(s.sid)} cheDoChon={cheDoChon}
                             onGiuLau={() => setCheDoChon(true)}
                             onChon={(v) => {
@@ -587,6 +588,7 @@ export function SessionList({
                 onFav={(bat) => doiFav(s.sid, bat)}
                             onOpen={onOpen}
                             menu={<RowMenu s={s} onOpen={onOpen} onAn={(bat) => doiAn(s.sid, bat)} />} />
+                          </div>
                         ))}
                       </div>
                     )}
@@ -602,8 +604,9 @@ export function SessionList({
                thêm một khối chú thích JSX nữa vào là thành hai phần tử, Turbopack
                báo "Expected '</', got 'ident'". */
             <div data-testid="session-grid" className="flex flex-col gap-2">
-              {view.map((s) => (
-                <SessionCard key={s.sid} s={s} truoc={ago}
+              {view.map((s, idx) => (
+                <div key={s.sid} style={{ animationDelay: `${idx * 20}ms` }}>
+                  <SessionCard s={s} truoc={ago}
                   chon={sel.has(s.sid)} cheDoChon={cheDoChon}
                   onGiuLau={() => setCheDoChon(true)}
                   onChon={(v) => {
@@ -615,6 +618,7 @@ export function SessionList({
                 onFav={(bat) => doiFav(s.sid, bat)}
                   onOpen={onOpen}
                   menu={<RowMenu s={s} onOpen={onOpen} onAn={(bat) => doiAn(s.sid, bat)} />} />
+                </div>
               ))}
             </div>
           )}
