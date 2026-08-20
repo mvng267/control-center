@@ -8,6 +8,7 @@ import {
 import type { Session } from '@/lib/types';
 import { useCauHinh } from '@/lib/use-cauhinh';
 import { cn } from '@/lib/utils';
+import { ResumeButton } from './resume-button';
 
 /* Thẻ phiên — thay cho bảng ngang.
 
@@ -202,6 +203,23 @@ export function SessionCard({
             className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-error/12 px-1.5 py-px text-[12px] font-medium text-status-error">
             <TriangleAlert className="size-3" />đã xoá
           </span>
+        )}
+
+        {/* Auto-restart button when session hung >15 min */}
+        {!!s.treo && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full"
+          >
+            <ResumeButton
+              sid={s.sid}
+              hungMinutes={s.treo}
+              onResume={() => {
+                /* Reload sẽ fetch lại history từ server với process mới */
+                window.location.reload();
+              }}
+            />
+          </div>
         )}
 
         <span className="ml-auto shrink-0 text-[12px] tabular-nums text-muted-foreground">

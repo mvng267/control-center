@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Images, Loader2 } from 'lucide-react';
 import { api, imgUrl } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ImageZoom } from './tool-card';
+import { ImageZoom } from './tool-card-content';
 
 /* Xem MỌI ảnh trong phiên, không giới hạn cửa sổ 30 tin.
 

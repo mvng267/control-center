@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { HermesTools } from './hermes-tools';
+import { HermesMessage, type HermesMsg } from './hermes-message';
 import { toast } from 'sonner';
 
 interface HMsg { role: string; content: string; ts: number }
@@ -164,21 +165,20 @@ export function HermesTab() {
         <span className="truncate text-[14px] font-medium">{conv ? niceTitle(conv) : ''}</span>
       </div>
 
-      {/* testid này là ĐỊA CHỈ cho use-soft-keyboard: bàn phím bật thì nó cuộn hộp
-          xuống cuối. Đổi tên là mất tính năng, không phải chỉ hỏng test. */}
-      <div ref={boxRef} data-testid="hermes-bubbles"
-        className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-4">
+      {/* Chat messages using refactored HermesMessage component */}
+      <div
+        ref={boxRef}
+        data-testid="hermes-bubbles"
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-4"
+      >
         {msgs.map((m, i) => (
-          <div key={i} data-testid="hermes-bubble" data-role={m.role}
-            className={cn(
-              'max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-[14px] leading-relaxed md:max-w-[76%]',
-              m.role === 'user'
-                ? 'self-end rounded-br-md bg-primary text-primary-foreground'
-                : m.role === 'tool'
-                  ? 'self-start border border-tool-accent/25 bg-tool-accent/[0.08] font-mono text-[12px] text-tool-accent'
-                  : 'self-start rounded-bl-md border border-border bg-card',
-            )}>
-            {m.role === 'tool' ? m.content.slice(0, 300) : m.content}
+          <div
+            key={i}
+            data-testid="hermes-bubble"
+            data-role={m.role}
+            className={cn('flex', m.role === 'user' && 'justify-end')}
+          >
+            <HermesMessage msg={m as HermesMsg} onCopy={() => navigator.clipboard?.writeText(m.content)} />
           </div>
         ))}
       </div>
