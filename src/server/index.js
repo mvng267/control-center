@@ -625,17 +625,21 @@ function parseSessionFile(file) {
    payload: đo thật 497 ký tự/tin -> mỗi trang 30 tin ≈ 15KB, và chỉ tải khi người dùng
    BẤM, không lặp theo nhịp SSE. */
 const CUA_SO = 30;
-function getHistory(sid, them) {
+function getHistory(sid, them, offset = 0) {
   const file = findSessionFile(sid);
   if (!file) return null;
   const parsed = parseSessionFile(file);
   if (!parsed) return null;
-  const n = CUA_SO + Math.max(0, Math.min(+them || 0, 970));   // trần 1000 tin/lần
-  return parsed.msgs.slice(-n).map(m => ({
+  const total = parsed.msgs.length;
+  const start = Math.max(0, total - (offset + CUA_SO));  // offset từ cuối
+  const n = CUA_SO + Math.max(0, Math.min(+them || 0, 970));
+  const end = Math.min(total, total - offset);
+  const remaining = Math.max(0, total - (offset + CUA_SO));  // còn bao nhiêu tin cũ
+  const msgs = parsed.msgs.slice(Math.max(0, end - n), end).map(m => ({
     role: m.role, content: m.text, ts: m.ts, parts: m.parts,
-    // tin mang vai 'user' nhưng do máy sinh ra — giao diện vẽ khác câu người gõ
     ...(m.tuDong ? { tuDong: m.tuDong } : {}),
   }));
+  return { msgs, total, start: remaining };
 }
 
 /* ---- tên tự đặt: ghi riêng của dashboard, ĐÈ ai-title của Claude CLI ----
@@ -2601,15 +2605,13 @@ const server = http.createServer(async (req, res) => {
     try { mt = fs.statSync(file).mtimeMs; } catch {}
     // ?them=N -> lấy thêm N tin CŨ ngoài cửa sổ 30. Client tăng dần mỗi lần bấm
     // "xem thêm"; giữ nguyên kiểu cửa-sổ-trượt nên tin mới vẫn về bình thường.
+    // ?offset=N -> offset từ cuối (phân trang), mặc định 0 (30 tin cuối)
     const them = +(url.searchParams.get('them') || 0);
-    const messages = getHistory(sid, them) || [];
-    // total: TỔNG message tuyệt đối (messages chỉ là window 30 cuối) — client cần để
-    // quy đổi offset /clear; thiếu total thì /clear trên session >30 msg mất message mới vĩnh viễn
-    const parsed = parseSessionFile(file);
-    const total = parsed ? parsed.msgs.length : messages.length;
-    // start: chỉ số tuyệt đối của messages[0]. Client so start để biết window ĐÃ TRƯỢT
-    // (msg mới đẩy msg cũ ra, length không đổi) — thiếu nó thì client đứng hình không nhận msg mới.
-    const start = Math.max(0, total - messages.length);
+    const offset = +(url.searchParams.get('offset') || 0);
+    const hist = getHistory(sid, them, offset) || { msgs: [], total: 0, start: 0 };
+    const messages = hist.msgs || [];
+    const total = hist.total;
+    const start = hist.start;  // tin cũ còn lại chưa tải
     // tool_use chưa có result + session đang chạy = đang thực thi -> chip "running".
     // Không typing thì để pending (run bị kill/ngắt), client hiện chip mờ.
     if (typing && messages.length) {
@@ -3039,8 +3041,9 @@ const server = http.createServer(async (req, res) => {
 
   // ---- /summary: tóm tắt session từ history (oneshot) ----
   if ((m = p.match(/^\/api\/summary\/([\w-]+)$/)) && req.method === 'POST') {
-    const messages = getHistory(m[1]);
-    if (!messages || !messages.length) return json(res, 400, { error: 'session không có history' });
+    const hist = getHistory(m[1]);
+    const messages = hist?.msgs || [];
+    if (!messages.length) return json(res, 400, { error: 'session không có history' });
     const convo = messages.map(x => x.role.toUpperCase() + ': ' + x.content.slice(0, 2000)).join('\n\n');
     const prompt = 'Tóm tắt ngắn gọn cuộc hội thoại sau bằng tiếng Việt, dạng gạch đầu dòng '
       + '(nội dung chính, quyết định, việc còn dang dở):\n\n' + convo;
@@ -3879,6 +3882,46 @@ self.addEventListener('notificationclick', function (e) {
   }));
 });
 `;
+
+/* ---- AUTO-RESTART: Resume hung/dead session ----
+   POST /api/resume/:sid — spawn `claude --resume :sid` để khôi phục phiên chết.
+   Phiên treo khi: process vẫn ở procs.map nhưng .jsonl không cập nhật >15 phút.
+   Resume lấy context từ .jsonl hiện tại (Claude CLI xử lý --resume tự động).
+   Nếu --resume fail (phiên đã xoá) → spawn task mới với prompt gốc. */
+const resumeHandler = (sid, res) => {
+  const sess = sessionCwd(sid);
+  if (!sess) return sendJson(res, 404, { ok: false, error: 'Session not found' });
+
+  const cwd = sess || os.homedir();
+  // Spawn `claude --resume` với cùng CWD; không có task title = user manual retry
+  const proc = spawn('claude', ['--resume', sid], {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  const startedAt = Date.now();
+  procs.set(sid, { proc, project: null, startedAt, task: 'resume' });
+
+  // Capture stdout để stream về client
+  let output = '';
+  const decoder = new StringDecoder('utf8');
+  proc.stdout?.on('data', (chunk) => {
+    output += decoder.write(chunk);
+  });
+
+  proc.on('close', (code) => {
+    procs.delete(sid);
+    if (code === 0) {
+      return sendJson(res, 200, { ok: true, output });
+    }
+    sendJson(res, 500, { ok: false, error: `Resume failed: exit ${code}`, output });
+  });
+
+  proc.on('error', (err) => {
+    procs.delete(sid);
+    sendJson(res, 500, { ok: false, error: `Spawn error: ${err.message}` });
+  });
+};
 
 /* ---------------- frontend ---------------- */
 // LƯU Ý: template literal — client JS bên trong KHÔNG dùng backtick / ${ ;
