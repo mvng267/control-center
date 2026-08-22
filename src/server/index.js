@@ -30,6 +30,11 @@ const lastSeen = new Map();
    3-5 giây — gọi theo nhịp SSE 2 giây là treo cả dashboard. */
 let quotaCache = { at: 0, data: null };
 const QUOTA_CACHE_MS = 60000;
+/* Cache phiên đã parse (lớn đến 100MB). Giữ 10 phiên gần nhất để tránh parse lại
+   khi user cuộn giữa các tab. Đo được: parse phiên 178MB mất 1.5s, cache hit <1ms. */
+const sessionCache = new Map(); // sid -> { at: timestamp, parsed: object }
+const SESSION_CACHE_MS = 300000; // 5 phút
+const SESSION_CACHE_MAX = 10; // giới hạn số phiên cache
 /* Model áp dụng cho task mới (--model khi spawn). null = để CLI dùng model theo cấu
    hình sẵn có của Claude.
    Chỉ nhận tên RÚT GỌN: tên đầy đủ kèm ngày (`claude-opus-4-...`) sẽ sai ngay khi bản
@@ -255,10 +260,27 @@ function loaiTuDong(text) {
 }
 
 function parseSessionFile(file) {
+  // Trích sid từ path file: ~/.claude/projects/<path>/<sid>.jsonl
+  const sid = file.split('/').slice(-1)[0].replace('.jsonl', '');
+
+  // Cache level 2: nếu sid không đổi trong 5 phút, dùng cache cũ luôn
+  const cached = sessionCache.get(sid);
+  if (cached && Date.now() - cached.at < SESSION_CACHE_MS) return cached.parsed;
+
   let st;
   try { st = fs.statSync(file); } catch { cache.delete(file); return null; }
   const c = cache.get(file);
-  if (c && c.mtimeMs === st.mtimeMs && c.size === st.size) return c.data;
+  if (c && c.mtimeMs === st.mtimeMs && c.size === st.size) {
+    // File chưa đổi, lưu vào session cache
+    if (sid) {
+      if (sessionCache.size >= SESSION_CACHE_MAX) {
+        const first = sessionCache.keys().next().value;
+        sessionCache.delete(first);
+      }
+      sessionCache.set(sid, { at: Date.now(), parsed: c.data });
+    }
+    return c.data;
+  }
 
   /* Trạng thái tích luỹ. Tách ra khỏi thân hàm để lần đọc sau nối tiếp được:
      toolIndex phải sống qua các lần đọc, nếu không tool_result nằm ở phần mới sẽ
@@ -612,6 +634,12 @@ function parseSessionFile(file) {
   S.firstUser = firstUser; S.model = model; S.effort = effort;
   // moc = MOC_KIEM byte cuối file, dùng lần sau để chắc phần đầu chưa bị ghi đè.
   cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, data, state: S, moc: mocCuoi(file, st.size) });
+  // Lưu vào session cache để lần sau không parse lại trong 5 phút
+  if (sessionCache.size >= SESSION_CACHE_MAX) {
+    const first = sessionCache.keys().next().value;
+    sessionCache.delete(first);
+  }
+  sessionCache.set(sid, { at: Date.now(), parsed: data });
   return data;
 }
 
