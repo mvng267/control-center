@@ -76,6 +76,30 @@ Vì sao cần bước kiểm cuối: đã mất gần một giờ vì tiến tr�
 trong khi mã đã có endpoint mới — panel xem file dựng ra cây rỗng, test đỏ, mà nhìn
 log restart thì tưởng xong.
 
+### Autostart khi đăng nhập (launchd)
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.mvng.control.plist
+```
+
+Lần sau bật máy, dashboard tự chạy nền. Kiểm bằng:
+
+```bash
+launchctl list | grep control       # phải thấy "com.mvng.control"
+```
+
+Xem log:
+
+```bash
+tail -f /tmp/control.log
+```
+
+Tắt autostart:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.mvng.control.plist
+```
+
 ---
 
 ## Debian (server) — cài bằng npm
@@ -85,7 +109,7 @@ Toàn bộ phần này đã chạy thật trên Debian (Node v18.20.4), không p
 **1. Cài** — dùng `~/.local` để không cần `sudo`:
 
 ```bash
-ssh <tên>@<địa-chỉ-server>
+ssh mvng@<địa-chỉ-server>
 
 npm config set prefix ~/.local
 mkdir -p ~/.local/bin
@@ -94,48 +118,47 @@ npm i -g claude-control-center
 ~/.local/bin/control --version     # phải in ra số phiên bản
 ```
 
-**2. Chạy nền bằng systemd** — không phụ thuộc phiên SSH:
+**2. Chạy nền bằng systemd** (toàn bộ — root cài một lần):
 
 ```bash
-mkdir -p ~/.config/systemd/user
-cat > ~/.config/systemd/user/control-center.service <<EOF
+sudo tee /etc/systemd/system/control.service > /dev/null << 'EOF'
 [Unit]
-Description=Claude Control Center
+Description=Claude Control Center Dashboard
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=$(command -v node) $HOME/.local/lib/node_modules/claude-control-center/bin/control.js
-Environment=PORT=7799
-Restart=on-failure
-RestartSec=3
+User=mvng
+ExecStart=/home/mvng/.local/bin/control --port 7799
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=control
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
 
-systemctl --user daemon-reload
-systemctl --user enable --now control-center
-loginctl enable-linger "$USER"     # chạy tiếp cả khi đã đăng xuất SSH
+sudo systemctl daemon-reload
+sudo systemctl enable control
+sudo systemctl start control
 ```
-
-`ExecStart` gọi **thẳng file `.js` bằng `node`**, không gọi `~/.local/bin/control`.
-Lý do: systemd không nạp shell nên không có `PATH`, mà `control` chỉ là symlink trỏ
-tới một file `.js` — cần `node` chạy nó.
 
 **3. Kiểm**:
 
 ```bash
-systemctl --user is-active control-center      # phải in "active"
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7799/   # 200
-journalctl --user -u control-center -f          # xem log
+sudo systemctl status control --no-pager    # phải in "active (running)"
+curl -s http://127.0.0.1:7799/api/tree     # phải có {"ok":true,...}
+sudo journalctl -u control -f               # xem log real-time
 ```
 
-**Cập nhật** về sau — bấm nút **Cập nhật** trong màn cấu hình, hoặc:
+**Cập nhật** về sau — bấm nút **Cập nhật** trong màn cấu hình (giao diện tự nhận cài
+bằng npm hay git rồi chạy đúng lệnh), hoặc tay:
 
 ```bash
 npm i -g claude-control-center@latest
-systemctl --user restart control-center
+sudo systemctl restart control
 ```
 
 ### Nếu đang chạy bản clone git
@@ -146,8 +169,8 @@ nhưng cứ sao lưu cho chắc:
 ```bash
 cp -a ~/.claude/dashboard-*.json ~/dashboard-backup/   # mã truy cập, mã khoá, cấu hình
 
-systemctl --user stop control-center
-systemctl --user disable control-center
+sudo systemctl stop control
+sudo systemctl disable control
 rm -rf ~/control-center        # hoặc ~/control, tuỳ chỗ đã clone
 ```
 

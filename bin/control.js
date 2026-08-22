@@ -13,10 +13,13 @@ if (args.includes('-h') || args.includes('--help')) {
   const { version } = require('../package.json');
   console.log(`claude-control-center v${version}
 
-  control                 chạy dashboard ở cổng 7799
-  control --port 8080     đổi cổng
-  control --version       xem bản
-  control --help          bảng này
+  control                     chạy dashboard ở cổng 7799
+  control --port 8080         đổi cổng
+  control --autostart enable  bật chạy nền lúc boot
+  control --autostart disable tắt chạy nền
+  control --autostart status  xem trạng thái
+  control --version           xem bản
+  control --help              bảng này
 
 Mở http://localhost:7799 — lần chạy đầu server in ra mã truy cập, dán vào
 để mở từ máy khác. Mã lưu ở ~/.claude/dashboard-token.json.
@@ -28,6 +31,50 @@ Dashboard đọc phiên Claude CLI từ ~/.claude/projects, nên phải chạy t
 
 if (args.includes('-v') || args.includes('--version')) {
   console.log(require('../package.json').version);
+  process.exit(0);
+}
+
+// --autostart (macOS/Linux)
+const iAuto = args.findIndex((a) => a === '--autostart');
+if (iAuto >= 0) {
+  const action = args[iAuto + 1];
+  const os = require('os');
+  const fs = require('fs');
+  const homeDir = os.homedir();
+
+  if (os.platform() === 'darwin') {
+    // macOS — launchd
+    const plistPath = path.join(homeDir, 'Library/LaunchAgents/com.mvng.control.plist');
+    if (action === 'enable') {
+      require('child_process').execSync('launchctl load ' + plistPath, { stdio: 'inherit' });
+      console.log('✓ Autostart bật — dashboard sẽ chạy lúc đăng nhập');
+    } else if (action === 'disable') {
+      require('child_process').execSync('launchctl unload ' + plistPath, { stdio: 'inherit' });
+      console.log('✓ Autostart tắt');
+    } else if (action === 'status') {
+      try {
+        const out = require('child_process').execSync('launchctl list | grep control', { encoding: 'utf8' });
+        console.log('✓ Autostart ON\n' + out.trim());
+      } catch {
+        console.log('✗ Autostart OFF');
+      }
+    }
+  } else {
+    // Linux — systemd
+    if (action === 'enable') {
+      require('child_process').execSync('sudo systemctl enable control && sudo systemctl start control', { stdio: 'inherit' });
+      console.log('✓ Autostart bật — dashboard sẽ chạy lúc boot');
+    } else if (action === 'disable') {
+      require('child_process').execSync('sudo systemctl disable control && sudo systemctl stop control', { stdio: 'inherit' });
+      console.log('✓ Autostart tắt');
+    } else if (action === 'status') {
+      try {
+        require('child_process').execSync('sudo systemctl status control --no-pager', { stdio: 'inherit' });
+      } catch {
+        console.log('✗ Autostart OFF');
+      }
+    }
+  }
   process.exit(0);
 }
 

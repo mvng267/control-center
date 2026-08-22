@@ -2666,6 +2666,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
     // lỗi lần chạy gần nhất (vd resume trượt) — client hiện banner thay vì im lặng
+    const parsed = parseSessionFile(file);
     const se = spawnErrors.get(sid);
     return json(res, 200, {
       sid, messages, total, start, typing,
