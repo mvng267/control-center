@@ -5,6 +5,17 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* Typography: canonical sizes + line-heights (ReUI standard) */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+
+  --line-height-tight: 1.4;
+  --line-height-normal: 1.6;
+  --line-height-relaxed: 1.8;
+
   /* Motion: increase duration + add ease-out for spring-like feel */
   --transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); /* ease-out */
   --transition-duration: 200ms;
@@ -220,6 +231,37 @@
    thanh cuộn là chiếm hơn một phần tư chiều cao. Vuốt/lăn vẫn cuộn được. */
 .an-thanh-cuon { scrollbar-width: none; }
 .an-thanh-cuon::-webkit-scrollbar { display: none; }
+
+/* Typography utility classes (ReUI standard) */
+@layer components {
+  .text-caption {
+    font-size: var(--text-xs);
+    line-height: var(--line-height-tight);
+  }
+  .text-body {
+    font-size: var(--text-sm);
+    line-height: var(--line-height-normal);
+  }
+  .text-body-lg {
+    font-size: var(--text-base);
+    line-height: var(--line-height-normal);
+  }
+  .text-heading {
+    font-size: var(--text-base);
+    line-height: var(--line-height-tight);
+    font-weight: 600;
+  }
+  .text-heading-lg {
+    font-size: var(--text-lg);
+    line-height: var(--line-height-tight);
+    font-weight: 600;
+  }
+  .text-heading-xl {
+    font-size: var(--text-xl);
+    line-height: var(--line-height-tight);
+    font-weight: 700;
+  }
+}
 
 /* Motion layer: apply ease-out + duration globally, override with specifics */
 @layer components {
