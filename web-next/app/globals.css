@@ -181,6 +181,21 @@
    Khai báo mặc định 0px ở đây để calc() luôn hợp lệ ngay cả trước khi JS chạy. */
 :root { --kb: 0px; }
 
+/* Smooth keyboard animation: tab bar slides down, input lifts up */
+@media (hover: none) and (pointer: coarse) {
+  /* Tab bar slides out of view */
+  [body.kb-open_&] .tab-bar {
+    transition: transform 200ms ease-out;
+    transform: translateY(100%);
+  }
+
+  /* Input wrapper compensates for keyboard */
+  [body.kb-open_&] .input-wrapper {
+    transition: padding-bottom 200ms ease-out;
+    padding-bottom: var(--kb);
+  }
+}
+
 /* Vùng chạm tối thiểu 44px cho cảm ứng (chuẩn Apple HIG).
    Đo trên iPhone 390px: nút "chép cả lượt" chỉ cao 14px, nút lọc trạng thái 19px —
    gần như không bấm trúng bằng ngón tay. Nới vùng CHẠM bằng ::after phủ trong suốt

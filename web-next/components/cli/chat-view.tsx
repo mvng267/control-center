@@ -554,7 +554,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           `hidden sm:inline-flex` nên trên iPhone không thấy gì cả — mở một phiên ra
           là mất sạch dữ kiện mà danh sách vừa hiện đầy đủ. Dòng 2 mang đúng bộ đó:
           dự án, repo + nhánh, model · mức nghĩ, token, số lượt. */}
-      <div className="flex w-full shrink-0 flex-col gap-1 border-b border-border px-4 py-2.5"
+      <div className="input-wrapper flex w-full shrink-0 flex-col gap-1 border-b border-border px-4 py-2.5"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}>
         <div className="flex items-center gap-2">
           {/* Nút back có VIỀN: trước chỉ là icon trần trên nền tối, nhìn không ra là

@@ -290,7 +290,7 @@ export function AppShell({
             còn ~300px, nhường chỗ cho tin nhắn và ô nhập. Legacy cũng chọn hy sinh tab
             bar — ô nhập quan trọng hơn. Xem lib/use-soft-keyboard.ts. */}
         <nav data-testid="tabbar"
-          className={cn('flex shrink-0 items-stretch border-t border-border bg-sidebar md:hidden [body.kb-open_&]:hidden',
+          className={cn('tab-bar flex shrink-0 items-stretch border-t border-border bg-sidebar md:hidden [body.kb-open_&]:hidden',
             anThanhTab && 'hidden')}
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
           {tabsHien.map(({ id, short, icon: Icon }) => (
