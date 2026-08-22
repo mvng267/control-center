@@ -92,7 +92,7 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.552 0.016 285.9);
+  --muted-foreground: oklch(0.52 0.018 286);  /* WCAG AA+ (4.7:1) */
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -134,7 +134,7 @@
   --secondary: oklch(0.27 0.014 268);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.27 0.014 268);
-  --muted-foreground: oklch(0.68 0.014 286);
+  --muted-foreground: oklch(0.71 0.016 286);  /* WCAG AA+ (4.8:1) */
   --accent: oklch(0.29 0.016 268);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
@@ -159,6 +159,16 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+  html, body, * {
+    /* Smooth theme transition (dark/light toggle) */
+    transition: background-color 200ms ease-out, color 200ms ease-out, border-color 200ms ease-out;
+  }
+  /* Respect user's motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    html, body, * {
+      transition: none !important;
+    }
   }
   body {
     @apply bg-background text-foreground;
@@ -197,6 +207,13 @@
   50%      { background-color: color-mix(in oklab, var(--status-ok) 11%, transparent); }
 }
 .animate-tho { animation: tho 3.2s ease-in-out infinite; }
+
+/* Pulse-glow: scale + opacity for send button (avoids text blur) */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.05); }
+}
+.animate-pulse-glow { animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
 
 /* Tôn trọng người tắt hiệu ứng chuyển động trong cài đặt hệ thống */
 @media (prefers-reduced-motion: reduce) {

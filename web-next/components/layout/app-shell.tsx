@@ -131,13 +131,13 @@ export function AppShell({
            mất đường đi, mà khung chat rộng thêm 200px.
            Nhớ lựa chọn qua localStorage: gập rồi mà mở lại trang nó bung ra thì phải
            gập lại mỗi lần, thành ra phiền hơn là tiện. */}
-      <aside className={cn('hidden shrink-0 flex-col bg-sidebar transition-[width] duration-200 md:flex',
-        gapSide ? 'w-14' : 'w-64')}
+      <aside className={cn('hidden shrink-0 flex-col bg-sidebar w-64 overflow-hidden transition-transform duration-200 md:flex',
+        gapSide ? '-translate-x-[200px]' : 'translate-x-0')}
         data-testid="sidebar" data-gap={gapSide}>
         {/* logo + nút gập. Trước đây chỗ này là icon ⋯ TRANG TRÍ, bấm không làm gì. */}
-        <div className={cn('flex items-center py-3.5', gapSide ? 'justify-center px-2' : 'gap-2.5 px-4')}>
+        <div className={cn('flex items-center py-3.5', gapSide ? 'justify-center px-1' : 'gap-2.5 px-4')}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon-192.png" alt="" width={28} height={28} className="size-7 shrink-0 rounded-lg" />
+          <img src="/icon-192.png" alt="" width={28} height={28} className={cn('size-7 shrink-0 rounded-lg', gapSide && 'size-6')} />
           {!gapSide && (
             <span className="flex-1 truncate text-[14px] font-semibold tracking-tight">Control</span>
           )}
