@@ -27,14 +27,11 @@ const procs = new Map();
 // sid -> timestamp lần cuối user mở chat view (để tính unread badge)
 const lastSeen = new Map();
 /* Hạn mức Claude: { at, data }. Phải cache vì `/usage` spawn `claude -p`, đo thật mất
-   3-5 giây — gọi theo nhịp SSE 2 giây là treo cả dashboard. */
+   4,8 giây — gọi theo nhịp SSE 2 giây là treo cả dashboard.
+   Thời gian giữ cache nằm ngay tại route `/api/quota` (hằng `GIU`, 10 phút) chứ không
+   khai ở đây: từng có `QUOTA_CACHE_MS = 60000` ở chỗ này, lệch hẳn với giá trị route
+   thật dùng và chẳng ai đọc tới. */
 let quotaCache = { at: 0, data: null };
-const QUOTA_CACHE_MS = 60000;
-/* Cache phiên đã parse (lớn đến 100MB). Giữ 10 phiên gần nhất để tránh parse lại
-   khi user cuộn giữa các tab. Đo được: parse phiên 178MB mất 1.5s, cache hit <1ms. */
-const sessionCache = new Map(); // sid -> { at: timestamp, parsed: object }
-const SESSION_CACHE_MS = 300000; // 5 phút
-const SESSION_CACHE_MAX = 10; // giới hạn số phiên cache
 /* Model áp dụng cho task mới (--model khi spawn). null = để CLI dùng model theo cấu
    hình sẵn có của Claude.
    Chỉ nhận tên RÚT GỌN: tên đầy đủ kèm ngày (`claude-opus-4-...`) sẽ sai ngay khi bản
@@ -260,27 +257,10 @@ function loaiTuDong(text) {
 }
 
 function parseSessionFile(file) {
-  // Trích sid từ path file: ~/.claude/projects/<path>/<sid>.jsonl
-  const sid = file.split('/').slice(-1)[0].replace('.jsonl', '');
-
-  // Cache level 2: nếu sid không đổi trong 5 phút, dùng cache cũ luôn
-  const cached = sessionCache.get(sid);
-  if (cached && Date.now() - cached.at < SESSION_CACHE_MS) return cached.parsed;
-
   let st;
   try { st = fs.statSync(file); } catch { cache.delete(file); return null; }
   const c = cache.get(file);
-  if (c && c.mtimeMs === st.mtimeMs && c.size === st.size) {
-    // File chưa đổi, lưu vào session cache
-    if (sid) {
-      if (sessionCache.size >= SESSION_CACHE_MAX) {
-        const first = sessionCache.keys().next().value;
-        sessionCache.delete(first);
-      }
-      sessionCache.set(sid, { at: Date.now(), parsed: c.data });
-    }
-    return c.data;
-  }
+  if (c && c.mtimeMs === st.mtimeMs && c.size === st.size) return c.data;
 
   /* Trạng thái tích luỹ. Tách ra khỏi thân hàm để lần đọc sau nối tiếp được:
      toolIndex phải sống qua các lần đọc, nếu không tool_result nằm ở phần mới sẽ
@@ -634,12 +614,6 @@ function parseSessionFile(file) {
   S.firstUser = firstUser; S.model = model; S.effort = effort;
   // moc = MOC_KIEM byte cuối file, dùng lần sau để chắc phần đầu chưa bị ghi đè.
   cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, data, state: S, moc: mocCuoi(file, st.size) });
-  // Lưu vào session cache để lần sau không parse lại trong 5 phút
-  if (sessionCache.size >= SESSION_CACHE_MAX) {
-    const first = sessionCache.keys().next().value;
-    sessionCache.delete(first);
-  }
-  sessionCache.set(sid, { at: Date.now(), parsed: data });
   return data;
 }
 
@@ -654,44 +628,20 @@ function parseSessionFile(file) {
    payload: đo thật 497 ký tự/tin -> mỗi trang 30 tin ≈ 15KB, và chỉ tải khi người dùng
    BẤM, không lặp theo nhịp SSE. */
 const CUA_SO = 30;
-function getHistory(sid, them, offset = 0) {
+function getHistory(sid, them) {
   const file = findSessionFile(sid);
   if (!file) return null;
   const parsed = parseSessionFile(file);
   if (!parsed) return null;
   const total = parsed.msgs.length;
-  const start = Math.max(0, total - (offset + CUA_SO));  // offset từ cuối
+  // Nới cửa sổ bằng `them` chứ KHÔNG phân trang bằng offset: client (chat-view.tsx:403)
+  // tăng dần `?them=` và vẽ lại từ đầu, nên cửa sổ luôn dính đáy và tin mới vẫn về.
   const n = CUA_SO + Math.max(0, Math.min(+them || 0, 970));
-  const end = Math.min(total, total - offset);
-  const remaining = Math.max(0, total - (offset + CUA_SO));  // còn bao nhiêu tin cũ
-  const msgs = parsed.msgs.slice(Math.max(0, end - n), end).map(m => ({
+  const msgs = parsed.msgs.slice(Math.max(0, total - n), total).map(m => ({
     role: m.role, content: m.text, ts: m.ts, parts: m.parts,
     ...(m.tuDong ? { tuDong: m.tuDong } : {}),
   }));
-  return { msgs, total, start: remaining };
-}
-
-function searchHistory(sid, query) {
-  if (!query || query.length < 2) return [];
-  const file = findSessionFile(sid);
-  if (!file) return [];
-  const parsed = parseSessionFile(file);
-  if (!parsed) return [];
-  const needle = query.toLowerCase();
-  const results = [];
-  parsed.msgs.forEach((m, idx) => {
-    const text = (m.text || '').toLowerCase();
-    if (text.includes(needle)) {
-      const excerpt = m.text.slice(0, 80).replace(/\n/g, ' ');
-      results.push({
-        i: idx,
-        vai: m.role,
-        trich: excerpt,
-        cuoi: parsed.msgs.length - idx - 1,
-      });
-    }
-  });
-  return results.slice(-50);  // trả 50 kết quả gần nhất
+  return { msgs, total, start: Math.max(0, total - n) };  // start = còn bao nhiêu tin cũ chưa tải
 }
 
 /* ---- tên tự đặt: ghi riêng của dashboard, ĐÈ ai-title của Claude CLI ----
@@ -1518,26 +1468,6 @@ function spawnClaude(args, sid, meta) {
 /* ---------------- oneshot / jobs ---------------- */
 
 // Chạy claude 1-shot lấy stdout — dùng cho enhance/summary. Timeout 120s.
-function getQuota() {
-  const now = Date.now();
-  if (quotaCache.at && now - quotaCache.at < QUOTA_CACHE_MS && quotaCache.data) {
-    return quotaCache.data;
-  }
-  // Parse `/usage` output — sync call via spawn
-  try {
-    const out = require('child_process').spawnSync('claude', ['-p', '/usage'], {
-      cwd: os.homedir(),
-      encoding: 'utf8',
-      timeout: 5000,
-      env: process.env
-    });
-    if (out.status === 0 && out.stdout) {
-      quotaCache = { at: now, data: out.stdout };
-      return out.stdout;
-    }
-  } catch (e) {}
-  return null;
-}
 
 function runOneshot(prompt) {
   const id = crypto.randomUUID();
@@ -2678,10 +2608,8 @@ const server = http.createServer(async (req, res) => {
     try { mt = fs.statSync(file).mtimeMs; } catch {}
     // ?them=N -> lấy thêm N tin CŨ ngoài cửa sổ 30. Client tăng dần mỗi lần bấm
     // "xem thêm"; giữ nguyên kiểu cửa-sổ-trượt nên tin mới vẫn về bình thường.
-    // ?offset=N -> offset từ cuối (phân trang), mặc định 0 (30 tin cuối)
     const them = +(url.searchParams.get('them') || 0);
-    const offset = +(url.searchParams.get('offset') || 0);
-    const hist = getHistory(sid, them, offset) || { msgs: [], total: 0, start: 0 };
+    const hist = getHistory(sid, them) || { msgs: [], total: 0, start: 0 };
     const messages = hist.msgs || [];
     const total = hist.total;
     const start = hist.start;  // tin cũ còn lại chưa tải
@@ -2749,19 +2677,6 @@ const server = http.createServer(async (req, res) => {
     });
   }
   // ---- tìm trong phiên ----
-  if ((m = p.match(/^\/api\/search\/([\w-]+)$/)) && req.method === 'GET') {
-    const sid = m[1];
-    const query = url.searchParams.get('q') || '';
-    const results = searchHistory(sid, query);
-    return json(res, 200, { results });
-  }
-
-  // ---- hạn mức (/usage output) ----
-  if (p === '/api/quota') {
-    const quota = getQuota();
-    return json(res, 200, { quota });
-  }
-
   // ---- model riêng cho 1 phiên (để trống = dùng lại model toàn cục) ----
   if ((m = p.match(/^\/api\/model\/([\w-]+)$/)) && req.method === 'POST') {
     const sid = m[1];

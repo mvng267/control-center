@@ -1,24 +1,13 @@
 /**
- * ReUI Typography System — canonical sizes + line-heights
- * Use these tokens instead of arbitrary text-[Npx]
+ * Cỡ chữ + giãn dòng dùng chung.
+ *
+ * Chỉ khai hằng cho class ĐÃ CÓ trong globals.css và ĐANG được dùng. Thêm sẵn
+ * TEXT_BODY/TEXT_HEADING… cho "sau này cần" thì hằng trỏ vào class không tồn tại —
+ * chữ không đổi mà cũng không có lỗi nào báo.
  */
 
-// Font sizes (matched to CSS --text-* variables in globals.css)
-export const TEXT_CAPTION = 'text-caption';         // 12px + line-height-tight (labels, badges)
-export const TEXT_BODY = 'text-body';               // 14px + line-height-normal (body text, chat)
-export const TEXT_BODY_LG = 'text-body-lg';         // 16px + line-height-normal
-export const TEXT_HEADING = 'text-heading';         // 16px + tight + weight (section titles)
-export const TEXT_HEADING_LG = 'text-heading-lg';   // 18px + tight (large headings)
-export const TEXT_HEADING_XL = 'text-heading-xl';   // 24px + tight (card titles)
+/** 12px, giãn dòng 1.4 — nhãn, badge, mốc thời gian. Khớp .text-caption ở globals.css */
+export const TEXT_CAPTION = 'text-caption';
 
-// Standalone line-heights (when not using text-* classes)
-export const LINE_HEIGHT_TIGHT = 'leading-[1.4]';         // labels, badges
-export const LINE_HEIGHT_NORMAL = 'leading-[1.6]';        // body, chat (readability)
-export const LINE_HEIGHT_RELAXED = 'leading-[1.8]';       // multi-line, code blocks
-
-// Monospace (for code, output, tool results)
-export const TEXT_MONO = 'font-mono';         // code blocks, tool output
-
-// Legacy aliases (deprecated, use text-* classes instead)
-export const LEADING_RELAXED = LINE_HEIGHT_RELAXED;
-export const LEADING_TIGHT = LINE_HEIGHT_TIGHT;
+/** Khối code, kết quả tool */
+export const TEXT_MONO = 'font-mono';

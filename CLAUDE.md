@@ -85,6 +85,21 @@ cũ vẫn chạy nền. Bộ test mới bind cổng thất bại rồi lặng l�
 cũ, khoá VAPID cũ). `scripts/test-all.js` giờ có `donCong()` dọn trước khi chạy — nếu
 vẫn thấy kết quả nhảy, kiểm `lsof -ti:7896,7897,7797` trước khi nghi mã.
 
+**`npm run build` xanh KHÔNG có nghĩa là mã sạch — phải chạy `npx eslint`.** Một đợt
+sửa giao diện qua build với "TypeScript 0 lỗi" ở cả 4 lỗi sau: `useState` gọi sau một
+early return (hook có điều kiện — state lượt này nhảy sang lượt khác), gán biến trong
+`.map()` của JSX (React chạy lại map mà không dựng lại hàm, cả khối diff tô sai màu),
+bốn import chết, và một file 63 dòng không nơi nào import. Lint bắt hết trong 30 giây.
+Cách đo nợ mới: `npx eslint components lib app --ext .ts,.tsx` rồi so số lỗi/cảnh báo
+với commit trước — bằng nhau mới là không để lại nợ.
+
+**`animate-tho` đè mọi `bg-*` đặt trên cùng phần tử.** Animation đặt
+`background-color` ở mỗi khung hình nên nó thắng class nền tĩnh. Thẻ phiên vừa ĐANG
+CHẠY vừa ĐANG MỞ có đủ `border-primary bg-accent/50` mà `getComputedStyle` vẫn trả về
+màu nhịp thở — nhìn trên màn thì không biết mình đang đọc phiên nào. Dấu tô sáng phải
+dùng thuộc tính animation KHÔNG đụng tới: viền trái dày. `ring-*` cũng không được vì
+thẻ có `transition-colors`, mà box-shadow không nằm trong danh sách đó.
+
 **Nhiều phần tử cùng `sticky top-0` thì CHỒNG lên nhau, không đẩy nhau.** Đã cho mọi
 lượt user `sticky top-0` để câu hỏi dính đầu khung — cuộn phiên dài ra một chồng box
 xếp lớp che hết nội dung. CSS chỉ đẩy nhau khi các phần tử sticky nằm trong những khối

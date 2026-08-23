@@ -126,6 +126,8 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 76 | AGY: sửa `.env` tại chỗ, báo khi cần Restart | Đổi `PORT` → hiện nhắc Restart | tay |
 | 77 | Hermes: tên hội thoại rút gọn + tin đầu làm phụ đề | Xem tab Hermes | pw |
 | 78 | Hermes: ô tìm hội thoại | Gõ vào ô tìm | pw |
+| 78a | Hermes: khung chat kiểu terminal (không phải bong bóng) — header tên+giờ, gập lượt, Markdown | Mở tab Hermes, xem một hội thoại có tin của cả hai bên | **chưa có test** |
+| 78b | Hermes: kết quả tool là thẻ bung/gập được, KHÔNG cắt cứng 300 ký tự | Mở hội thoại có lệnh, bấm vào thẻ tool | **chưa có test** |
 | 79 | Badge % đổi màu theo NGHĨA (thẻ Lỗi tăng = đỏ) | Xem thẻ Lỗi ở tab AGY | pw |
 | 80 | Không còn nút chết | `node scripts/dead-buttons.js` | pw |
 | 81 | Thẻ tool mở ra KHÔNG tự đóng khi poll | mở thẻ, đợi 10s, `data-open` vẫn true | pw |

@@ -103,24 +103,34 @@ function KhoiChu({ nhan, text, error, lang }: { nhan: string; text: string; erro
   );
 }
 
-function KhoiDiff({ text }: { text: string }) {
-  const lines = text.split('\n');
+/* Gán nhãn del/add cho từng dòng TRƯỚC khi vẽ. Bản đầu gán biến `mode` ngay trong
+   .map() của JSX — React được phép chạy lại map mà không dựng lại hàm, lúc đó `mode`
+   mang giá trị của lượt trước và cả khối diff tô sai màu. eslint bắt đúng chỗ này
+   ("Cannot reassign variable after render completes"). */
+function nhanDiff(lines: string[]) {
   let mode: 'del' | 'add' | '' = '';
+  return lines.map((l) => {
+    if (l === '--- old') { mode = 'del'; return { l, kieu: 'dau-del' as const }; }
+    if (l === '+++ new') { mode = 'add'; return { l, kieu: 'dau-add' as const }; }
+    return { l, kieu: mode };
+  });
+}
+
+function KhoiDiff({ text }: { text: string }) {
+  const dong = nhanDiff(text.split('\n'));
   return (
     <div className="mt-1">
       <div className="mb-1 text-[12px] font-semibold tracking-wide text-muted-foreground/70">THAY ĐỔI</div>
       <pre className="min-w-0 max-h-[220px] overflow-auto border-l border-border text-[12px] leading-relaxed md:max-h-[300px] -mx-3 px-0">
-        {lines.map((l, i) => {
-          if (l === '--- old') {
-            mode = 'del';
+        {dong.map(({ l, kieu }, i) => {
+          if (kieu === 'dau-del') {
             return (
               <div key={i} className="w-max min-w-full px-3 text-[12px] font-semibold text-status-error">
                 Trước
               </div>
             );
           }
-          if (l === '+++ new') {
-            mode = 'add';
+          if (kieu === 'dau-add') {
             return (
               <div key={i} className="w-max min-w-full px-3 text-[12px] font-semibold text-status-ok">
                 Sau
@@ -132,8 +142,8 @@ function KhoiDiff({ text }: { text: string }) {
               key={i}
               className={cn(
                 'w-max min-w-full whitespace-pre px-3',
-                mode === 'del' && 'bg-status-error/12 text-status-error',
-                mode === 'add' && 'bg-status-ok/12 text-status-ok'
+                kieu === 'del' && 'bg-status-error/12 text-status-error',
+                kieu === 'add' && 'bg-status-ok/12 text-status-ok'
               )}
             >
               {l}
@@ -202,7 +212,6 @@ export function ToolCardContent({
   const isDiff = part.name === 'Edit' && part.input.startsWith('--- old');
   const isErr = part.status === 'error';
   const soTodo = part.todos?.length || 0;
-  const tt = { dong: [''], con: 0 }; // reuse tomTat result từ ToolCardResult
 
   if (!open) return null;
 

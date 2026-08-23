@@ -554,7 +554,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           `hidden sm:inline-flex` nên trên iPhone không thấy gì cả — mở một phiên ra
           là mất sạch dữ kiện mà danh sách vừa hiện đầy đủ. Dòng 2 mang đúng bộ đó:
           dự án, repo + nhánh, model · mức nghĩ, token, số lượt. */}
-      <div className="input-wrapper flex w-full shrink-0 flex-col gap-1 border-b border-border px-4 py-2.5"
+      <div className="flex w-full shrink-0 flex-col gap-1 border-b border-border px-4 py-2.5"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}>
         <div className="flex items-center gap-2">
           {/* Nút back có VIỀN: trước chỉ là icon trần trên nền tối, nhìn không ra là
@@ -819,7 +819,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
                      không đẩy chúng đi — chúng CHỒNG lên nhau, cuộn một phiên dài là
                      một chồng box xếp lớp che hết nội dung. Claude CLI chỉ giữ MỘT
                      dòng trên cùng; thanh `cau-dinh` ở đầu vùng cuộn làm đúng việc đó. */
-                  m.role === 'user' && !m.tuDong && 'sticky top-0 z-5 -mx-2 rounded-lg bg-card/95 px-2 pb-1.5')}>
+                  m.role === 'user' && !m.tuDong && '-mx-2 rounded-lg bg-card/95 px-2 pb-1.5')}>
                 {/* DÒNG TIÊU ĐỀ LƯỢT — vùng bấm gập DUY NHẤT.
                     Không cho bấm cả lượt: bên trong đã có 5 thứ bấm được (thẻ tool,
                     bảng chọn, thẻ kế hoạch, nút chép, dòng ghi chú), bấm cả khối thì
@@ -1240,11 +1240,15 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               <Send className="size-3.5" /> Gửi
             </Button>
           </div>
+          {/* KHÔNG đặt max-h cho ô này. Ô trong khung chat bị chặn 35dvh để chừa chỗ
+              đọc chat; màn soạn sinh ra chính là để thoát cái trần đó, nên `flex-1`
+              phải ăn hết chiều cao còn lại. Từng đặt max-h-[35dvh] ở đây và bài
+              "man soan cho o go cao hon han o trong chat" đỏ với 315px vs 315px. */}
           <textarea value={text} autoFocus data-testid="soan-input"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') setMoRong(false); }}
             placeholder="Viết dài thoải mái…"
-            className="min-h-0 max-h-[35dvh] flex-1 resize-none bg-transparent px-4 py-3 font-mono text-[16px] outline-none md:text-[14px]" />
+            className="min-h-0 flex-1 resize-none bg-transparent px-4 py-3 font-mono text-[16px] outline-none md:text-[14px]" />
         </div>
       )}
 

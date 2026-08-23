@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ToolCard, type ToolPart } from '@/components/cli/tool-card';
 import { ChatMessage } from '@/components/cli/chat-message';
 import { Markdown } from '@/components/cli/markdown';
@@ -14,6 +14,26 @@ export interface HermesMsg {
   toolId?: string;
   toolName?: string;
   toolStatus?: 'ok' | 'error' | 'running' | 'pending';
+}
+
+function ToolMsg({ msg }: { msg: HermesMsg }) {
+  const [toolOpen, setToolOpen] = useState(false);
+  const toolPart: ToolPart = {
+    t: 'tool',
+    id: msg.toolId || 'unknown',
+    name: msg.toolName || 'Tool',
+    disp: msg.toolName || 'Tool',
+    summary: '',
+    input: '',
+    status: msg.toolStatus || 'ok',
+    result: msg.content,
+    images: [],
+  };
+  return (
+    <div className="w-full max-w-[85%] text-[14px] leading-relaxed md:max-w-[76%]">
+      <ToolCard part={toolPart} sid="" open={toolOpen} onToggle={() => setToolOpen(!toolOpen)} />
+    </div>
+  );
 }
 
 export function HermesMessage({
@@ -30,28 +50,10 @@ export function HermesMessage({
   const isUser = msg.role === 'user';
   const isTool = msg.role === 'tool';
 
-  // Tool rendering as ToolCard-like
-  if (isTool) {
-    const toolPart: ToolPart = {
-      t: 'tool',
-      id: msg.toolId || 'unknown',
-      name: msg.toolName || 'Tool',
-      disp: msg.toolName || 'Tool',
-      summary: '',
-      input: '',
-      status: msg.toolStatus || 'ok',
-      result: msg.content,
-      images: [],
-    };
-
-    const [toolOpen, setToolOpen] = useState(false);
-
-    return (
-      <div className={cn('w-full text-[14px] leading-relaxed', !isUser && 'max-w-[85%] md:max-w-[76%]')}>
-        <ToolCard part={toolPart} sid="" open={toolOpen} onToggle={() => setToolOpen(!toolOpen)} />
-      </div>
-    );
-  }
+  // Thẻ tool là component RIÊNG, không phải nhánh `if` trong này: useState nằm sau
+  // một early return là hook gọi có điều kiện — React đòi mọi hook chạy đúng thứ tự
+  // ở mọi lần render, lệch một cái là state của lượt này nhảy sang lượt khác.
+  if (isTool) return <ToolMsg msg={msg} />;
 
   // Assistant text rendering with Markdown
   if (!isUser) {

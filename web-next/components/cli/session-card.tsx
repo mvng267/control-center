@@ -124,7 +124,13 @@ export function SessionCard({
         /* `dangMo` = phiên đang hiện ở cột chat bên phải (bố cục hai cột kiểu Telegram).
            Khác hẳn `chon` — cái đó là chọn-nhiều-để-thao-tác. Cuộn danh sách một lúc mà
            không đánh dấu thì mất dấu mình đang đọc phiên nào. */
-        dangMo && 'border-primary bg-accent/50',
+        /* Phiên đang mở MÀ đang chạy: `animate-tho` đặt `background-color` mỗi khung
+           hình nên nó ĐÈ `bg-accent/50` — đo thật: thẻ có đủ class mà nền tính ra vẫn
+           là màu nhịp thở, nhìn không ra thẻ nào đang đọc.
+           Viền TRÁI dày là dấu duy nhất animation không đụng tới (nó chỉ đổi
+           background-color), nên dùng nó làm dấu chính; nền giữ để lúc phiên đứng yên
+           vẫn có mảng sáng. */
+        dangMo && 'border-primary border-l-[5px] border-l-primary bg-accent/50',
         chon && 'border-primary',
         !chon && !dangMo && 'hover:border-primary/40 hover:bg-accent/30',
       )}>

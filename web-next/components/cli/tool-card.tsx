@@ -1,7 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { cn } from '@/lib/utils';
 import { ToolCardHeader } from './tool-card-header';
 import { ToolCardResult } from './tool-card-result';
 import { ToolCardContent } from './tool-card-content';
