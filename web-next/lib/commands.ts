@@ -4,7 +4,8 @@
 //   chạy được : /context /cost /mcp /doctor /config /init /agents /usage /model
 //               /effort /recap /insights /list-agents /autocompact
 //   CLI chặn  : /status /permissions /memory /hooks /bashes /add-dir /resume
-//               /rewind /export /plan /tasks /diff /powerup
+//               /rewind /export /plan /tasks /diff /powerup /help /sandbox /skills
+//               /release-notes /privacy-settings /login /logout /fork /vim …
 //               ("… isn't available in this environment")
 //   không có  : /todos /skill-doctor ("Unknown command")
 //   chạy nhưng VÔ DỤNG: /fast -> "Fast mode unavailable: requires usage credits".
@@ -30,6 +31,7 @@ export interface Cmd {
   group: 'Claude' | 'Hermes' | 'Dashboard';
   kind: CmdKind;
   cmd?: string;         // lệnh gửi đi (mặc định = id)
+  args?: string[];      // tham số phụ — xem chú thích nhóm Hermes
   needSession?: boolean; // phải mở một phiên trước
 }
 
@@ -46,15 +48,13 @@ export const COMMANDS: Cmd[] = [
 
   // ---- CÔNG CỤ: xem thứ đang cài trên máy ----
   { id: '/mcp', label: '/mcp', desc: 'Trạng thái các MCP server', group: 'Claude', kind: 'claude-run' },
-  { id: '/agents', label: '/agents', desc: 'Danh sách subagent', group: 'Claude', kind: 'claude-run' },
+  { id: '/agents', label: '/agents', desc: 'Wizard subagent (CLI đã bỏ, chỉ báo lại)', group: 'Claude', kind: 'claude-run' },
   { id: '/list-agents', label: '/list-agents', desc: 'Phiên Claude khác đang chạy', group: 'Claude', kind: 'claude-run' },
   { id: '/insights', label: '/insights', desc: 'Báo cáo thống kê dùng Claude', group: 'Claude', kind: 'claude-run' },
 
   // ---- HỆ THỐNG: cấu hình và chẩn đoán ----
   { id: '/doctor', label: '/doctor', desc: 'Kiểm tra môi trường cài đặt', group: 'Claude', kind: 'claude-run' },
   { id: '/config', label: '/config', desc: 'Xem cấu hình Claude Code', group: 'Claude', kind: 'claude-run' },
-  { id: '/release-notes', label: '/release-notes', desc: 'Có gì mới ở bản này', group: 'Claude', kind: 'claude-run' },
-  { id: '/privacy-settings', label: '/privacy-settings', desc: 'Cài đặt riêng tư', group: 'Claude', kind: 'claude-run' },
   { id: '/autocompact', label: '/autocompact', desc: 'Ngưỡng tự dọn ngữ cảnh', group: 'Claude', kind: 'claude-run' },
 
   // ---- CHẠY: gửi vào phiên đang mở như một tin nhắn ----
@@ -65,15 +65,20 @@ export const COMMANDS: Cmd[] = [
   { id: '/pr-comments', label: '/pr-comments', desc: 'Đọc comment của PR', group: 'Claude', kind: 'claude-chat', needSession: true },
   { id: '/bug', label: '/bug', desc: 'Báo lỗi cho Anthropic', group: 'Claude', kind: 'claude-chat', needSession: true },
 
-  // ---- Hermes: lệnh con an toàn (whitelist ở server) ----
+  /* ---- Hermes: lệnh con an toàn (whitelist ở server) ----
+     Bốn lệnh phải kèm subcommand, gọi TRẦN là hỏng — đã chạy thật:
+       tools     -> "requires an interactive terminal"   => tools list
+       model     -> "requires an interactive terminal"   => config get model
+       sessions  -> chỉ in usage                          => sessions list
+       skills    -> chỉ in usage                          => skills list */
   { id: 'h:status', label: 'hermes status', desc: 'Trạng thái toàn bộ thành phần', group: 'Hermes', kind: 'hermes-run', cmd: 'status' },
   { id: 'h:doctor', label: 'hermes doctor', desc: 'Chẩn đoán sự cố', group: 'Hermes', kind: 'hermes-run', cmd: 'doctor' },
-  { id: 'h:sessions', label: 'hermes sessions', desc: 'Lịch sử phiên', group: 'Hermes', kind: 'hermes-run', cmd: 'sessions' },
-  { id: 'h:skills', label: 'hermes skills', desc: 'Skill đang cài', group: 'Hermes', kind: 'hermes-run', cmd: 'skills' },
+  { id: 'h:sessions', label: 'hermes sessions list', desc: 'Lịch sử phiên', group: 'Hermes', kind: 'hermes-run', cmd: 'sessions', args: ['list'] },
+  { id: 'h:skills', label: 'hermes skills list', desc: 'Skill đang cài', group: 'Hermes', kind: 'hermes-run', cmd: 'skills', args: ['list'] },
   { id: 'h:memory', label: 'hermes memory', desc: 'Cấu hình bộ nhớ ngoài', group: 'Hermes', kind: 'hermes-run', cmd: 'memory' },
   { id: 'h:cron', label: 'hermes cron', desc: 'Cron job của agent', group: 'Hermes', kind: 'hermes-run', cmd: 'cron' },
-  { id: 'h:model', label: 'hermes model', desc: 'Model và provider mặc định', group: 'Hermes', kind: 'hermes-run', cmd: 'model' },
-  { id: 'h:tools', label: 'hermes tools', desc: 'Tool bật/tắt theo nền tảng', group: 'Hermes', kind: 'hermes-run', cmd: 'tools' },
+  { id: 'h:model', label: 'hermes config get model', desc: 'Model và provider mặc định', group: 'Hermes', kind: 'hermes-run', cmd: 'config', args: ['get', 'model'] },
+  { id: 'h:tools', label: 'hermes tools list', desc: 'Tool bật/tắt theo nền tảng', group: 'Hermes', kind: 'hermes-run', cmd: 'tools', args: ['list'] },
   { id: 'h:mcp', label: 'hermes mcp', desc: 'MCP server của Hermes', group: 'Hermes', kind: 'hermes-run', cmd: 'mcp' },
   { id: 'h:insights', label: 'hermes insights', desc: 'Thống kê sử dụng', group: 'Hermes', kind: 'hermes-run', cmd: 'insights' },
   { id: 'h:version', label: 'hermes version', desc: 'Hermes đang chạy bản nào', group: 'Hermes', kind: 'hermes-run', cmd: 'version' },

@@ -20,17 +20,25 @@ import { toast } from 'sonner';
    Hermes có 70+ lệnh con; server chỉ mở nhóm ĐỌC. Nhóm cần terminal tương tác
    (setup, login) hoặc đổi cấu hình máy cố ý không có. */
 
-interface Lenh { id: string; nhan: string; mo: string; icon: LucideIcon }
+/* `id` là khoá GIAO DIỆN (key React + nút nào đang chạy), `cmd`+`args` mới là thứ
+   gửi xuống server. Phải tách vì nút "Model" nay gọi `config get model` — để id là
+   'config' thì trùng khoá với nút "Cấu hình", bấm một cái sáng cả hai.
+
+   Bốn lệnh gọi TRẦN là hỏng: `tools` và `model` báo "requires an interactive
+   terminal", `sessions` và `skills` chỉ in usage. Biến thể có subcommand thì chạy
+   ngoài TTY bình thường — đã chạy thật cả bốn. Server nhận `args` từ lâu
+   (index.js:3198), chỉ là chỗ này chưa gửi. */
+interface Lenh { id: string; nhan: string; mo: string; icon: LucideIcon; cmd?: string; args?: string[] }
 
 const LENH: Lenh[] = [
   { id: 'status', nhan: 'Trạng thái', mo: 'Toàn bộ thành phần đang chạy thế nào', icon: Activity },
   { id: 'doctor', nhan: 'Chẩn đoán', mo: 'Tìm sự cố cấu hình', icon: Stethoscope },
-  { id: 'sessions', nhan: 'Phiên', mo: 'Lịch sử hội thoại', icon: History },
-  { id: 'skills', nhan: 'Skill', mo: 'Skill đang cài', icon: Sparkles },
+  { id: 'sessions', nhan: 'Phiên', mo: 'Lịch sử hội thoại', icon: History, args: ['list'] },
+  { id: 'skills', nhan: 'Skill', mo: 'Skill đang cài', icon: Sparkles, args: ['list'] },
   { id: 'memory', nhan: 'Bộ nhớ', mo: 'Cấu hình bộ nhớ ngoài', icon: Brain },
   { id: 'cron', nhan: 'Hẹn giờ', mo: 'Cron job của agent', icon: CalendarClock },
-  { id: 'model', nhan: 'Model', mo: 'Model và provider mặc định', icon: Cpu },
-  { id: 'tools', nhan: 'Tool', mo: 'Tool bật/tắt theo nền tảng', icon: Wrench },
+  { id: 'model', nhan: 'Model', mo: 'Model và provider mặc định', icon: Cpu, cmd: 'config', args: ['get', 'model'] },
+  { id: 'tools', nhan: 'Tool', mo: 'Tool bật/tắt theo nền tảng', icon: Wrench, args: ['list'] },
   { id: 'mcp', nhan: 'MCP', mo: 'MCP server đã nối', icon: Plug },
   { id: 'insights', nhan: 'Thống kê', mo: 'Số liệu sử dụng', icon: BarChart3 },
   { id: 'version', nhan: 'Phiên bản', mo: 'Hermes đang chạy bản nào', icon: Tag },
@@ -50,7 +58,7 @@ export function HermesTools({ onClose }: { onClose: () => void }) {
       const res = await fetch('/api/hermes/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(getToken() ? { 'X-Dash-Token': getToken() } : {}) },
-        body: JSON.stringify({ cmd: l.id }),
+        body: JSON.stringify({ cmd: l.cmd || l.id, args: l.args || [] }),
       });
       const r = await res.json().catch(() => ({}));
       setKq({ nhan: l.nhan, noi: (res.ok && r.ok) ? (r.output || '(không có kết quả)') : 'Lỗi: ' + (r.error || 'HTTP ' + res.status) });

@@ -1506,11 +1506,22 @@ function parseInterval(s) {
   return m[2] === 's' ? n * 1000 : m[2] === 'm' ? n * 60000 : n * 3600000;
 }
 
-// Chạy 1 lượt của loop/cron job: mỗi lượt là 1 session claude mới
+/* Chạy 1 lượt của loop/cron job: mỗi lượt là 1 session claude mới.
+
+   `--max-budget-usd`: job lặp mỗi 30 giây mà không có trần thì một prompt ra tay
+   sai có thể đốt hạn mức cả tuần trong lúc không ai nhìn. CLI tự dừng lượt khi chạm
+   ngưỡng. Chỉ truyền khi người dùng ĐẶT — không tự áp mặc định, vì job hợp lệ mà bị
+   cắt ngang giữa chừng còn khó hiểu hơn là tốn.
+
+   `--fallback-model`: dashboard chạy toàn `-p`, mà cờ này chỉ dùng được với `--print`.
+   Model chính quá tải thì lượt đó chết hẳn và job im lặng bỏ nhịp — có dự phòng thì
+   nó tự chuyển. */
 function runJob(job) {
   const sid = crypto.randomUUID();
   const args = ['-p', job.prompt, '--session-id', sid].concat(permArgs(sid), effortArgs(sid));
   if (currentModel) args.push('--model', currentModel);
+  if (job.budget > 0) args.push('--max-budget-usd', String(job.budget));
+  if (job.fallback) args.push('--fallback-model', job.fallback);
   spawnClaude(args, sid, { task: job.prompt, project: '(job:' + job.id + ')' });
   job.runs++;
   job.lastSid = sid;
@@ -1550,6 +1561,9 @@ function listJobs() {
   return [...jobs.values()].map(j => ({
     id: j.id, kind: j.kind, spec: j.spec,
     prompt: j.prompt.slice(0, 80), runs: j.runs, lastSid: j.lastSid,
+    // Trả cả trần chi phí và model dự phòng: đặt xong mà danh sách không hiện thì
+    // không có cách nào biết nó đã vào hay chưa ngoài việc đọc mã.
+    budget: j.budget || 0, fallback: j.fallback || '',
   }));
 }
 
@@ -2986,7 +3000,8 @@ const server = http.createServer(async (req, res) => {
     if (!ms || !prompt) return json(res, 400, { error: 'cần interval (vd 30s/5m/1h) và prompt' });
     if (ms < 30000) return json(res, 400, { error: 'interval tối thiểu 30s (mỗi lượt spawn 1 claude process)' });
     const id = crypto.randomUUID().slice(0, 8);
-    const job = { id, kind: 'loop', spec: body.interval, prompt, runs: 0, lastSid: null };
+    const job = { id, kind: 'loop', spec: body.interval, prompt, runs: 0, lastSid: null,
+      budget: Math.max(0, +body.budget || 0), fallback: String(body.fallback || '').trim() };
     job.timer = setInterval(() => runJob(job), ms);
     jobs.set(id, job);
     runJob(job); // chạy ngay lượt đầu
@@ -3003,7 +3018,8 @@ const server = http.createServer(async (req, res) => {
       return json(res, 400, { error: 'cần cron 5 trường (vd "*/15 * * * *") và prompt' });
     }
     const id = crypto.randomUUID().slice(0, 8);
-    jobs.set(id, { id, kind: 'cron', spec, prompt, runs: 0, lastSid: null, lastKey: '' });
+    jobs.set(id, { id, kind: 'cron', spec, prompt, runs: 0, lastSid: null, lastKey: '',
+      budget: Math.max(0, +body.budget || 0), fallback: String(body.fallback || '').trim() });
     return json(res, 200, { ok: true, id });
   }
 
@@ -3281,6 +3297,43 @@ const server = http.createServer(async (req, res) => {
         }
         if (err && !out) return json(res, 500, { ok: false, error: err.message.slice(0, 300) });
         json(res, 200, { ok: true, output: out.slice(-20000) || '(không có output)' });
+      });
+    return;
+  }
+
+  /* ---- LỆNH CON của Claude CLI (không phải lệnh slash) ----
+     Khác hẳn /api/claude/run: chỗ đó chạy `claude -p /lenh`, còn đây chạy
+     `claude <lệnh con>`. Phân biệt quan trọng vì nhiều thứ CHỈ có ở dạng lệnh con:
+     `claude agents --json` cho biết phiên nào đang chạy ở TERMINAL — dashboard trước
+     giờ mù chỗ này, phải suy từ file .jsonl; `claude doctor` chạy đủ 10 mục trong khi
+     `/doctor` dạng slash bị fence "8 of the 10 checks could not run".
+
+     Bảng tra CỨNG như DOCKER_ACTIONS, không ghép chuỗi từ client: `mcp` và `plugin`
+     có cả nhánh ghi (add/remove/install) nên để client tự do truyền args là mở đường
+     sửa cấu hình máy từ xa. Ở đây chỉ mở nhóm ĐỌC. */
+  const CLAUDE_SUB = {
+    agents: ['agents', '--json'],
+    auth: ['auth', 'status'],
+    doctor: ['doctor'],
+    mcp: ['mcp', 'list'],
+    plugin: ['plugin', 'list'],
+  };
+  if (p === '/api/claude/sub' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { ok: false, error: 'bad json' }); }
+    const ten = String(body.cmd || '').trim();
+    const args = CLAUDE_SUB[ten];
+    if (!args) return json(res, 400, { ok: false, error: 'lệnh không được phép: ' + ten });
+    /* 90 giây: `doctor` phải health-check 15 MCP server qua mạng, đo thật lâu nhất
+       trong nhóm. Mấy lệnh kia trả về dưới một giây. */
+    execFile('claude', args, { cwd: os.homedir(), maxBuffer: 4 * 1024 * 1024, timeout: 90000, env: process.env },
+      (err, stdout, stderr) => {
+        const out = ((stdout || '') + (stderr || '')).trim();
+        if (err && !out) return json(res, 500, { ok: false, error: err.message.slice(0, 300) });
+        // agents/auth trả JSON thuần -> parse sẵn cho client khỏi đoán
+        let dl = null;
+        if (ten === 'agents' || ten === 'auth') { try { dl = JSON.parse(out); } catch {} }
+        json(res, 200, { ok: true, output: out.slice(-20000) || '(không có output)', ...(dl ? { data: dl } : {}) });
       });
     return;
   }

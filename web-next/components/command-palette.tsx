@@ -42,7 +42,9 @@ export function CommandPalette({
     setRunning(c.id);
     const url = c.kind === 'hermes-run' ? '/api/hermes/run' : '/api/claude/run';
     const body = c.kind === 'hermes-run'
-      ? JSON.stringify({ cmd: c.cmd || c.id })
+      // `args` bắt buộc với 4 lệnh Hermes cần subcommand (tools/model/sessions/skills) —
+      // thiếu nó là CLI trả "requires an interactive terminal" hoặc chỉ in usage.
+      ? JSON.stringify({ cmd: c.cmd || c.id, args: c.args || [] })
       : JSON.stringify({ cmd: c.cmd || c.id, sid });
     try {
       const r = await api<RunResult>(url, { method: 'POST', body });
