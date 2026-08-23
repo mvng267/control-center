@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   Activity, Stethoscope, History, Sparkles, Brain, CalendarClock, Cpu,
   Wrench, Plug, BarChart3, Tag, SlidersHorizontal, Loader2, X,
+  ScrollText, KeyRound, Ruler, KanbanSquare, ShieldCheck, Pause, Play,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getToken } from '@/lib/api';
@@ -13,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-/* 12 lệnh đọc của Hermes CLI — cùng danh sách whitelist ở server (HERMES_SAFE).
+/* Lệnh Hermes bày thành nút — cùng danh sách whitelist ở server (HERMES_SAFE).
    Trước đây tab Hermes CHỈ chat được; muốn xem trạng thái hay chẩn đoán thì phải nhớ
    mở bảng lệnh ⌘K. Bày thành nút để nhìn là thấy Hermes làm được gì.
 
@@ -43,6 +44,21 @@ const LENH: Lenh[] = [
   { id: 'insights', nhan: 'Thống kê', mo: 'Số liệu sử dụng', icon: BarChart3 },
   { id: 'version', nhan: 'Phiên bản', mo: 'Hermes đang chạy bản nào', icon: Tag },
   { id: 'config', nhan: 'Cấu hình', mo: 'Cấu hình hiện tại', icon: SlidersHorizontal },
+
+  // ---- nhóm ĐỌC thêm: đều đã chạy thật ngoài TTY ----
+  { id: 'kho', nhan: 'Kho phiên', mo: 'Tổng số phiên và tin đã lưu', icon: BarChart3, cmd: 'sessions', args: ['stats'] },
+  { id: 'log', nhan: 'Log lỗi', mo: '30 dòng cuối của errors.log', icon: ScrollText, cmd: 'logs', args: ['errors', '-n', '30'] },
+  { id: 'auth', nhan: 'Đăng nhập', mo: 'Pool credential đang dùng', icon: KeyRound, cmd: 'auth', args: ['list'] },
+  { id: 'psize', nhan: 'Kích thước prompt', mo: 'System prompt đang tốn bao nhiêu', icon: Ruler, cmd: 'prompt-size' },
+  { id: 'kanban', nhan: 'Bảng việc', mo: 'Task trên kanban của agent', icon: KanbanSquare, cmd: 'kanban', args: ['list'] },
+  { id: 'security', nhan: 'Rà bảo mật', mo: 'Quét lỗ hổng phụ thuộc (OSV.dev)', icon: ShieldCheck, cmd: 'security' },
+];
+
+/* Hai nút GHI, để riêng: chúng đổi trạng thái toàn hệ nên không trộn vào lưới đọc.
+   `pause` chỉ chặn việc MỚI — việc đang chạy không bị giết, nên bấm nhầm không mất gì. */
+const LENH_GHI: Lenh[] = [
+  { id: 'pause', nhan: 'Dừng khẩn cấp', mo: 'Chặn việc MỚI (cron, kanban, gateway). Việc đang chạy vẫn tiếp tục', icon: Pause },
+  { id: 'resume', nhan: 'Chạy lại', mo: 'Gỡ cờ dừng, nhịp sau tiếp tục nhận việc', icon: Play },
 ];
 
 export function HermesTools({ onClose }: { onClose: () => void }) {
@@ -79,6 +95,27 @@ export function HermesTools({ onClose }: { onClose: () => void }) {
               Các lệnh chỉ ĐỌC, chạy được ngay. Lệnh cần terminal tương tác
               (đăng nhập, cài đặt) không có ở đây.
             </p>
+
+            {/* Hai nút GHI tách hẳn lên đầu, viền vàng: chúng đổi trạng thái TOÀN HỆ
+                chứ không chỉ in ra màn hình. Trộn chung lưới đọc thì bấm nhầm rất dễ. */}
+            <div className="flex gap-2">
+              {LENH_GHI.map((l) => (
+                <button key={l.id} onClick={() => chay(l)} disabled={!!dangChay}
+                  data-testid={'ht-' + l.id}
+                  className={cn(
+                    'tap44 flex flex-1 items-center gap-2 rounded-[10px] border border-status-run/40 bg-status-run/[0.07] px-3 py-2.5 text-left transition-colors',
+                    dangChay ? 'opacity-50' : 'hover:bg-status-run/15',
+                  )}>
+                  {dangChay === l.id
+                    ? <Loader2 className="size-4 shrink-0 animate-spin text-status-run" />
+                    : <l.icon className="size-4 shrink-0 text-status-run" />}
+                  <span className="min-w-0">
+                    <span className="block text-[14px] font-medium">{l.nhan}</span>
+                    <span className="block truncate text-[12px] text-muted-foreground">{l.mo}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
             <div className="grid max-h-[62dvh] grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
               {LENH.map((l) => (
                 <button key={l.id} onClick={() => chay(l)} disabled={!!dangChay}

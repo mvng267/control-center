@@ -672,6 +672,89 @@ async function snapshot() {
       'kiểm ' + (snapFav.data.sessions || []).length + ' phiên');
   }
 
+  /* ---------- Bảng lệnh: 12 nút Hermes + 5 lệnh con Claude ----------
+     Vì sao cần: 4/12 nút Hermes từng HỎNG suốt nhiều bản mà 460 bài test không bắt
+     được cái nào. Chúng có handler, gọi server đúng, chỉ hỏng ở tầng cuối — CLI trả
+     "requires an interactive terminal" (tools, model) hoặc in bảng usage vì thiếu
+     subcommand (sessions, skills). `dead-buttons.js` không thấy vì nó chỉ tìm nút
+     THIẾU handler.
+
+     Nên bài này gọi THẬT từng lệnh rồi soi nội dung trả về, không chỉ xem HTTP 200. */
+  {
+    const chay = (ep, body) => fetch(URL + ep, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Dash-Token': token },
+      body: JSON.stringify(body),
+    }).then((r) => r.json()).catch((e) => ({ ok: false, error: e.message }));
+
+    // Dấu hiệu lệnh KHÔNG chạy được, dù HTTP vẫn 200
+    const HONG = [
+      /requires an interactive terminal/i,   // CLI đòi TTY
+      /isn't available in this environment/i, // lệnh slash bị chặn ở -p
+      /^usage:/im,                            // thiếu subcommand -> in bảng usage
+      /^Usage: hermes/im,
+    ];
+    const loi = (out) => HONG.find((r) => r.test(out || ''));
+
+    /* Đúng các nút trong hermes-tools.tsx. Bốn cái có args ở giữa chính là bốn cái
+       từng hỏng (tools/model/sessions/skills) — giữ nguyên để không tái phát. */
+    const NUT_HERMES = [
+      ['status', []], ['doctor', []], ['memory', []], ['cron', []],
+      ['mcp', []], ['insights', []], ['version', []], ['config', []],
+      ['sessions', ['list']], ['skills', ['list']],
+      ['tools', ['list']], ['config', ['get', 'model']],
+      // nhóm đọc thêm
+      ['sessions', ['stats']], ['logs', ['errors', '-n', '3']], ['auth', ['list']],
+      ['prompt-size', []], ['kanban', ['list']],
+    ];
+    let hOk = 0, hLoi = [];
+    for (const [cmd, args] of NUT_HERMES) {
+      const r = await chay('/api/hermes/run', { cmd, args });
+      const nhan = cmd + (args.length ? ' ' + args.join(' ') : '');
+      if (!r.ok) { hLoi.push(nhan + ': ' + String(r.error || 'không ok').slice(0, 40)); continue; }
+      const x = loi(r.output);
+      if (x) hLoi.push(nhan + ': ' + String(r.output).split('\n')[0].slice(0, 45));
+      else hOk++;
+    }
+    ok('nút Hermes đều trả nội dung thật (không lỗi TTY, không bảng usage)',
+      hLoi.length === 0, hLoi.length ? hLoi.slice(0, 3).join(' | ') : hOk + '/' + NUT_HERMES.length + ' chạy');
+
+    /* Năm lệnh con Claude. `agents` và `auth` phải trả JSON PARSE ĐƯỢC — server tự
+       parse rồi gắn vào `data`, client dựa vào đó chứ không đoán từ text. */
+    const SUB = ['agents', 'auth', 'doctor', 'mcp', 'plugin'];
+    let sOk = 0, sLoi = [];
+    for (const cmd of SUB) {
+      const r = await chay('/api/claude/sub', { cmd });
+      if (!r.ok) { sLoi.push(cmd + ': ' + String(r.error || 'không ok').slice(0, 40)); continue; }
+      const x = loi(r.output);
+      if (x) sLoi.push(cmd + ': ' + String(r.output).split('\n')[0].slice(0, 45));
+      else sOk++;
+    }
+    ok('5 lệnh con Claude đều chạy được ngoài TTY',
+      sLoi.length === 0, sLoi.length ? sLoi.join(' | ') : sOk + '/5 chạy');
+
+    const ag = await chay('/api/claude/sub', { cmd: 'agents' });
+    ok('claude agents --json trả JSON có cấu trúc (biết phiên nào chạy ở terminal)',
+      ag.ok && Array.isArray(ag.data), ag.data ? ag.data.length + ' phiên' : 'không parse được');
+
+    const au = await chay('/api/claude/sub', { cmd: 'auth' });
+    ok('claude auth status cho biết gói đang dùng',
+      au.ok && au.data && typeof au.data.loggedIn === 'boolean',
+      au.data ? (au.data.subscriptionType || '?') : 'không parse được');
+
+    // Lệnh ngoài bảng tra phải bị CHẶN — bảng cứng mới có nghĩa
+    const cam = await chay('/api/claude/sub', { cmd: 'update' });
+    ok('lệnh con ngoài bảng tra bị chặn', cam.ok === false, String(cam.error || '').slice(0, 45));
+    const camH = await chay('/api/hermes/run', { cmd: 'uninstall', args: [] });
+    ok('lệnh Hermes ngoài whitelist bị chặn', camH.ok === false, String(camH.error || '').slice(0, 45));
+
+    /* `logs -f` tail mãi không xong: execFile chỉ giết khi chạm timeout 30 giây, nên
+       không chặn thì người dùng ngồi chờ trọn 30 giây rồi nhận về rỗng. */
+    const camF = await chay('/api/hermes/run', { cmd: 'logs', args: ['-f'] });
+    ok('cờ chạy-mãi (-f) bị chặn, không để treo 30 giây',
+      camF.ok === false && /chạy-mãi/.test(String(camF.error || '')), String(camF.error || '').slice(0, 45));
+  }
+
   /* ---------- Hạn mức Claude ----------
      Hết hạn mức là thứ CHẶN việc, mà trước đây chỉ biết khi Claude đột ngột trả lỗi
      giữa lượt — trên iPhone càng khó đoán vì không thấy terminal.

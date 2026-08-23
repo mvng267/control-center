@@ -3205,14 +3205,31 @@ const server = http.createServer(async (req, res) => {
   // ---- chạy lệnh con của Hermes CLI (status, sessions, skills, memory, cron, doctor…)
   // Whitelist: Hermes có 70+ lệnh, nhiều cái cần tương tác terminal (setup, login) hoặc
   // đổi cấu hình máy — chỉ mở những lệnh ĐỌC/an toàn để bấm nhầm không hỏng gì. ----
+  /* Lệnh Hermes cho phép gọi. `model` và `tools` gọi TRẦN thì CLI đòi TTY — giữ lại
+     trong danh sách vì `tools list` chạy được, còn `model` thì client đã đổi sang
+     `config get model`.
+
+     `pause`/`resume` là lệnh GHI, cố ý mở: nó chỉ đặt/gỡ cờ dừng khẩn cấp
+     ("Halts NEW work only — in-flight work is never killed"), không xoá gì, và là
+     thứ cần bấm được từ điện thoại lúc agent chạy loạn. Mọi lệnh ghi khác
+     (uninstall, backup, import, gateway, secrets…) vẫn nằm ngoài. */
   const HERMES_SAFE = ['status', 'sessions', 'skills', 'memory', 'cron', 'doctor', 'model',
-    'tools', 'mcp', 'insights', 'version', 'config'];
+    'tools', 'mcp', 'insights', 'version', 'config',
+    'logs', 'auth', 'fallback', 'prompt-size', 'kanban', 'project', 'security',
+    'webhook', 'hooks', 'plugins', 'bundles', 'monitoring',
+    'pause', 'resume'];
+  /* Cờ khiến lệnh chạy MÃI KHÔNG XONG. `execFile` chỉ giết tiến trình khi chạm
+     timeout 30 giây, nên `logs -f` sẽ treo trọn 30 giây rồi trả về rỗng — nhìn y
+     như server hỏng. Chặn thẳng thay vì để người dùng chờ. */
+  const HERMES_CO_CAM = new Set(['-f', '--follow', '--watch', '--tail-follow']);
   if (p === '/api/hermes/run' && req.method === 'POST') {
     let body;
     try { body = await readBody(req); } catch { return json(res, 400, { ok: false, error: 'bad json' }); }
     const cmd = String(body.cmd || '').trim();
     const args = Array.isArray(body.args) ? body.args.map(String).slice(0, 6) : [];
     if (HERMES_SAFE.indexOf(cmd) < 0) return json(res, 400, { ok: false, error: 'lệnh không được phép: ' + cmd });
+    const camArg = args.find((a) => HERMES_CO_CAM.has(a));
+    if (camArg) return json(res, 400, { ok: false, error: 'cờ chạy-mãi không được phép: ' + camArg });
     execFile(HERMES_BIN, [cmd, ...args], { maxBuffer: 4 * 1024 * 1024, timeout: 30000, env: process.env },
       (err, stdout, stderr) => {
         const out = ((stdout || '') + (stderr || '')).trim();
