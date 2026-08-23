@@ -24,6 +24,18 @@ const HERMES_MODEL = process.env.HERMES_MODEL || 'tencent/hy3:free';
 
 // sid -> { proc, project, startedAt, task }
 const procs = new Map();
+/* Tin nhắn gửi khi phiên ĐANG chạy. Trước đây trả thẳng 409 "session is busy" —
+   đúng lúc trực phiên từ điện thoại thì đó là chặn ngay chỗ cần nhất: thấy Claude
+   đang làm, muốn dặn thêm một câu, mà bấm gửi là văng lỗi.
+
+   Xếp hàng thay vì chặn: nhận tin, chờ lượt đang chạy xong rồi spawn tiếp bằng
+   `--resume` y như cũ. KHÔNG đổi vòng đời tiến trình — vẫn một tiến trình cho một
+   lượt, chỉ thêm hàng đợi ở giữa.
+
+   Chặn 20 tin/phiên: gõ nhanh cỡ nào cũng không tới, mà lỡ có vòng lặp nào bơm tin
+   thì nó dừng ở đó chứ không phình mãi. */
+const hangCho = new Map();   // sid -> [{ msg, at }]
+const HANG_TOI_DA = 20;
 // sid -> timestamp lần cuối user mở chat view (để tính unread badge)
 const lastSeen = new Map();
 /* Hạn mức Claude: { at, data }. Phải cache vì `/usage` spawn `claude -p`, đo thật mất
@@ -1447,7 +1459,13 @@ function spawnClaude(args, sid, meta) {
   });
   proc.on('exit', (code, signal) => {
     procs.delete(sid);
-    if (signal) return; // bị kill chủ động (nút Kill) -> không báo gì
+    if (signal) {
+      // Kill chủ động (nút Dừng): bỏ luôn hàng đợi — người dùng vừa bảo dừng, chạy
+      // tiếp mấy tin đã xếp là làm đúng thứ họ vừa từ chối.
+      hangCho.delete(sid);
+      return;
+    }
+    chayTinKeTiep(sid);
     const err = errBuf.trim();
     // soi cả 2 luồng cho chắc (CLI có thể đổi chỗ in giữa các phiên bản)
     const failedResume = /No conversation found with session ID/i.test(errBuf + outBuf);
@@ -1543,6 +1561,31 @@ function parseInterval(s) {
    `--fallback-model`: dashboard chạy toàn `-p`, mà cờ này chỉ dùng được với `--print`.
    Model chính quá tải thì lượt đó chết hẳn và job im lặng bỏ nhịp — có dự phòng thì
    nó tự chuyển. */
+/* Lấy tin đầu hàng của phiên rồi chạy. Gọi khi một lượt vừa xong.
+   Đặt tách khỏi route để cả nhánh exit lẫn nhánh nhận tin dùng chung một đường —
+   hai nơi tự dựng lệnh riêng là kiểu chắc chắn lệch nhau sau vài lần sửa. */
+function chayTinKeTiep(sid) {
+  const hang = hangCho.get(sid);
+  if (!hang || !hang.length) { hangCho.delete(sid); return; }
+  if (procs.has(sid)) return;            // lượt khác vừa chen vào, để nó xong đã
+  const { msg } = hang.shift();
+  if (!hang.length) hangCho.delete(sid);
+  spawnChat(sid, msg);
+}
+
+/* Dựng lệnh cho một lượt nhắn tin. */
+function spawnChat(sid, msg) {
+  /* stream-json + partial: để chữ hiện DẦN như terminal thay vì bung một cục khi
+     xong. Chỉ bật ở đường NHẮN TIN — các đường khác (task mới, lệnh một phát) đọc
+     stdout dạng chữ thường, đổi sang JSON là vỡ hết chỗ đọc kết quả. */
+  const cargs = ['-p', msg, '--resume', sid,
+    '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
+  ].concat(permArgs(sid), effortArgs(sid));
+  const mdl = modelFor(sid);              // model riêng phiên > model toàn cục
+  if (mdl) cargs.push('--model', mdl);
+  spawnClaude(cargs, sid, { task: msg, stream: true });
+}
+
 /* Cờ tuỳ chọn khi giao task. Mỗi giá trị đều do CLIENT khai nên phải lọc thật:
    dashboard mở ra mạng, ai vào được là truyền được.
 
@@ -2609,16 +2652,19 @@ const server = http.createServer(async (req, res) => {
     try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
     const msg = (body.message || '').trim();
     if (!msg) return json(res, 400, { error: 'message required' });
-    if (procs.has(sid)) return json(res, 409, { error: 'session is busy' });
-    /* stream-json + partial: để chữ hiện DẦN như terminal thay vì bung một cục khi
-       xong. Chỉ bật ở đường NHẮN TIN — các đường khác (task mới, lệnh một phát) đọc
-       stdout dạng chữ thường, đổi sang JSON là vỡ hết chỗ đọc kết quả. */
-    const cargs = ['-p', msg, '--resume', sid,
-      '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-    ].concat(permArgs(sid), effortArgs(sid));
-    const mdl = modelFor(sid);              // model riêng phiên > model toàn cục
-    if (mdl) cargs.push('--model', mdl);
-    spawnClaude(cargs, sid, { task: msg, stream: true });
+    /* Đang chạy thì XẾP HÀNG, không trả 409 nữa. Đo thật trên CLI: gửi lượt mới lúc
+       lượt cũ chưa xong thì nó xếp hàng và trả lời cả hai — nên chặn ở dashboard chỉ
+       là hạn chế tự đặt ra. */
+    if (procs.has(sid)) {
+      const hang = hangCho.get(sid) || [];
+      if (hang.length >= HANG_TOI_DA) {
+        return json(res, 429, { error: 'đã xếp ' + hang.length + ' tin, chờ Claude trả lời bớt' });
+      }
+      hang.push({ msg, at: Date.now() });
+      hangCho.set(sid, hang);
+      return json(res, 200, { ok: true, sid, xepHang: hang.length });
+    }
+    spawnChat(sid, msg);
     return json(res, 200, { ok: true, sid });
   }
 
@@ -2629,7 +2675,11 @@ const server = http.createServer(async (req, res) => {
     // không còn detached -> kill thẳng tiến trình; giữ kill theo nhóm làm dự phòng
     try { entry.proc.kill('SIGTERM'); } catch { try { process.kill(-entry.proc.pid, 'SIGTERM'); } catch {} }
     procs.delete(sid);
-    return json(res, 200, { ok: true });
+    // Bỏ luôn tin đang xếp: vừa bảo dừng mà chạy tiếp mấy tin đã gửi là làm đúng thứ
+    // người dùng vừa từ chối.
+    const boQua = (hangCho.get(sid) || []).length;
+    hangCho.delete(sid);
+    return json(res, 200, { ok: true, boQua });
   }
 
   /* Tìm trong NỘI DUNG một phiên.
@@ -2681,7 +2731,10 @@ const server = http.createServer(async (req, res) => {
          không mà màn hình im như không có chuyện gì. */
       const se0 = spawnErrors.get(sid);
       return json(res, 200, {
-        sid, messages: [], total: 0, start: 0, typing, status: statusOf(sid, 0),
+        // xepHang phải có Ở CẢ HAI nhánh: phiên vừa bị Dừng có thể chưa kịp ghi
+        // .jsonl, client đọc undefined rồi hiện "còn undefined tin đang chờ".
+        sid, messages: [], total: 0, start: 0, typing, xepHang: (hangCho.get(sid) || []).length,
+        status: statusOf(sid, 0),
         error: se0 && Date.now() - se0.at < 120000 ? se0.msg : null,
       });
     }
@@ -2707,6 +2760,9 @@ const server = http.createServer(async (req, res) => {
     const se = spawnErrors.get(sid);
     return json(res, 200, {
       sid, messages, total, start, typing,
+      // Tin đã gửi nhưng chưa tới lượt — khung chat hiện "còn N tin đang chờ gửi",
+      // nếu không thì gõ xong bấm gửi mà màn hình im re, tưởng mất tin.
+      xepHang: (hangCho.get(sid) || []).length,
       title: titleOf(sid, parsed ? parsed.title : ''),
       status: statusOf(sid, mt),
       error: se && Date.now() - se.at < 120000 ? se.msg : null,

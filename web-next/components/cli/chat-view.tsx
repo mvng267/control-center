@@ -75,6 +75,9 @@ interface DuAnChat {
 }
 interface History {
   messages: Msg[]; total: number; start: number; typing: boolean; status: string;
+  /* Tin đã gửi nhưng chưa tới lượt — Claude còn đang trả lời tin trước. Không hiện
+     thì gõ xong bấm gửi mà màn hình im re, tưởng mất tin. */
+  xepHang?: number;
   title: string; error: string | null; awaiting: boolean;
   /** lệnh bị chặn quyền ở lượt cuối — null nếu không có */
   chanQuyen?: ChanQuyen | null;
@@ -970,11 +973,21 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
 
       {/* Nút dừng dựa vào STATUS, không phải `typing`. `typing = procs.has(sid)` chỉ
           đúng khi chính dashboard spawn Claude — phiên chạy từ terminal ngoài thì
-          typing=false nên KHÔNG có nút dừng nào, mà bấm Gửi lại nhận 409 "session is
-          busy". Bản legacy dùng status nên vẫn xử lý được (export.js:453). */}
+          typing=false nên KHÔNG có nút dừng nào.
+          (Trước đây bấm Gửi lúc này còn nhận 409 "session is busy"; giờ server xếp
+          hàng nên gửi được, dòng dưới cho biết còn mấy tin đang chờ.) */}
       {(h?.typing || h?.status === 'RUNNING') && (
         <DangChay onStop={stop} lenh={h?.dangChay}
               agents={(h?.agents || []).filter((a) => a.trangThai === 'dang-chay')} />
+      )}
+
+      {/* Tin đã gửi nhưng Claude còn bận trả lời tin trước. Không hiện thì gõ xong
+          bấm gửi mà màn hình im re, người dùng tưởng mất tin rồi gõ lại. */}
+      {!!h?.xepHang && (
+        <div data-testid="xep-hang"
+          className="mx-4 mb-2 shrink-0 rounded-[10px] border border-primary/30 bg-primary/[0.07] px-3 py-1.5 text-[12px] text-primary">
+          Còn {h.xepHang} tin đang chờ gửi — Claude sẽ trả lời lần lượt
+        </div>
       )}
 
       {h?.error && (

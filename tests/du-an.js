@@ -672,6 +672,48 @@ async function snapshot() {
       'kiểm ' + (snapFav.data.sessions || []).length + ' phiên');
   }
 
+  /* ---------- Nhắn khi Claude ĐANG chạy: xếp hàng, không chặn ----------
+     Trước đây trả thẳng 409 "session is busy". Đúng lúc trực phiên từ điện thoại thì
+     đó là chặn ngay chỗ cần nhất: thấy Claude đang làm, muốn dặn thêm một câu, bấm
+     gửi là văng lỗi.
+
+     Đo trên CLI thật: gửi lượt mới lúc lượt cũ chưa xong thì CLI tự xếp hàng và trả
+     lời cả hai — nên chặn ở dashboard chỉ là hạn chế tự đặt ra. */
+  {
+    const post = (ep, body) => fetch(URL + ep, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Dash-Token': token },
+      body: JSON.stringify(body),
+    }).then((r) => r.json().then((j) => ({ ...j, _code: r.status })))
+      .catch((e) => ({ _code: 0, error: e.message }));
+
+    // task chạy đủ lâu để kịp chen tin vào
+    const t = await post('/api/task', { task: 'Đếm chậm từ 1 tới 8, mỗi số một dòng' });
+    if (!t.ok || !t.sid) {
+      ok('nhắn khi đang chạy: xếp hàng thay vì chặn', false, 'không tạo được phiên thử');
+    } else {
+      await new Promise((r) => setTimeout(r, 2000));
+      const g1 = await post('/api/chat/' + t.sid, { message: 'Đáp một từ: xep1' });
+      const g2 = await post('/api/chat/' + t.sid, { message: 'Đáp một từ: xep2' });
+
+      ok('nhắn khi Claude đang chạy KHÔNG còn trả 409',
+        g1._code === 200 && g2._code === 200, 'mã ' + g1._code + '/' + g2._code);
+      ok('tin gửi lúc bận được xếp hàng, báo lại vị trí',
+        g1.xepHang === 1 && g2.xepHang === 2,
+        'xepHang ' + g1.xepHang + '/' + g2.xepHang);
+
+      /* Bấm Dừng phải BỎ hàng đợi: vừa bảo dừng mà chạy tiếp mấy tin đã gửi là làm
+         đúng thứ người dùng vừa từ chối. */
+      const k = await post('/api/kill/' + t.sid, {});
+      ok('bấm Dừng thì bỏ luôn tin đang xếp',
+        k.ok === true && k.boQua === 2, 'bỏ ' + k.boQua + ' tin');
+
+      const h = await fetch(URL + '/api/history/' + t.sid, { headers: { 'X-Dash-Token': token } })
+        .then((r) => r.json()).catch(() => ({}));
+      ok('hàng đợi rỗng sau khi Dừng', h.xepHang === 0, 'xepHang=' + h.xepHang);
+    }
+  }
+
   /* ---------- Duyệt / chọn NGAY Ở DANH SÁCH (remote) ----------
      Vì sao cần: dùng dashboard trên điện thoại chủ yếu là TRỰC phiên — liếc xem cái
      nào đứng chờ rồi bấm cho nó đi tiếp. Trước đây danh sách chỉ có cờ boolean
