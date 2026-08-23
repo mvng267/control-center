@@ -753,6 +753,28 @@ async function snapshot() {
     const camF = await chay('/api/hermes/run', { cmd: 'logs', args: ['-f'] });
     ok('cờ chạy-mãi (-f) bị chặn, không để treo 30 giây',
       camF.ok === false && /chạy-mãi/.test(String(camF.error || '')), String(camF.error || '').slice(0, 45));
+
+    /* Cờ tuỳ chọn khi giao task đều do CLIENT khai — dashboard mở ra mạng nên ai vào
+       được là truyền được. Bài này ném vào cả giá trị độc rồi soi tiến trình THẬT
+       xem cái gì lọt: tên tool có khoảng trắng, cờ CLI trá hình, thư mục không tồn
+       tại, và đường dẫn trỏ vào file chứ không phải thư mục. */
+    const doc = await chay('/api/task', {
+      task: 'Đáp một từ: loc',
+      allowedTools: ['Read', '; rm -rf /', '--dangerously-skip-permissions'],
+      addDir: ['/khong/ton/tai/dau', '/etc/hosts'],
+      autocompact: 'xoá-hết',
+    });
+    if (!doc.ok) {
+      ok('bộ lọc cờ task: loại giá trị độc', false, String(doc.error || '').slice(0, 40));
+    } else {
+      await new Promise((r) => setTimeout(r, 2500));
+      const dong = await new Promise((r) => require('child_process')
+        .exec("ps aux | grep '[c]laude -p' | grep -c -- '--dangerously-skip-permissions\\|rm -rf\\|/etc/hosts\\|xoá-hết'",
+          (e, o) => r(+String(o).trim() || 0)));
+      ok('bộ lọc cờ task: loại giá trị độc (tool có khoảng trắng, cờ trá hình, thư mục sai)',
+        dong === 0, dong === 0 ? 'không giá trị độc nào vào lệnh' : dong + ' tiến trình dính');
+      await fetch(URL + '/api/kill/' + doc.sid, { method: 'POST', headers: { 'X-Dash-Token': token } }).catch(() => {});
+    }
   }
 
   /* ---------- Hạn mức Claude ----------

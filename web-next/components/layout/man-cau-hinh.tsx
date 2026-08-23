@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { MoiTruong } from './moi-truong';
 import { ArrowLeft, Check, Loader2, X } from 'lucide-react';
 import { TABS, type TabId } from './app-shell';
 import { NutCapNhat } from './nut-cap-nhat';
@@ -99,6 +100,18 @@ export function ManCauHinh({ onDong }: { onDong: () => void }) {
           </div>
           <p className="px-0.5 text-[12px] leading-relaxed text-muted-foreground">
             Tắt tab nào thì nó biến khỏi thanh bên và thanh tab dưới. Bật lại lúc nào cũng được.
+          </p>
+        </section>
+
+        {/* ---- môi trường Claude CLI ----
+             Không làm thành tab riêng: thanh tab dưới ở 390px đang 6 tab × 65px,
+             thêm hai nữa còn 48px — dưới ngưỡng chạm 44px cộng khoảng cách. */}
+        <section className="flex flex-col gap-2">
+          <h2 className="text-[12px] font-medium text-muted-foreground">Môi trường Claude CLI</h2>
+          <MoiTruong />
+          <p className="px-0.5 text-[12px] leading-relaxed text-muted-foreground">
+            Đọc thẳng từ CLI. &quot;Phiên đang chạy&quot; gồm cả phiên bạn mở ở terminal —
+            thứ dashboard không thấy được qua file phiên.
           </p>
         </section>
 

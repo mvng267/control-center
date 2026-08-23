@@ -1516,6 +1516,45 @@ function parseInterval(s) {
    `--fallback-model`: dashboard chạy toàn `-p`, mà cờ này chỉ dùng được với `--print`.
    Model chính quá tải thì lượt đó chết hẳn và job im lặng bỏ nhịp — có dự phòng thì
    nó tự chuyển. */
+/* Cờ tuỳ chọn khi giao task. Mỗi giá trị đều do CLIENT khai nên phải lọc thật:
+   dashboard mở ra mạng, ai vào được là truyền được.
+
+   - allowedTools/disallowedTools: chỉ nhận tên tool dạng chữ-số-gạch-ngoặc
+     (`Bash`, `Bash(git:*)`, `mcp__x__y`). Cấm khoảng trắng để không nhét được cờ khác.
+   - addDir: PHẢI chạm đĩa thật. `path.resolve` chỉ xử lý chuỗi — symlink trong dự án
+     trỏ ra ngoài từng đọc được nguyên khoá SSH riêng (xem CLAUDE.md).
+   - appendSystemPrompt: cắt 2000 ký tự.
+   - autocompact: chỉ 'auto' hoặc số. */
+const TEN_TOOL = /^[A-Za-z_][\w-]*(\([^)\s]*\))?$/;
+function coThem(body) {
+  const ra = [];
+  const loc = (v) => (Array.isArray(v) ? v : String(v || '').split(','))
+    .map((x) => String(x).trim()).filter((x) => x && TEN_TOOL.test(x)).slice(0, 30);
+
+  const cho = loc(body.allowedTools);
+  if (cho.length) ra.push('--allowedTools', cho.join(','));
+  const cam = loc(body.disallowedTools);
+  if (cam.length) ra.push('--disallowedTools', cam.join(','));
+
+  const them = (Array.isArray(body.addDir) ? body.addDir : [body.addDir])
+    .map((d) => String(d || '').trim()).filter(Boolean).slice(0, 5);
+  for (const d of them) {
+    // realpathSync theo hết symlink rồi mới kiểm là thư mục
+    try {
+      const that = fs.realpathSync(d);
+      if (fs.statSync(that).isDirectory()) ra.push('--add-dir', that);
+    } catch {}
+  }
+
+  const nhac = String(body.appendSystemPrompt || '').trim().slice(0, 2000);
+  if (nhac) ra.push('--append-system-prompt', nhac);
+
+  const ac = String(body.autocompact || '').trim();
+  if (ac === 'auto' || /^\d+$/.test(ac)) ra.push('--autocompact', ac);
+
+  return ra;
+}
+
 function runJob(job) {
   const sid = crypto.randomUUID();
   const args = ['-p', job.prompt, '--session-id', sid].concat(permArgs(sid), effortArgs(sid));
@@ -2531,6 +2570,7 @@ const server = http.createServer(async (req, res) => {
     const sid = crypto.randomUUID();
     const args = ['-p', task, '--session-id', sid].concat(permArgs(sid), effortArgs(sid));
     if (currentModel) args.push('--model', currentModel); // model đã set qua /model
+    args.push(...coThem(body));
     spawnClaude(args, sid, { task, project: '(new)' });
     return json(res, 200, { ok: true, sid });
   }
