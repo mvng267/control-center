@@ -672,6 +672,72 @@ async function snapshot() {
       'kiểm ' + (snapFav.data.sessions || []).length + ' phiên');
   }
 
+  /* ---------- Duyệt / chọn NGAY Ở DANH SÁCH (remote) ----------
+     Vì sao cần: dùng dashboard trên điện thoại chủ yếu là TRỰC phiên — liếc xem cái
+     nào đứng chờ rồi bấm cho nó đi tiếp. Trước đây danh sách chỉ có cờ boolean
+     "đang chờ", muốn bấm phải mở phiên, cuộn xuống cuối, rồi mới bấm được.
+
+     Bài này chốt phần SERVER: danh sách phải mang theo NỘI DUNG (câu hỏi + các lựa
+     chọn, tóm tắt kế hoạch), không chỉ loại. Thiếu nó thì giao diện có vẽ nút cũng
+     không biết vẽ gì. */
+  {
+    const dir = path.join(PROJECTS_DIR, '-Users-mvng-Desktop-project-control');
+    const sidKe = 'ttttttt1-0000-4000-8000-00000000ke01';
+    const sidHoi = 'ttttttt1-0000-4000-8000-00000000ho01';
+    const fKe = path.join(dir, sidKe + '.jsonl');
+    const fHoi = path.join(dir, sidHoi + '.jsonl');
+    const luot = (vai, noi, ts) => JSON.stringify({
+      type: vai, timestamp: new Date(ts).toISOString(),
+      message: { role: vai, content: noi },
+    }) + '\n';
+
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      // ExitPlanMode chưa có tool_result = đang đứng chờ người bấm Duyệt
+      fs.writeFileSync(fKe,
+        luot('user', [{ type: 'text', text: 'Lập kế hoạch' }], Date.now() - 20000)
+        + luot('assistant', [{ type: 'tool_use', id: 'tu_ke_t', name: 'ExitPlanMode',
+          input: { plan: '# Kế hoạch\n\n1. Bước một\n2. Bước hai', planFilePath: '/Users/x/.claude/plans/t.md' } }], Date.now() - 10000));
+      // AskUserQuestion 2 câu -> thẻ chỉ hiện câu đầu, báo "còn 1 câu"
+      fs.writeFileSync(fHoi,
+        luot('user', [{ type: 'text', text: 'Chọn giúp' }], Date.now() - 20000)
+        + luot('assistant', [{ type: 'tool_use', id: 'tu_hoi_t', name: 'AskUserQuestion',
+          input: { questions: [
+            { question: 'Dùng CSDL nào?', header: 'CSDL', multiSelect: false,
+              options: [{ label: 'Postgres' }, { label: 'SQLite' }] },
+            { question: 'Có migration không?', header: 'Migration', multiSelect: false,
+              options: [{ label: 'Có' }, { label: 'Không' }] },
+          ] } }], Date.now() - 10000));
+      await new Promise((r) => setTimeout(r, 400));
+
+      const ds = (await snapshot()).data.sessions || [];
+      const ke = ds.find((x) => x.sid === sidKe);
+      const hoi = ds.find((x) => x.sid === sidHoi);
+
+      ok('danh sách mang tóm tắt kế hoạch (duyệt được ngay, khỏi mở phiên)',
+        !!(ke && ke.choND && ke.choND.cho === 'ke-hoach' && /Bước một/.test(ke.choND.tomTat || '')),
+        ke && ke.choND ? String(ke.choND.tomTat || '').slice(0, 45) : 'không có choND');
+
+      const q = hoi && hoi.choND && hoi.choND.hoi;
+      ok('danh sách mang câu hỏi + các lựa chọn (chọn được ngay)',
+        !!(q && /CSDL/.test(q.hoi) && (q.chon || []).length === 2),
+        q ? q.hoi.slice(0, 30) + ' -> ' + (q.chon || []).map((c) => c.nhan).join('/') : 'không có hoi');
+
+      ok('nhiều câu hỏi thì báo còn mấy câu (thẻ chỉ đủ chỗ một câu)',
+        !!(q && q.them === 1), q ? 'them=' + q.them : '-');
+
+      /* Cắt ngắn là BẮT BUỘC: danh sách này đi qua SSE mỗi 2 giây, mà kế hoạch đo
+         thật dài tới 15.371 ký tự. Gửi nguyên là mỗi nhịp tốn thêm 15KB cho thứ chỉ
+         để liếc. */
+      ok('tóm tắt kế hoạch bị cắt ngắn (SSE 2 giây, không nhồi cả kế hoạch)',
+        !!(ke && ke.choND && (ke.choND.tomTat || '').length <= 300),
+        ke && ke.choND ? (ke.choND.tomTat || '').length + ' ký tự' : '-');
+    } finally {
+      try { fs.unlinkSync(fKe); } catch {}
+      try { fs.unlinkSync(fHoi); } catch {}
+    }
+  }
+
   /* ---------- Bảng lệnh: 12 nút Hermes + 5 lệnh con Claude ----------
      Vì sao cần: 4/12 nút Hermes từng HỎNG suốt nhiều bản mà 460 bài test không bắt
      được cái nào. Chúng có handler, gọi server đúng, chỉ hỏng ở tầng cuối — CLI trả

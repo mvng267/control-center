@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { ChoNhanh } from './cho-nhanh';
 import {
   MessageSquare, Coins, CornerDownRight, ClipboardList, Cpu,
   Terminal, TriangleAlert, Zap, CircleHelp, Bot, Star,
@@ -315,16 +316,20 @@ export function SessionCard({
         {!!s.nhip?.length && <span className="ml-auto"><Nhip ds={s.nhip} /></span>}
       </div>
 
-      {/* Phiên ĐỨNG IM CHỜ NGƯỜI BẤM — trước đây chỉ biết khi mở phiên ra.
-          Hai loại khác nhau: duyệt kế hoạch, và Claude hỏi để chọn phương án. */}
-      {s.choDuyet && (
-        <div data-testid="card-plan" data-cho={s.cho || 'ke-hoach'}
-          className="ml-4 flex items-center gap-1.5 rounded-md border border-primary/35 bg-primary/10 px-2 py-0.5 text-[12px] font-medium text-primary">
-          {s.cho === 'cau-hoi'
-            ? <><CircleHelp className="size-3 shrink-0" /> Claude đang hỏi — cần chọn</>
-            : <><ClipboardList className="size-3 shrink-0" /> Đang chờ duyệt kế hoạch</>}
-        </div>
-      )}
+      {/* Phiên ĐỨNG IM CHỜ NGƯỜI BẤM.
+          Có `choND` (nội dung) thì bày hẳn nút bấm — duyệt hoặc chọn phương án ngay
+          tại đây, khỏi mở phiên. Không có thì rơi về dải báo như cũ: phiên cũ chưa
+          parse lại, hoặc chỉ dò được qua planFile chứ không có tool đang chờ. */}
+      {s.choDuyet && (s.choND
+        ? <ChoNhanh s={s} onMo={() => onOpen(s.sid)} />
+        : (
+          <div data-testid="card-plan" data-cho={s.cho || 'ke-hoach'}
+            className="ml-4 flex items-center gap-1.5 rounded-md border border-primary/35 bg-primary/10 px-2 py-0.5 text-[12px] font-medium text-primary">
+            {s.cho === 'cau-hoi'
+              ? <><CircleHelp className="size-3 shrink-0" /> Claude đang hỏi — cần chọn</>
+              : <><ClipboardList className="size-3 shrink-0" /> Đang chờ duyệt kế hoạch</>}
+          </div>
+        ))}
     </div>
   );
 }

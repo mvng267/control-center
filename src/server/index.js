@@ -549,20 +549,43 @@ function parseSessionFile(file) {
      Trước đây chỉ dò chuỗi ".claude/plans/*.md" trong văn bản lượt cuối, bỏ sót nhiều:
      đếm trên .jsonl thật có 201 lần ExitPlanMode và 101 lần AskUserQuestion.
      Dò theo TÊN TOOL chưa có kết quả thì chắc hơn hẳn khớp chuỗi. */
-  const cho = (() => {
+  const choChiTiet = (() => {
     for (let i = msgs.length - 1; i >= 0; i--) {
       const m = msgs[i];
       if (m.role === 'system') continue;
-      if (m.role !== 'assistant') return '';   // người dùng đã trả lời -> hết chờ
+      if (m.role !== 'assistant') return null;   // người dùng đã trả lời -> hết chờ
       for (const p of (m.parts || [])) {
         if (p.t !== 'tool' || p.status !== 'pending') continue;
-        if (p.name === 'ExitPlanMode') return 'ke-hoach';
-        if (p.name === 'AskUserQuestion') return 'cau-hoi';
+        /* Trả kèm NỘI DUNG, không chỉ loại. Danh sách phiên trước giờ chỉ biết
+           "có câu hỏi" nên muốn chọn vẫn phải mở phiên — đúng thứ làm dashboard
+           không dùng được như remote. Dữ liệu đã parse sẵn ở tools.js
+           (extractHoi/extractKeHoach), chỉ là chưa ai đưa ra tới đây.
+
+           Cắt ngắn tại chỗ này: danh sách đi qua SSE mỗi 2 giây, mà kế hoạch đo
+           thật dài tới 15.371 ký tự — gửi nguyên là mỗi nhịp tốn thêm 15KB cho
+           thứ chỉ để liếc. Bấm "Mở xem" thì lấy bản đầy đủ từ /api/history. */
+        if (p.name === 'ExitPlanMode') {
+          return { cho: 'ke-hoach', id: p.id || '', tomTat: String(p.ke || '').slice(0, 300) };
+        }
+        if (p.name === 'AskUserQuestion') {
+          const hs = Array.isArray(p.hoi) ? p.hoi : [];
+          return {
+            cho: 'cau-hoi', id: p.id || '',
+            // chỉ câu ĐẦU: bảng chọn trên thẻ phiên chỉ đủ chỗ cho một câu, mà đo
+            // thật thì 94% AskUserQuestion chỉ có đúng một câu.
+            hoi: hs.length ? {
+              hoi: hs[0].hoi, nhan: hs[0].nhan, nhieu: hs[0].nhieu,
+              chon: (hs[0].chon || []).slice(0, 4).map((o) => ({ nhan: o.nhan })),
+              them: hs.length - 1,   // còn mấy câu nữa -> thẻ báo "còn N câu, mở xem"
+            } : null,
+          };
+        }
       }
-      return '';   // lượt assistant cuối không có tool chờ -> không chờ gì
+      return null;   // lượt assistant cuối không có tool chờ -> không chờ gì
     }
-    return '';
+    return null;
   })();
+  const cho = choChiTiet ? choChiTiet.cho : '';
 
   /* Lệnh Claude ĐANG chạy dở: tool_use chưa có tool_result ở lượt cuối.
      Khác `tinCuoi`: chỗ đó ưu tiên câu chữ nên tool bị `break` nuốt mất, thực tế gần
@@ -605,7 +628,7 @@ function parseSessionFile(file) {
     && msgs.some(m => m.role === 'user' && /^\s*<command-name>/.test(m.text || ''));
 
   const data = {
-    msgs, mtimeMs: st.mtimeMs, title, planFile, usage, model, effort, cho, dangChay,
+    msgs, mtimeMs: st.mtimeMs, title, planFile, usage, model, effort, cho, choChiTiet, dangChay,
     agents, agentChay, laLenh,
     tsMs: msgs.map(m => Date.parse(m.ts) || 0),
   };
@@ -1286,6 +1309,10 @@ async function listSessions() {
            `cho` mang lý do cụ thể: 'ke-hoach' | 'cau-hoi'. */
         choDuyet: !!(parsed.cho || parsed.planFile),
         cho: parsed.cho || (parsed.planFile ? 'ke-hoach' : ''),
+        /* NỘI DUNG thứ đang chờ, để duyệt/chọn ngay tại danh sách khỏi mở phiên.
+           Đã cắt ngắn ở parseSessionFile (kế hoạch 300 ký tự, câu hỏi lấy câu đầu +
+           4 lựa chọn) vì danh sách này đi qua SSE mỗi 2 giây. */
+        ...(parsed.choChiTiet ? { choND: parsed.choChiTiet } : {}),
         // lệnh Claude đang chạy dở (tool chưa có kết quả) — chỉ có nghĩa khi RUNNING
         dangChay: parsed.dangChay || '',
         /* Agent con đang chạy. CHỈ gửi số đếm + tên vài cái đầu, không gửi cả danh
