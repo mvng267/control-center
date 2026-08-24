@@ -94,7 +94,8 @@ async function dongSach(pg, cx) {
   await cx.close().catch(() => {});
 }
 
-const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
+// khớp app-shell.tsx: 6 tab. Thiếu 'quota' thì tab Hạn mức không được duyệt.
+const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
 
 (async () => {
   gomPasscode();
@@ -2311,8 +2312,12 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats'];
     // ("web" là con của agy-proxy), lọc theo tên sẽ trộn lẫn chúng.
     const opts = await page.$$eval('[data-testid=project-filter] option',
       (es) => es.map((e) => e.value).filter(Boolean));
+    /* Bỏ qua hai khoá server CỐ Ý đặt cho phiên không có cwd: `(unknown)` và `(new)`
+       (index.js, duAnCho). Đòi MỌI khoá bắt đầu bằng `/` là báo đỏ oan ngay khi trong
+       danh sách có một phiên chạy ở chỗ không đọc được thư mục. */
+    const khoaThat = opts.filter((v) => v !== '(unknown)' && v !== '(new)');
     ok('bộ lọc dự án dùng đường dẫn làm khoá (không trộn dự án trùng tên)',
-      opts.length > 0 && opts.every((v) => v.startsWith('/')),
+      khoaThat.length > 0 && khoaThat.every((v) => v.startsWith('/')),
       opts.slice(0, 2).join(' | '));
 
     /* ---- BA BỘ LỌC TRONG MENU ----

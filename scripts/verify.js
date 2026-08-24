@@ -192,5 +192,58 @@ if (fs.existsSync(cssFile)) {
   }
 }
 
-console.log(bad ? '\n' + bad + ' file có lỗi' : '\nTất cả hợp lệ (' + targets.length + ' file JS)');
-process.exit(bad ? 1 : 0);
+/* ---- TÊN CHƯA KHAI trong backend ----
+   `node --check` ở trên chỉ bắt CÚ PHÁP. Một lời gọi hàm không tồn tại vẫn qua trót
+   lọt, chỉ nổ lúc chạy đúng nhánh đó — đã xảy ra thật: `resumeHandler` gọi
+   `sendJson()` bốn lần, hàm không có ở đâu trong dự án, và nút "Khôi phục phiên treo"
+   chết hoàn toàn suốt nhiều bản mà không ai biết.
+
+   Mượn Linter của eslint đã cài ở web-next. KHÔNG thêm dependency cho backend: đây là
+   bước KIỂM lúc phát triển, không phải mã chạy. Chưa cài web-next thì bỏ qua kèm lý do
+   chứ không làm đỏ oan. */
+const GLOBAL_NODE = ['require', 'module', 'exports', '__dirname', '__filename', 'process',
+  'console', 'Buffer', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval',
+  'setImmediate', 'queueMicrotask', 'URL', 'URLSearchParams', 'TextEncoder', 'TextDecoder',
+  'crypto', 'fetch', 'AbortController', 'AbortSignal', 'structuredClone', 'performance',
+  'Intl', 'global', 'globalThis'];
+
+(async () => {
+  const dlEslint = path.join(ROOT, 'web-next/node_modules/eslint/lib/api.js');
+  let Linter;
+  try { ({ Linter } = await import(dlEslint)); }
+  catch {
+    console.log('  bỏ qua  tên chưa khai (chưa cài eslint: chạy npm i trong web-next)');
+    ketThuc();
+    return;
+  }
+  const linter = new Linter();
+  const cfg = {
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'commonjs',
+      globals: Object.fromEntries(GLOBAL_NODE.map((k) => [k, 'readonly'])),
+    },
+    rules: { 'no-undef': 'error' },
+  };
+  const tenXau = [];
+  for (const rel of ['src/server/index.js', 'src/server/tools.js', 'bin/control.js']) {
+    const f = path.join(ROOT, rel);
+    if (!fs.existsSync(f)) continue;
+    const loi = linter.verify(fs.readFileSync(f, 'utf8'), cfg, rel)
+      .filter((m) => m.ruleId === 'no-undef');
+    loi.forEach((m) => tenXau.push(rel + ':' + m.line + ' ' + m.message));
+  }
+  if (tenXau.length) {
+    bad++;
+    console.log('  LỖI  gọi tên CHƯA KHAI (node --check không bắt được):');
+    tenXau.slice(0, 8).forEach((t) => console.log('       ' + t));
+  } else {
+    console.log('  ok   không tên nào chưa khai trong backend');
+  }
+  ketThuc();
+})();
+
+function ketThuc() {
+  console.log(bad ? '\n' + bad + ' file có lỗi' : '\nTất cả hợp lệ (' + targets.length + ' file JS)');
+  process.exit(bad ? 1 : 0);
+}

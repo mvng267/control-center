@@ -2682,6 +2682,33 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, boQua });
   }
 
+  /* ---- KHÔI PHỤC phiên treo ----
+     `treo` chỉ tính khi `procs.has(sid)` (treoBaoLau, dòng ~1221) — tức tiến trình
+     VẪN ĐANG CHẠY mà im quá 15 phút. Nên khôi phục phải GIẾT cái cũ trước rồi mới
+     chạy lượt mới, không thì hai tiến trình cùng ghi vào một file .jsonl.
+
+     Dùng lại spawnChat() thay vì tự dựng lệnh: nó đã có sẵn --resume + stream-json +
+     model/effort/quyền riêng theo phiên. Bản trước tự viết `spawn('claude',
+     ['--resume', sid])` — thiếu `-p` nên CLI vào chế độ TƯƠNG TÁC rồi treo luôn.
+
+     Prompt "tiếp tục": phiên treo thường là Claude kẹt giữa một tool, nhắc nó tiếp
+     thì rẻ hơn bắt đầu lại từ đầu. */
+  if ((m = p.match(/^\/api\/resume\/([\w-]+)$/)) && req.method === 'POST') {
+    const sid = m[1];
+    const cu = procs.get(sid);
+    /* Chấp nhận phiên ĐANG CHẠY dù chưa có file .jsonl: CLI chỉ ghi file khi lượt
+       XONG, mà phiên treo thì đúng là lượt chưa xong. Đòi có file trước là từ chối
+       đúng trường hợp tính năng này sinh ra để cứu. */
+    if (!cu && !findSessionFile(sid)) return json(res, 404, { error: 'không thấy phiên' });
+    if (cu) {
+      try { cu.proc.kill('SIGTERM'); } catch {}
+      procs.delete(sid);
+    }
+    hangCho.delete(sid);   // treo rồi thì mấy tin đã xếp cũng không còn nghĩa
+    spawnChat(sid, 'Tiếp tục việc đang làm dở.');
+    return json(res, 200, { ok: true, sid, daGietCu: !!cu });
+  }
+
   /* Tìm trong NỘI DUNG một phiên.
 
      Ô tìm ở danh sách phiên chỉ quét siêu dữ liệu + tin CUỐI, nên muốn tìm lại điều đã
@@ -4083,41 +4110,6 @@ self.addEventListener('notificationclick', function (e) {
    Phiên treo khi: process vẫn ở procs.map nhưng .jsonl không cập nhật >15 phút.
    Resume lấy context từ .jsonl hiện tại (Claude CLI xử lý --resume tự động).
    Nếu --resume fail (phiên đã xoá) → spawn task mới với prompt gốc. */
-const resumeHandler = (sid, res) => {
-  const sess = sessionCwd(sid);
-  if (!sess) return sendJson(res, 404, { ok: false, error: 'Session not found' });
-
-  const cwd = sess || os.homedir();
-  // Spawn `claude --resume` với cùng CWD; không có task title = user manual retry
-  const proc = spawn('claude', ['--resume', sid], {
-    cwd,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  const startedAt = Date.now();
-  procs.set(sid, { proc, project: null, startedAt, task: 'resume' });
-
-  // Capture stdout để stream về client
-  let output = '';
-  const decoder = new StringDecoder('utf8');
-  proc.stdout?.on('data', (chunk) => {
-    output += decoder.write(chunk);
-  });
-
-  proc.on('close', (code) => {
-    procs.delete(sid);
-    if (code === 0) {
-      return sendJson(res, 200, { ok: true, output });
-    }
-    sendJson(res, 500, { ok: false, error: `Resume failed: exit ${code}`, output });
-  });
-
-  proc.on('error', (err) => {
-    procs.delete(sid);
-    sendJson(res, 500, { ok: false, error: `Spawn error: ${err.message}` });
-  });
-};
-
 /* ---------------- frontend ---------------- */
 // LƯU Ý: template literal — client JS bên trong KHÔNG dùng backtick / ${ ;
 // backslash phải escape đôi (\\n, \\s, \\u0000).

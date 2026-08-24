@@ -19,7 +19,9 @@ const pw = require(path.join(__dirname, '..', 'node_modules', 'playwright-core')
    thay vì server tạm mà test-all vừa dựng. Không lộ ra vì máy dev gần như lúc nào
    cũng có dashboard chạy sẵn ở 7799; tắt nó đi là bộ này ném ECONNREFUSED. */
 const URL = process.argv[2] || process.env.DASH_URL || 'http://localhost:7799/';
-const TABS = ['cli', 'hermes', 'agy', 'stats'];
+// 6 tab, khớp TABS ở app-shell.tsx. Thiếu docker/quota thì mục "không còn nút
+// chết" chỉ đúng với 4/6 tab — đúng hai tab mới thêm gần đây lại không ai quét.
+const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
 
 (async () => {
   const browser = await pw.chromium.launch({ channel: 'chrome', headless: true });

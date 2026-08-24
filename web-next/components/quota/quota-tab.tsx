@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Loader2, TriangleAlert, Gauge } from 'lucide-react';
+import { PageHeader } from '@/components/layout/app-shell';
+import { RefreshCw, Loader2, TriangleAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -96,16 +97,20 @@ export function QuotaTab() {
   })();
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-y-auto p-4" data-testid="quota-tab">
-      <div className="flex items-center gap-2">
-        <Gauge className="size-4 shrink-0 text-muted-foreground" />
-        <h2 className="min-w-0 flex-1 truncate text-[14px] font-semibold">Hạn mức Claude</h2>
-        <button onClick={() => tai(true)} disabled={dangTai} data-testid="quota-lam-moi"
-          title="Hỏi lại CLI (bỏ qua cache 60 giây)" aria-label="Làm mới hạn mức"
-          className="tap44 flex size-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-          {dangTai ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-        </button>
-      </div>
+    <div className="flex h-full flex-col overflow-y-auto" data-testid="quota-tab">
+      {/* Dùng PageHeader như MỌI tab khác. Trước đây tab này tự vẽ `h2` 14px trong khi
+          các tab kia có tiêu đề 19-24px — nhìn như lạc sang giao diện khác. Lọt được
+          vì `quota` không nằm trong mảng TABS mà bài test duyệt qua. */}
+      <PageHeader title="Hạn mức" desc="Còn bao nhiêu hạn mức Claude, và gì đang ăn nhiều nhất."
+        actions={(
+          <button onClick={() => tai(true)} disabled={dangTai} data-testid="quota-lam-moi"
+            title="Hỏi lại CLI (bỏ qua cache 60 giây)" aria-label="Làm mới hạn mức"
+            className="tap44 flex size-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+            {dangTai ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+          </button>
+        )} />
+
+      <div className="flex flex-col gap-3 px-4 pb-4 md:px-6">
 
       {!!q?.kieu && (
         <p className="text-[12px] text-muted-foreground" data-testid="quota-kieu">{kieuVi(q.kieu)}</p>
@@ -165,5 +170,6 @@ export function QuotaTab() {
         </p>
       )}
     </div>
+      </div>
   );
 }

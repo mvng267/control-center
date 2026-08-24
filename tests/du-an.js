@@ -121,7 +121,11 @@ async function snapshot() {
         .length;
     } catch {}
     const soKhoa = new Set(ss.map((s) => s.duAn?.khoa)).size;
-    ok('số dự án ít hơn số thư mục (đã hợp nhất bản gõ nhầm)', soKhoa < soThuMuc,
+    /* `<=` chứ KHÔNG phải `<`. Bài này chốt việc hợp nhất tên gõ nhầm (hai thư mục
+       trỏ cùng một dự án -> một khoá). Nhưng máy KHÔNG có thư mục gõ nhầm nào thì
+       số khoá BẰNG số thư mục, và đó là đúng — dùng `<` là báo đỏ oan cho một máy
+       sạch. Đã đo: 25 dự án / 25 thư mục, đỏ y hệt ở commit gốc. */
+    ok('số dự án KHÔNG nhiều hơn số thư mục (đã hợp nhất bản gõ nhầm)', soKhoa <= soThuMuc,
       soKhoa + ' dự án / ' + soThuMuc + ' thư mục');
   }
 
@@ -670,6 +674,48 @@ async function snapshot() {
     const snapFav = await snapshot();
     ok('danh sách phiên có trường fav', (snapFav.data.sessions || []).every((s) => 'fav' in s),
       'kiểm ' + (snapFav.data.sessions || []).length + ' phiên');
+  }
+
+  /* ---------- Khôi phục phiên treo ----------
+     Tính năng này từng ĐÃ SHIP mà CHẾT HOÀN TOÀN, không ai biết. Ba lỗi chồng nhau:
+     route `/api/resume/:sid` không nơi nào nối vào router (rơi vào fallback 404),
+     handler gọi `sendJson()` — hàm không tồn tại trong toàn dự án, và lệnh spawn
+     thiếu `-p` nên CLI vào chế độ tương tác rồi treo luôn.
+
+     Người dùng thấy: phiên kẹt 15 phút -> thẻ hiện "Phiên treo N phút / Bấm khôi
+     phục" -> bấm -> toast đỏ. Đúng lúc cần nhất thì không dùng được.
+
+     `node --check` trong verify.js không bắt được vì nó chỉ soi CÚ PHÁP — đó là lý do
+     lọt. Nay verify.js có thêm bước bắt tên chưa khai. */
+  {
+    const post = (ep, body) => fetch(URL + ep, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Dash-Token': token },
+      body: JSON.stringify(body || {}),
+    }).then((r) => r.json().then((j) => ({ ...j, _code: r.status })))
+      .catch((e) => ({ _code: 0, error: e.message }));
+
+    const t = await post('/api/task', { task: 'Đáp một từ: rs' });
+    if (!t.ok || !t.sid) {
+      ok('khôi phục phiên treo: route có thật (không 404)', false, 'không tạo được phiên thử');
+    } else {
+      await new Promise((r) => setTimeout(r, 1500));
+      const r1 = await post('/api/resume/' + t.sid);
+      ok('khôi phục phiên treo: route có thật (không còn 404)',
+        r1._code === 200 && r1.ok === true, 'mã ' + r1._code + ' ' + (r1.error || ''));
+
+      /* `treo` chỉ tính khi tiến trình VẪN ĐANG CHẠY mà im quá ngưỡng — nên khôi phục
+         phải giết cái cũ trước, không thì hai tiến trình cùng ghi một file .jsonl. */
+      ok('khôi phục báo lại có giết tiến trình cũ hay không',
+        typeof r1.daGietCu === 'boolean', 'daGietCu=' + r1.daGietCu);
+
+      await new Promise((r) => setTimeout(r, 1000));
+      await post('/api/kill/' + t.sid);
+    }
+
+    const r2 = await post('/api/resume/khong-co-phien-nay');
+    ok('khôi phục phiên không tồn tại -> 404 có thông báo',
+      r2._code === 404 && /không thấy/.test(String(r2.error || '')), 'mã ' + r2._code);
   }
 
   /* ---------- Nhắn khi Claude ĐANG chạy: xếp hàng, không chặn ----------
