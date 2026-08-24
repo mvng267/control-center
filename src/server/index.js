@@ -5,6 +5,7 @@
 // Usage: node claude-dashboard.js   (http://localhost:7799)
 
 const http = require('http');
+const zlib = require('zlib');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
@@ -2466,23 +2467,63 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=u
                '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml',
                '.json': 'application/json', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8',
                '.woff2': 'font/woff2', '.png': 'image/png' };
-function sendFile(res, f, cache) {
+/* Kiểu nén NÉN ĐƯỢC. Ảnh/phông đã nén sẵn — gzip lại chỉ tốn CPU mà to thêm vài byte. */
+const NEN_DUOC = new Set(['.js', '.css', '.html', '.json', '.svg', '.txt', '.map', '.webmanifest']);
+/* Cache bản đã nén theo đường dẫn + mtime. Tài nguyên /_next/* đặt tên theo hash nội
+   dung nên gần như không bao giờ đổi, mà gzip mức 9 một file 1MB mất ~40ms — nén lại
+   mỗi request là tự bắn vào chân. Giới hạn 40 mục: đủ cho toàn bộ bundle. */
+const nenCache = new Map();
+const NEN_CACHE_MAX = 40;
+
+function nhanGzip(req) {
+  return /\bgzip\b/.test(String(req && req.headers && req.headers['accept-encoding'] || ''));
+}
+
+function sendFile(res, f, cache, req) {
   let buf;
   try { buf = fs.readFileSync(f); } catch { return json(res, 404, { error: 'not found' }); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream',
-                       'Cache-Control': cache || 'no-cache' });
+  const kieu = MIME[path.extname(f)] || 'application/octet-stream';
+  const head = { 'Content-Type': kieu, 'Cache-Control': cache || 'no-cache' };
+
+  /* Nén khi client nhận được VÀ file đáng nén. Đo thật trên bundle này:
+     JS+CSS 1.733 KB -> 507 KB (-70%). Ngưỡng 1KB vì file nhỏ hơn thì phần đầu gzip
+     ăn hết phần lợi.
+
+     `Vary: Accept-Encoding` bắt buộc: thiếu nó thì proxy/CDN có thể trả bản đã nén
+     cho client không nhận gzip. */
+  if (req && nhanGzip(req) && NEN_DUOC.has(path.extname(f)) && buf.length > 1024) {
+    let mt = 0;
+    try { mt = fs.statSync(f).mtimeMs; } catch {}
+    const khoa = f + ':' + mt;
+    let z = nenCache.get(khoa);
+    if (!z) {
+      z = zlib.gzipSync(buf, { level: 6 });   // 6: gần bằng 9 về tỉ lệ, nhanh hơn hẳn
+      if (nenCache.size >= NEN_CACHE_MAX) nenCache.delete(nenCache.keys().next().value);
+      nenCache.set(khoa, z);
+    }
+    head['Content-Encoding'] = 'gzip';
+    head['Vary'] = 'Accept-Encoding';
+    // Đặt Content-Length tường minh: client biết trước cỡ để hiện tiến độ tải, và
+    // đây cũng là cách DUY NHẤT đo được bản nén từ ngoài — `fetch` tự giải nén nên
+    // đọc thân trả về luôn ra cỡ gốc.
+    head['Content-Length'] = z.length;
+    res.writeHead(200, head);
+    return res.end(z);
+  }
+  head['Content-Length'] = buf.length;
+  res.writeHead(200, head);
   return res.end(buf);
 }
-function serveWeb(res, name) {
-  return sendFile(res, path.join(LEGACY_DIR, name)); // no-cache: sửa file là thấy ngay
+function serveWeb(res, name, req) {
+  return sendFile(res, path.join(LEGACY_DIR, name), null, req); // no-cache: sửa file là thấy ngay
 }
 // Tài nguyên Next: /_next/... đặt tên theo hash nội dung nên cache vĩnh viễn được.
 // Chặn ../ bằng cách kiểm tra đường dẫn thật vẫn nằm trong NEXT_DIR.
-function serveNext(res, urlPath) {
+function serveNext(res, urlPath, req) {
   const f = path.join(NEXT_DIR, urlPath === '/' ? 'index.html' : urlPath);
   if (!path.resolve(f).startsWith(path.resolve(NEXT_DIR))) return json(res, 404, { error: 'not found' });
   const immutable = urlPath.startsWith('/_next/static/');
-  return sendFile(res, f, immutable ? 'public, max-age=31536000, immutable' : 'no-cache');
+  return sendFile(res, f, immutable ? 'public, max-age=31536000, immutable' : 'no-cache', req);
 }
 
 /* ---------------- server ---------------- */
@@ -2571,14 +2612,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Giao diện mới (Next.js, kiểu Atlas) — NEW_UI=0 để quay về bản cũ tức thì
-  if (USE_NEW_UI && (p === '/' || p === '/index.html')) return serveNext(res, '/');
-  if (USE_NEW_UI && p.startsWith('/_next/')) return serveNext(res, p);
-  if (USE_NEW_UI && p === '/favicon.ico') return serveNext(res, p);
+  if (USE_NEW_UI && (p === '/' || p === '/index.html')) return serveNext(res, '/', req);
+  if (USE_NEW_UI && p.startsWith('/_next/')) return serveNext(res, p, req);
+  if (USE_NEW_UI && p === '/favicon.ico') return serveNext(res, p, req);
 
   // Giao diện cũ: file tĩnh trong web/legacy. Trước đây HTML/CSS/JS nhúng trong template
   // literal -> viết \\n hay dấu backtick là âm thầm làm vỡ cả trang mà node -c không thấy.
-  if (p === '/' || p === '/index.html') return serveWeb(res, 'index.html');
-  if (p === '/app.css') return serveWeb(res, 'app.css');
+  if (p === '/' || p === '/index.html') return serveWeb(res, 'index.html', req);
+  if (p === '/app.css') return serveWeb(res, 'app.css', req);
   // client JS chia theo tính năng: /js/core.js, /js/chat.js, /js/agy.js…
   // chỉ nhận tên file phẳng [a-z-] để không thể dùng ../ thoát khỏi web/legacy
   const jsFile = p.match(/^\/js\/([a-z-]+\.js)$/);
@@ -2598,7 +2639,7 @@ const server = http.createServer(async (req, res) => {
   const iconFile = p.match(/^\/(icon\.svg|icon-192\.png|icon-512\.png|icon-maskable-512\.png|apple-touch-icon\.png|favicon-32\.png)$/);
   if (iconFile) {
     const f = path.join(NEXT_PUBLIC, iconFile[1]);
-    if (fs.existsSync(f)) return sendFile(res, f, 'public, max-age=604800');
+    if (fs.existsSync(f)) return sendFile(res, f, 'public, max-age=604800', req);
     if (p === '/icon.svg') {
       res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'max-age=86400' });
       return res.end(ICON_SVG);
@@ -2607,11 +2648,28 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (p === '/stream') {
+    /* NÉN dòng SSE. Đo thật trên máy này: 215 phiên = 131,5 KB mỗi nhịp, nhịp 2 giây
+       tức 3,8 MB/phút — qua Tailscale từ iPhone đó là tải thật. gzip còn 23,3 KB
+       (-82%).
+
+       Bắt buộc `flush(Z_SYNC_FLUSH)` sau mỗi nhịp: không flush thì zlib gom dữ liệu
+       trong buffer chờ đủ khối, client ngồi im không nhận được gì — SSE thành vô
+       dụng. Đã thử: sau flush byte ra ngay.
+
+       Client không nhận gzip thì ghi thẳng như cũ. */
+    const nen = nhanGzip(req) ? zlib.createGzip({ level: 6 }) : null;
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      ...(nen ? { 'Content-Encoding': 'gzip' } : {}),
     });
+    if (nen) nen.pipe(res);
+    const ghi = (d) => {
+      if (!nen) return res.write(d);
+      nen.write(d);
+      nen.flush(zlib.constants.Z_SYNC_FLUSH);
+    };
     // listSessions giờ bất đồng bộ (nhả event loop giữa các phiên nặng). Cần cờ chống
     // chồng nhịp: lần quét lạnh mất ~2s còn nhịp SSE là 2s, không chặn thì hai lượt
     // quét chạy song song, mỗi lượt lại nhả nhịp cho lượt kia — càng chậm thêm.
@@ -2622,13 +2680,13 @@ const server = http.createServer(async (req, res) => {
       try {
         const sessions = await listSessions();
         // payload object: sessions + jobs đang chạy + model hiện tại
-        res.write(`data: ${JSON.stringify({ sessions, jobs: listJobs(), model: currentModel, perm: permMode, effort })}\n\n`);
+        ghi(`data: ${JSON.stringify({ sessions, jobs: listJobs(), model: currentModel, perm: permMode, effort })}\n\n`);
       } catch {}
       finally { dangGui = false; }
     };
     send();
     const iv = setInterval(send, 2000);
-    req.on('close', () => clearInterval(iv));
+    req.on('close', () => { clearInterval(iv); if (nen) try { nen.end(); } catch {} });
     return;
   }
 

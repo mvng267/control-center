@@ -676,6 +676,77 @@ async function snapshot() {
       'kiểm ' + (snapFav.data.sessions || []).length + ' phiên');
   }
 
+  /* ---------- Nén gzip ----------
+     Server trước đây KHÔNG nén gì cả. Đo thật trên máy này: mở app tải 1.733 KB
+     JS+CSS, và dòng SSE 131,5 KB mỗi nhịp — nhịp 2 giây tức 3,8 MB/phút. Qua
+     Tailscale từ iPhone đó là tải thật, không phải con số trên giấy.
+
+     zlib là core Node nên KHÔNG phá quy tắc backend zero-dependency. */
+  {
+    const lay = (duong, ma) => fetch(URL + duong, {
+      headers: { 'X-Dash-Token': token, 'Accept-Encoding': ma },
+    });
+
+    // lấy một file JS thật từ trang chủ
+    const html = await fetch(URL + '/', { headers: { 'X-Dash-Token': token } }).then((r) => r.text()).catch(() => '');
+    const mt = html.match(/\/_next\/static\/chunks\/[\w.-]+\.js/);
+    if (!mt) {
+      ok('nén gzip: có file tĩnh để thử', false, 'không tìm thấy chunk nào trong index.html');
+    } else {
+      const co = await lay(mt[0], 'gzip');
+      const khong = await lay(mt[0], 'identity');
+      ok('nén gzip cho file tĩnh khi client nhận được',
+        co.headers.get('content-encoding') === 'gzip', String(co.headers.get('content-encoding')));
+      ok('KHÔNG nén khi client không nhận (Accept-Encoding: identity)',
+        !khong.headers.get('content-encoding'), String(khong.headers.get('content-encoding')));
+      /* `Vary: Accept-Encoding` bắt buộc — thiếu nó thì proxy/CDN có thể trả bản đã
+         nén cho client không hiểu gzip. */
+      ok('có Vary: Accept-Encoding (proxy không trả nhầm bản nén)',
+        /accept-encoding/i.test(String(co.headers.get('vary') || '')), String(co.headers.get('vary')));
+
+      /* Đo bằng Content-Length chứ KHÔNG bằng arrayBuffer(): `fetch` của Node tự giải
+         nén, nên đọc thân trả về luôn ra cỡ GỐC — đo kiểu đó thì bài luôn đỏ dù nén
+         đang chạy đúng (đã dính). */
+      const bCo = +(co.headers.get('content-length') || 0);
+      const bKhong = +(khong.headers.get('content-length') || 0);
+      await co.arrayBuffer().catch(() => {});
+      await khong.arrayBuffer().catch(() => {});
+      ok('bản nén nhỏ hơn hẳn bản gốc',
+        bCo > 0 && bKhong > 0 && bCo < bKhong * 0.6,
+        `${Math.round(bKhong / 1024)}KB -> ${Math.round(bCo / 1024)}KB`);
+    }
+
+    /* SSE nén là chỗ dễ hỏng nhất: không `flush(Z_SYNC_FLUSH)` sau mỗi nhịp thì zlib
+       gom dữ liệu chờ đủ khối, client ngồi im — SSE thành vô dụng mà không báo lỗi. */
+    const sse = await new Promise((giai) => {
+      const http = require('http');
+      const zlib = require('zlib');
+      /* KHÔNG dùng `new URL(...)`: file này khai `const URL = 'http://…'` ở đầu, che
+         mất lớp URL toàn cục — gọi ra "TypeError: URL is not a constructor". */
+      const cong = (URL.match(/:(\d+)/) || [])[1] || '80';
+      const may = (URL.match(/^https?:\/\/([^:/]+)/) || [])[1] || 'localhost';
+      const req = http.get({
+        host: may, port: cong, path: '/stream?t=' + token,
+        headers: { 'accept-encoding': 'gzip' },
+      }, (res) => {
+        const ma = res.headers['content-encoding'];
+        if (ma !== 'gzip') { req.destroy(); return giai({ ma, nhip: 0 }); }
+        let buf = '';
+        const gz = zlib.createGunzip();
+        res.pipe(gz);
+        gz.on('data', (d) => {
+          buf += d;
+          if (buf.split('\n\n').length - 1 >= 1) { req.destroy(); giai({ ma, nhip: 1, cỡ: buf.length }); }
+        });
+      });
+      req.on('error', () => giai({ ma: null, nhip: 0 }));
+      setTimeout(() => { try { req.destroy(); } catch {} giai({ ma: 'gzip', nhip: 0 }); }, 12000);
+    });
+    ok('SSE nén gzip', sse.ma === 'gzip', String(sse.ma));
+    ok('SSE nén vẫn đẩy từng nhịp ra ngay (có flush, không kẹt buffer)',
+      sse.nhip >= 1, sse.nhip ? 'nhận được nhịp đầu' : 'KHÔNG nhận được gì trong 12 giây');
+  }
+
   /* ---------- Khôi phục phiên treo ----------
      Tính năng này từng ĐÃ SHIP mà CHẾT HOÀN TOÀN, không ai biết. Ba lỗi chồng nhau:
      route `/api/resume/:sid` không nơi nào nối vào router (rơi vào fallback 404),
