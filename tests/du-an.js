@@ -676,6 +676,53 @@ async function snapshot() {
       'kiểm ' + (snapFav.data.sessions || []).length + ' phiên');
   }
 
+  /* ---------- Quay lại lượt trước ----------
+     Claude sửa nhầm 5 file thì terminal bấm `/rewind`. Dashboard trước đây KHÔNG có
+     gì — phải tự `git checkout` qua một phiên Claude khác, trên điện thoại là bế tắc.
+
+     Điểm dễ làm ẩu: `git checkout <ảnh> -- .` chỉ ghi đè file CÓ trong ảnh. File
+     Claude TẠO MỚI sau đó git không đụng tới — nó không biết ta muốn xoá hay giữ.
+     Khôi phục mà không nói gì thì ra trạng thái nửa vời: code cũ không biết về file
+     mới, file mới lại gọi vào code đã bị xoá. Nên phải LIỆT KÊ chúng ra. */
+  {
+    const goi = (ep, ph) => fetch(URL + ep, {
+      method: ph || 'GET', headers: { 'X-Dash-Token': token },
+    }).then((r) => r.json().then((j) => ({ ...j, _code: r.status })))
+      .catch((e) => ({ _code: 0, error: e.message }));
+    const post = (ep, body) => fetch(URL + ep, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Dash-Token': token },
+      body: JSON.stringify(body),
+    }).then((r) => r.json()).catch(() => ({}));
+
+    // phiên của chính dự án này — chắc chắn trong repo git
+    const ds = (await snapshot()).data.sessions || [];
+    const sid = (ds.find((x) => x.duAn && x.duAn.repo) || {}).sid;
+    if (!sid) {
+      ok('quay lại: có phiên trong repo để thử', false, 'không tìm được phiên có repo');
+    } else {
+      /* Ảnh chụp lấy TRƯỚC mỗi lượt. Gửi `!pwd` để tạo mốc mà không tốn lượt Claude —
+         nhánh `!` cũng phải chụp, nếu không mốc kẹt ở lượt Claude cuối cùng. */
+      await post('/api/chat/' + sid, { message: '!pwd' });
+      await new Promise((r) => setTimeout(r, 800));
+
+      const xem = await goi('/api/quaylai/' + sid);
+      ok('quay lại: có mốc sau khi nhắn (kể cả lượt `!lệnh`)',
+        xem._code === 200 && xem.ok === true, 'mã ' + xem._code + ' ' + String(xem.error || ''));
+      ok('quay lại: mốc có mốc thời gian',
+        typeof xem.luc === 'number' && xem.luc > 0, String(xem.luc));
+
+      /* Hai danh sách phải TÁCH BẠCH — đây là toàn bộ giá trị của tính năng. */
+      ok('quay lại: tách riêng file "về cũ" và file "Claude tạo mới"',
+        Array.isArray(xem.veCu) && Array.isArray(xem.moiTao),
+        `veCu=${(xem.veCu || []).length} moiTao=${(xem.moiTao || []).length}`);
+    }
+
+    const khong = await goi('/api/quaylai/khong-co-phien-nay');
+    ok('quay lại: phiên chưa có mốc -> báo rõ, không 500',
+      khong._code === 404 && /ảnh chụp/.test(String(khong.error || '')), 'mã ' + khong._code);
+  }
+
   /* ---------- `!lệnh` chạy thẳng, không qua Claude ----------
      Terminal `!git status` chạy thẳng bash, không tốn token. Dashboard trước đây vẫn
      spawn `claude -p` — đo thật `!echo`: 6,4 giây. Chú thích ở mode-hint.tsx đã hứa

@@ -10,7 +10,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawn, execFile, execSync } = require('child_process');
+const { spawn, execFile, execSync, execFileSync } = require('child_process');
 const crypto = require('crypto');
 // Giải mã UTF-8 an toàn khi đọc từng đoạn: giữ byte lẻ ở ranh giới ký tự (xem docPhanThem)
 const { StringDecoder } = require('string_decoder');
@@ -1617,8 +1617,48 @@ function chayLenhNhanh(raw, cwd) {
   };
 }
 
+/* Ảnh chụp trước mỗi lượt, để "Quay lại lượt trước" có chỗ mà về.
+   sid -> { ma, luc, cwd, coSan: Set }
+
+   `git stash create` cho một commit KHÔNG đụng working tree, không tạo entry trong
+   `git stash list` — tức không làm phiền `git stash pop` người dùng đang dùng tay.
+   Repo sạch thì nó trả rỗng, lúc đó neo vào HEAD.
+
+   Giữ danh sách file ĐANG CÓ lúc chụp: `git checkout <ảnh> -- .` chỉ ghi đè file có
+   trong ảnh, file Claude TẠO MỚI sau đó git không đụng tới — nó không biết ta muốn
+   xoá hay giữ. Không có danh sách này thì khôi phục xong ra trạng thái nửa vời:
+   code cũ không biết gì về file mới, file mới lại gọi vào code đã bị xoá. */
+const anhTruoc = new Map();
+const ANH_TOI_DA = 30;
+
+function chupTruocLuot(sid) {
+  const cwd = sessionCwd(sid);
+  if (!cwd) return;
+  try {
+    const trongGit = execFileSync('git', ['rev-parse', '--is-inside-work-tree'],
+      { cwd, encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (trongGit !== 'true') return;
+    let ma = execFileSync('git', ['stash', 'create'],
+      { cwd, encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (!ma) {
+      ma = execFileSync('git', ['rev-parse', 'HEAD'],
+        { cwd, encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    }
+    // file đang theo dõi + file chưa theo dõi, để biết cái nào là MỚI sau lượt này
+    const ds = execFileSync('git', ['status', '--porcelain=v1', '-uall', '-z'],
+      { cwd, encoding: 'utf8', timeout: 10000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\0').filter(Boolean).map((x) => x.slice(3));
+    const theoDoi = execFileSync('git', ['ls-files', '-z'],
+      { cwd, encoding: 'utf8', timeout: 10000, maxBuffer: 8 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\0').filter(Boolean);
+    if (anhTruoc.size >= ANH_TOI_DA) anhTruoc.delete(anhTruoc.keys().next().value);
+    anhTruoc.set(sid, { ma, luc: Date.now(), cwd, coSan: new Set([...theoDoi, ...ds]) });
+  } catch {}   // không phải repo, git chậm, quyền — bỏ qua, chỉ mất tính năng quay lại
+}
+
 /* Dựng lệnh cho một lượt nhắn tin. */
 function spawnChat(sid, msg) {
+  chupTruocLuot(sid);
   /* stream-json + partial: để chữ hiện DẦN như terminal thay vì bung một cục khi
      xong. Chỉ bật ở đường NHẮN TIN — các đường khác (task mới, lệnh một phát) đọc
      stdout dạng chữ thường, đổi sang JSON là vỡ hết chỗ đọc kết quả. */
@@ -2762,6 +2802,10 @@ const server = http.createServer(async (req, res) => {
        xem trạng thái, đọc log, liệt kê. Không có rm/mv/git commit/npm install. Người
        cần chạy lệnh tự do thì gõ vào Claude như tin nhắn thường, ở đó có tầng quyền. */
     if (msg.startsWith('!')) {
+      /* Chụp ảnh cả ở đây. `!lệnh` hiện chỉ có nhóm ĐỌC nên không đổi file, nhưng
+         người dùng vừa gõ một lượt — họ mong "quay lại lượt trước" là quay về mốc
+         này. Không chụp thì mốc kẹt ở lượt Claude cuối cùng, có thể cách đó rất xa. */
+      chupTruocLuot(sid);
       const raw = msg.slice(1).trim();
       const ra = chayLenhNhanh(raw, sessionCwd(sid) || os.homedir());
       if (ra.loi) return json(res, 400, { error: ra.loi });
@@ -2796,6 +2840,56 @@ const server = http.createServer(async (req, res) => {
     const boQua = (hangCho.get(sid) || []).length;
     hangCho.delete(sid);
     return json(res, 200, { ok: true, boQua });
+  }
+
+  /* ---- QUAY LẠI LƯỢT TRƯỚC ----
+     Claude sửa nhầm 5 file thì terminal bấm `/rewind`. Dashboard trước đây KHÔNG có
+     gì — phải tự `git checkout` qua một phiên Claude khác, trên điện thoại là bế tắc.
+
+     GET  -> xem trước: file nào về nội dung cũ, file nào Claude TẠO MỚI
+     POST -> khôi phục nội dung. KHÔNG xoá file mới: chỉ liệt kê để người dùng tự
+             quyết. `git checkout <ảnh> -- .` không đụng file ngoài ảnh, mà xoá hộ thì
+             là xoá thứ người ta chưa nhìn thấy. */
+  if ((m = p.match(/^\/api\/quaylai\/([\w-]+)$/))) {
+    const sid = m[1];
+    const anh = anhTruoc.get(sid);
+    if (!anh) return json(res, 404, { ok: false, error: 'chưa có ảnh chụp nào cho phiên này' });
+
+    const doiGi = () => {
+      // file đổi so với ảnh chụp
+      const ra = execFileSync('git', ['-c', 'core.pager=cat', 'diff', '--name-only', anh.ma, '-z'],
+        { cwd: anh.cwd, encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter(Boolean);
+      const chuaTheoDoi = execFileSync('git', ['ls-files', '-o', '--exclude-standard', '-z'],
+        { cwd: anh.cwd, encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter(Boolean);
+      const tatCa = [...new Set([...ra, ...chuaTheoDoi])];
+      return {
+        veCu: tatCa.filter((f) => anh.coSan.has(f)),
+        moiTao: tatCa.filter((f) => !anh.coSan.has(f)),
+      };
+    };
+
+    if (req.method === 'GET') {
+      try {
+        const d = doiGi();
+        return json(res, 200, { ok: true, luc: anh.luc, cwd: anh.cwd, ...d });
+      } catch (e) {
+        return json(res, 500, { ok: false, error: String(e.message).slice(0, 200) });
+      }
+    }
+    if (req.method === 'POST') {
+      try {
+        const d = doiGi();
+        if (d.veCu.length) {
+          execFileSync('git', ['checkout', anh.ma, '--', '.'],
+            { cwd: anh.cwd, timeout: 20000, stdio: ['ignore', 'ignore', 'pipe'] });
+        }
+        return json(res, 200, { ok: true, luc: anh.luc, veCu: d.veCu, moiTao: d.moiTao });
+      } catch (e) {
+        return json(res, 500, { ok: false, error: String(e.message).slice(0, 200) });
+      }
+    }
   }
 
   /* ---- XEM THAY ĐỔI (git diff) của phiên ----

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus, Loader2, Plus, Search, X,
-  Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree, Maximize2, Circle, ChevronRight, GitCompare,
+  Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree, Maximize2, Circle, ChevronRight, GitCompare, Undo2,
   Bot, ShieldPlus,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -23,6 +23,7 @@ import { AskCard } from './ask-card';
 import { PlanCard } from './plan-card';
 import { XemFile } from './xem-file';
 import { XemDiff } from './xem-diff';
+import { QuayLai } from './quay-lai';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -283,6 +284,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   // Panel xem file phủ toàn màn — mở từ nút hàng 2 hoặc từ tên file trong thẻ tool
   const [moFile, setMoFile] = useState(false);
   const [moDiff, setMoDiff] = useState(false);
+  const [moQuayLai, setMoQuayLai] = useState(false);
   const [kqNhanh, setKqNhanh] = useState<{ lenh: string; out: string } | null>(null);
   // Màn soạn toàn màn cho những lần viết dài — ô nhập trong chat bị chặn trần 35% màn
   const [moRong, setMoRong] = useState(false);
@@ -1246,6 +1248,9 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           <MucSheet Icon={GitCompare} nhan="Claude đã đổi gì" mo="Xem git diff của thư mục dự án"
             testid="sheet-xem-diff"
             onClick={() => { setSheet(false); setMoDiff(true); }} />
+          <MucSheet Icon={Undo2} nhan="Quay lại lượt trước" mo="Đưa file về nội dung trước khi nhắn"
+            testid="sheet-quay-lai"
+            onClick={() => { setSheet(false); setMoQuayLai(true); }} />
         </SheetDuoi>
       </div>
 
@@ -1254,6 +1259,8 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
       {moFile && <XemFile sid={sid} onClose={() => setMoFile(false)} />}
 
       {moDiff && <XemDiff sid={sid} onClose={() => setMoDiff(false)} />}
+
+      {moQuayLai && <QuayLai sid={sid} onClose={() => setMoQuayLai(false)} />}
 
       {/* Kết quả `!lệnh`. Panel riêng chứ KHÔNG nhét vào khung chat: nó không nằm
           trong .jsonl nên F5 là mất, mà lẫn vào lịch sử thì đọc lại tưởng Claude nói. */}
