@@ -549,6 +549,17 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       ok(`${ten}px: không lỗi console`, errs.length === 0, errs[0] || '');
 
       if (w < 768) {
+        /* PHẢI về tab cli trước khi đo. Vòng lặp trên vừa bấm qua hết 6 tab nên đang
+           đứng ở `quota` — tab đó KHÔNG có thẻ phiên nào, tức không có `card-fav`,
+           `card-menu`, `card-chon`… Đo ở đó thì bài luôn xanh dù nút ghim chỉ 22×22px
+           (đã kiểm: mô phỏng cùng logic ở tab cli bắt ra 10 nút 22x22, còn bài test
+           báo PASS). */
+        const selCli = w >= 768 ? '[data-testid=nav-cli]' : '[data-testid=tabbar-cli]';
+        if (await page.locator(selCli).count()) {
+          await page.click(selCli);
+          await page.waitForSelector('[data-testid=session-row]', { timeout: 20000 }).catch(() => {});
+          await page.waitForTimeout(800);
+        }
         // vùng chạm gồm cả ::after của .tap44
         const nho = await page.evaluate(() => {
           const out = [];

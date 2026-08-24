@@ -382,7 +382,11 @@ export function SessionList({
         ].map((t) => (
           <button key={t.id || 'all'} data-testid={'tab-' + (t.id || 'all')} data-active={stat === t.id}
             onClick={() => { setStat(t.id); setPage(0); }}
-            className={cn('relative flex shrink-0 items-center gap-1 whitespace-nowrap py-2 transition-colors',
+            /* Nới bằng ĐỆM THẬT (py-3 = 44px cả hàng), KHÔNG dùng `.tap44`: bốn tab này
+               đã dùng `after:` để vẽ gạch chân tab đang chọn, mà `.tap44::after` cũng
+               chiếm ::after — đè nhau, mất gạch chân hoặc mất vùng chạm.
+               py-3 ra 42px (thiếu 2), nên dùng min-h-11 = 44px đúng ngưỡng. */
+            className={cn('relative flex min-h-11 shrink-0 items-center gap-1 whitespace-nowrap py-2 transition-colors',
               /* Cột hẹp giữ 12px và đệm nhỏ: ở 14px thì bốn tab cộng lại vượt 340px,
                  tab "Việc nền" bị cắt mất chữ — nhìn vào tưởng chỉ có ba tab. */
               gonGang ? 'gap-1 px-1.5 text-[12px]' : 'gap-1 px-2 text-[12px] sm:gap-1.5 sm:px-2.5 sm:text-[14px]',

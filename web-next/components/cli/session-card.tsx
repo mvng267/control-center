@@ -171,7 +171,12 @@ export function SessionCard({
           title={s.fav ? 'Bỏ ghim' : 'Ghim lên đầu danh sách'}
           aria-label={s.fav ? 'Bỏ ghim phiên' : 'Ghim phiên'}
           onClick={(e) => { e.stopPropagation(); onFav?.(!s.fav); navigator.vibrate?.(10); }}
-          className={cn('-m-1 shrink-0 p-1 transition-colors',
+          /* `.tap44` nới vùng chạm lên 44px bằng ::after trong suốt — icon vẫn 14px nên
+             bố cục không đổi. Trước chỉ có `-m-1 p-1` (4px mỗi phía) ra 22×22px, đúng
+             NỬA ngưỡng Apple HIG, mà nút này có trên MỌI thẻ phiên.
+             `relative` để ::after neo đúng vào nút; thiếu nó thì vùng chạm nhảy ra
+             phần tử cha gần nhất có position và nuốt vùng bấm mở phiên. */
+          className={cn('tap44 relative -m-1 shrink-0 p-1 transition-colors',
             s.fav
               ? 'text-status-run'
               : 'text-muted-foreground/35 hover:text-status-run sm:opacity-0 sm:group-hover:opacity-100')}>
