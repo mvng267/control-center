@@ -10,10 +10,13 @@ import { cn } from '@/lib/utils';
      !lệnh  -> chạy thẳng bash, trả kết quả ngay, không tốn lượt hỏi Claude
      #ghi   -> cất vào bộ nhớ để các phiên sau vẫn nhớ
 
-   Đã thử thật trước khi làm: cả hai đều chạy qua `claude -p`, tức đúng đường mà
-   dashboard đang dùng. `!echo NOI_TU_DASHBOARD` gửi qua dashboard trả về đúng
-   "NOI_TU_DASHBOARD" sau ~12 giây, không sinh lượt hội thoại nào.
-   `#` ghi vào bộ nhớ tự động, KHÔNG đụng ~/.claude/CLAUDE.md và không bẩn repo. */
+   `!lệnh` giờ CHẠY THẲNG ở server, không qua Claude nữa. Đo thật: qua `claude -p`
+   mất 6,4 giây cho `!echo`; chạy thẳng thì `!ls` 29ms, `!node -v` 44ms,
+   `!git status` 770ms. Bảng tra cứng ở server (LENH_NHANH) chỉ mở nhóm ĐỌC —
+   dashboard mở ra mạng nên không nhận lệnh tự do; `!rm -rf /` bị chặn.
+
+   `#` vẫn qua `claude -p`: nó ghi vào bộ nhớ tự động của CLI, KHÔNG đụng
+   ~/.claude/CLAUDE.md và không bẩn repo — không có cách nào làm việc đó ở server. */
 
 export type Che = 'bash' | 'nho' | null;
 

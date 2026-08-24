@@ -283,6 +283,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   // Panel xem file phủ toàn màn — mở từ nút hàng 2 hoặc từ tên file trong thẻ tool
   const [moFile, setMoFile] = useState(false);
   const [moDiff, setMoDiff] = useState(false);
+  const [kqNhanh, setKqNhanh] = useState<{ lenh: string; out: string } | null>(null);
   // Màn soạn toàn màn cho những lần viết dài — ô nhập trong chat bị chặn trần 35% màn
   const [moRong, setMoRong] = useState(false);
   const cauHinh = useCauHinh();
@@ -502,10 +503,17 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
     setPending((ps) => [...ps, mine]);
     atBottom.current = true;   // vừa gửi thì luôn cuộn xuống xem tin của mình
     try {
-      const r = await api<{ error?: string }>('/api/chat/' + sid, {
+      const r = await api<{ error?: string; nhanh?: boolean; output?: string; lenh?: string }>('/api/chat/' + sid, {
         method: 'POST', body: JSON.stringify({ message: msg }),
       });
-      if (r.error) {
+      /* `!lệnh` chạy thẳng shell, KHÔNG sinh lượt hội thoại nào — nên tin tạm phải tự
+         gỡ, không thì nó treo mãi chờ một lượt sẽ không bao giờ tới. Kết quả hiện ở
+         panel riêng: nhét vào khung chat thì lịch sử lẫn thứ không có trong .jsonl,
+         F5 một cái là mất, người đọc tưởng hỏng. */
+      if (r.nhanh) {
+        setPending((ps) => ps.filter((p) => p !== mine));
+        setKqNhanh({ lenh: r.lenh || msg, out: r.output || '(không có output)' });
+      } else if (r.error) {
         setPending((ps) => ps.filter((p) => p !== mine));
         setText(v); setAtt(keep); toast.error('Không gửi được: ' + r.error);
       }
@@ -1246,6 +1254,26 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
       {moFile && <XemFile sid={sid} onClose={() => setMoFile(false)} />}
 
       {moDiff && <XemDiff sid={sid} onClose={() => setMoDiff(false)} />}
+
+      {/* Kết quả `!lệnh`. Panel riêng chứ KHÔNG nhét vào khung chat: nó không nằm
+          trong .jsonl nên F5 là mất, mà lẫn vào lịch sử thì đọc lại tưởng Claude nói. */}
+      {kqNhanh && (
+        <div className="fixed inset-x-0 bottom-0 z-[120] max-h-[60dvh] overflow-auto border-t border-border bg-card"
+          data-testid="kq-nhanh" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div className="sticky top-0 flex items-center gap-2 border-b border-border bg-card px-3 py-2">
+            <Zap className="size-3.5 shrink-0 text-tool-accent" />
+            <span className="min-w-0 flex-1 truncate font-mono text-[12px]">!{kqNhanh.lenh}</span>
+            <button onClick={() => setKqNhanh(null)} data-testid="kq-nhanh-dong"
+              title="Đóng" aria-label="Đóng"
+              className="tap44 relative shrink-0 text-[12px] text-muted-foreground hover:text-foreground">
+              đóng
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap break-words px-3 py-2 font-mono text-[12px] leading-relaxed">
+            {kqNhanh.out}
+          </pre>
+        </div>
+      )}
 
       {/* MÀN SOẠN TOÀN MÀN — cho những lần viết dài. Ô nhập trong khung chat bị chặn
           trần 35% màn (nếu không thì nó nuốt hết chỗ đọc chat), nên viết vài chục dòng

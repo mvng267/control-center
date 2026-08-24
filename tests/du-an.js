@@ -676,6 +676,51 @@ async function snapshot() {
       'kiểm ' + (snapFav.data.sessions || []).length + ' phiên');
   }
 
+  /* ---------- `!lệnh` chạy thẳng, không qua Claude ----------
+     Terminal `!git status` chạy thẳng bash, không tốn token. Dashboard trước đây vẫn
+     spawn `claude -p` — đo thật `!echo`: 6,4 giây. Chú thích ở mode-hint.tsx đã hứa
+     "chạy thẳng bash, không tốn lượt" từ lâu mà chưa đúng.
+
+     Bảng tra CỨNG, chỉ nhóm ĐỌC: dashboard mở ra mạng. */
+  {
+    const post = (ep, body) => fetch(URL + ep, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Dash-Token': token },
+      body: JSON.stringify(body),
+    }).then((r) => r.json().then((j) => ({ ...j, _code: r.status })))
+      .catch((e) => ({ _code: 0, error: e.message }));
+
+    const ds = (await snapshot()).data.sessions || [];
+    const sid = (ds.find((x) => x.duAn && x.duAn.repo) || ds[0] || {}).sid;
+    if (!sid) {
+      ok('`!lệnh` chạy thẳng, không sinh lượt hội thoại', false, 'không có phiên nào');
+    } else {
+      const t0 = Date.now();
+      const r = await post('/api/chat/' + sid, { message: '!node -v' });
+      const ms = Date.now() - t0;
+
+      ok('`!lệnh` chạy thẳng, không sinh lượt hội thoại (cờ nhanh)',
+        r._code === 200 && r.nhanh === true, 'nhanh=' + r.nhanh);
+      /* Ngưỡng 2 giây: qua `claude -p` đo được 6,4 giây, chạy thẳng đo được 29-770ms.
+         Đặt 2s để không đỏ oan lúc máy nghẽn, mà vẫn bắt được nếu ai đó lỡ nối lại
+         qua Claude. */
+      ok('`!lệnh` trả về dưới 2 giây (trước: 6,4 giây qua claude -p)',
+        ms < 2000, ms + 'ms');
+      ok('`!lệnh` trả đúng output thật', /^v\d+\./.test(String(r.output || '').trim()),
+        String(r.output || '').slice(0, 20));
+
+      /* Bảng tra cứng là toàn bộ hàng rào ở đây — không có tầng quyền nào khác. */
+      const cam = await post('/api/chat/' + sid, { message: '!rm -rf /' });
+      ok('lệnh ngoài bảng tra bị chặn (không có tầng quyền nào khác)',
+        cam._code === 400 && /không nằm trong danh sách/.test(String(cam.error || '')),
+        'mã ' + cam._code);
+
+      const camNoi = await post('/api/chat/' + sid, { message: '!git status; rm -rf x' });
+      ok('không ghép được lệnh bằng dấu chấm phẩy',
+        camNoi._code === 400, 'mã ' + camNoi._code);
+    }
+  }
+
   /* ---------- Xem thay đổi (git diff) ----------
      "Claude vừa đổi gì?" là câu hỏi số một khi mở dashboard trên điện thoại. CLI CHẶN
      `/diff` ở chế độ -p (đã chạy thử: "isn't available in this environment"), nên

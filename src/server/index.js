@@ -1574,6 +1574,49 @@ function chayTinKeTiep(sid) {
   spawnChat(sid, msg);
 }
 
+/* Lệnh `!` được phép. CHỈ nhóm đọc — xem trạng thái, đọc log, liệt kê.
+   Không rm/mv/cp, không git commit/push, không npm install, không mở editor.
+   Ai cần chạy lệnh tự do thì gõ vào Claude như tin nhắn thường: ở đó có tầng quyền
+   của CLI, còn đây thì không có gì cả. */
+const LENH_NHANH = {
+  // git — chỉ đọc
+  'git status': ['git', ['status', '--short', '--branch']],
+  'git diff': ['git', ['-c', 'core.pager=cat', 'diff', 'HEAD', '--stat', '--no-color']],
+  'git log': ['git', ['-c', 'core.pager=cat', 'log', '--oneline', '-15', '--no-color']],
+  'git branch': ['git', ['branch', '-vv', '--no-color']],
+  'git stash list': ['git', ['-c', 'core.pager=cat', 'stash', 'list']],
+  // thư mục / file
+  ls: ['ls', ['-la']],
+  pwd: ['pwd', []],
+  // môi trường
+  'node -v': ['node', ['--version']],
+  'npm -v': ['npm', ['--version']],
+  df: ['df', ['-h']],
+  uptime: ['uptime', []],
+  // tiến trình
+  'ps claude': ['sh', ['-c', 'ps ax | grep "[c]laude" | head -20']],
+  'lsof 7799': ['sh', ['-c', 'lsof -ti:7799 -sTCP:LISTEN || echo "(không ai nghe 7799)"']],
+};
+
+function chayLenhNhanh(raw, cwd) {
+  if (!raw) return { loi: 'gõ tên lệnh sau dấu !' };
+  const muc = LENH_NHANH[raw];
+  if (!muc) {
+    const ds = Object.keys(LENH_NHANH).join(', ');
+    return { loi: 'lệnh "' + raw + '" không nằm trong danh sách cho phép. Có: ' + ds };
+  }
+  const [bin, args] = muc;
+  return {
+    chay: (res) => execFile(bin, args, { cwd, maxBuffer: 2 * 1024 * 1024, timeout: 10000, env: process.env },
+      (err, stdout, stderr) => {
+        const out = ((stdout || '') + (stderr || '')).trim();
+        if (err && !out) return json(res, 500, { error: err.message.slice(0, 200) });
+        // `nhanh: true` để client biết đây KHÔNG phải lượt hội thoại, đừng chờ Claude
+        json(res, 200, { ok: true, nhanh: true, lenh: raw, output: out.slice(-20000) || '(không có output)' });
+      }),
+  };
+}
+
 /* Dựng lệnh cho một lượt nhắn tin. */
 function spawnChat(sid, msg) {
   /* stream-json + partial: để chữ hiện DẦN như terminal thay vì bung một cục khi
@@ -2710,6 +2753,21 @@ const server = http.createServer(async (req, res) => {
     try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad json' }); }
     const msg = (body.message || '').trim();
     if (!msg) return json(res, 400, { error: 'message required' });
+    /* `!lệnh` -> CHẠY THẲNG, không qua Claude.
+       Terminal `!git status` chạy thẳng bash, không tốn token. Dashboard trước đây vẫn
+       spawn `claude -p` — đo thật `!echo`: 6,4 giây, trong khi chạy thẳng dưới 10ms.
+       Chú thích ở mode-hint.tsx đã hứa "chạy thẳng bash, không tốn lượt" từ lâu.
+
+       BẢNG TRA CỨNG, không nhận lệnh tự do: dashboard mở ra mạng. Chỉ mở nhóm ĐỌC —
+       xem trạng thái, đọc log, liệt kê. Không có rm/mv/git commit/npm install. Người
+       cần chạy lệnh tự do thì gõ vào Claude như tin nhắn thường, ở đó có tầng quyền. */
+    if (msg.startsWith('!')) {
+      const raw = msg.slice(1).trim();
+      const ra = chayLenhNhanh(raw, sessionCwd(sid) || os.homedir());
+      if (ra.loi) return json(res, 400, { error: ra.loi });
+      return ra.chay(res);
+    }
+
     /* Đang chạy thì XẾP HÀNG, không trả 409 nữa. Đo thật trên CLI: gửi lượt mới lúc
        lượt cũ chưa xong thì nó xếp hàng và trả lời cả hai — nên chặn ở dashboard chỉ
        là hạn chế tự đặt ra. */
