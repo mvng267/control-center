@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Send, Check, Pencil, Copy, CheckCheck, ImagePlus, Loader2, Plus, Search, X,
-  Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree, Maximize2, Circle, ChevronRight,
+  Terminal, FileCode2, Zap, Brain, ChevronDown, FolderTree, Maximize2, Circle, ChevronRight, GitCompare,
   Bot, ShieldPlus,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -22,6 +22,7 @@ import { NoteLine, type NotePart } from './note-line';
 import { AskCard } from './ask-card';
 import { PlanCard } from './plan-card';
 import { XemFile } from './xem-file';
+import { XemDiff } from './xem-diff';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -281,6 +282,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   const [sheet, setSheet] = useState(false);
   // Panel xem file phủ toàn màn — mở từ nút hàng 2 hoặc từ tên file trong thẻ tool
   const [moFile, setMoFile] = useState(false);
+  const [moDiff, setMoDiff] = useState(false);
   // Màn soạn toàn màn cho những lần viết dài — ô nhập trong chat bị chặn trần 35% màn
   const [moRong, setMoRong] = useState(false);
   const cauHinh = useCauHinh();
@@ -1183,6 +1185,14 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
               <FolderTree className="size-3 opacity-70" />
               xem file
             </button>
+            {/* "Claude vừa đổi gì" — câu hỏi số một khi mở app trên điện thoại. CLI
+                chặn `/diff` ở chế độ -p, nên trước đây phải nhờ chính Claude chạy
+                `git diff`: tốn một lượt, tốn tiền, mà trả về văn xuôi. */}
+            <button type="button" data-testid="goi-y-xem-diff" onClick={() => setMoDiff(true)}
+              className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95">
+              <GitCompare className="size-3 opacity-70" />
+              đã đổi gì
+            </button>
           </div>
 
           {/* Ghim phải — không cuộn mất. `ml-auto` cho trường hợp điện thoại: bên
@@ -1222,12 +1232,20 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           <MucSheet Icon={FolderTree} nhan="Xem file" mo="Đọc mã nguồn trong thư mục dự án"
             testid="sheet-xem-file"
             onClick={() => { setSheet(false); setMoFile(true); }} />
+          {/* Trên điện thoại hàng gợi ý phía trên bị `hidden`, nên nút "đã đổi gì" ở
+              đó không bấm được — phải có mục ở bảng này. Đây mới là đường DUY NHẤT
+              vào tính năng khi dùng từ iPhone. */}
+          <MucSheet Icon={GitCompare} nhan="Claude đã đổi gì" mo="Xem git diff của thư mục dự án"
+            testid="sheet-xem-diff"
+            onClick={() => { setSheet(false); setMoDiff(true); }} />
         </SheetDuoi>
       </div>
 
       {/* Panel xem file — phủ toàn màn (fixed inset-0), nằm ngoài khu nhập để bàn phím
           iPhone bật lên không đẩy nó lệch. */}
       {moFile && <XemFile sid={sid} onClose={() => setMoFile(false)} />}
+
+      {moDiff && <XemDiff sid={sid} onClose={() => setMoDiff(false)} />}
 
       {/* MÀN SOẠN TOÀN MÀN — cho những lần viết dài. Ô nhập trong khung chat bị chặn
           trần 35% màn (nếu không thì nó nuốt hết chỗ đọc chat), nên viết vài chục dòng

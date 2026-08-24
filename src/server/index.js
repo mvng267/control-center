@@ -2740,6 +2740,43 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, boQua });
   }
 
+  /* ---- XEM THAY ĐỔI (git diff) của phiên ----
+     Câu hỏi số một khi mở dashboard trên điện thoại: "Claude vừa đổi gì?". Terminal
+     có `/diff` ngay, còn CLI CHẶN lệnh đó ở chế độ `-p` (đã chạy thử:
+     "isn't available in this environment"). Trước đây muốn biết phải nhờ chính Claude
+     chạy `git diff` — tốn một lượt và tiền, mà câu trả lời lại là văn xuôi.
+
+     Đo thật: 120/222 phiên nằm trong repo git, tức hơn nửa dùng được ngay.
+
+     `--stat` mặc định: bản đầy đủ có thể vài nghìn dòng, mở trên điện thoại là cuộn
+     mãi. Muốn xem hết thì `?day=1`, và vẫn cắt 200KB.
+
+     KHÔNG cho client truyền tham số git nào: dashboard mở ra mạng, `git diff` nhận cả
+     `--output=<file>` (ghi file) và các cờ chạy lệnh ngoài. Bảng tra cứng, hết. */
+  if ((m = p.match(/^\/api\/diff\/([\w-]+)$/))) {
+    const sid = m[1];
+    const cwd = sessionCwd(sid);
+    if (!cwd) return json(res, 404, { ok: false, error: 'phiên này không có thư mục dự án' });
+    const day = url.searchParams.get('day') === '1';
+    /* `HEAD` chứ không phải diff trần: diff trần bỏ qua thứ đã `git add`, mà Claude
+       thường add rồi mới sửa tiếp — nhìn vào tưởng chưa làm gì. */
+    const args = day
+      ? ['-c', 'core.pager=cat', 'diff', 'HEAD', '--no-color']
+      : ['-c', 'core.pager=cat', 'diff', 'HEAD', '--stat', '--no-color'];
+    execFile('git', args, { cwd, maxBuffer: 8 * 1024 * 1024, timeout: 20000, env: process.env },
+      (err, stdout, stderr) => {
+        const ra = String(stdout || '').trim();
+        const loi = String(stderr || '').trim();
+        // không phải repo git -> nói rõ, đừng để người dùng đoán
+        if (loi && /not a git repository/i.test(loi)) {
+          return json(res, 200, { ok: false, laGit: false, error: 'thư mục này không phải repo git', cwd });
+        }
+        if (err && !ra) return json(res, 500, { ok: false, error: (loi || err.message).slice(0, 300) });
+        json(res, 200, { ok: true, laGit: true, cwd, day, diff: ra.slice(0, 200000), sach: !ra });
+      });
+    return;
+  }
+
   /* ---- KHÔI PHỤC phiên treo ----
      `treo` chỉ tính khi `procs.has(sid)` (treoBaoLau, dòng ~1221) — tức tiến trình
      VẪN ĐANG CHẠY mà im quá 15 phút. Nên khôi phục phải GIẾT cái cũ trước rồi mới

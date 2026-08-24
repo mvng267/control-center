@@ -676,6 +676,51 @@ async function snapshot() {
       'kiểm ' + (snapFav.data.sessions || []).length + ' phiên');
   }
 
+  /* ---------- Xem thay đổi (git diff) ----------
+     "Claude vừa đổi gì?" là câu hỏi số một khi mở dashboard trên điện thoại. CLI CHẶN
+     `/diff` ở chế độ -p (đã chạy thử: "isn't available in this environment"), nên
+     trước đây phải nhờ chính Claude chạy `git diff` — tốn một lượt, tốn tiền, mà trả
+     về văn xuôi chứ không phải patch.
+
+     Đo thật: 120/222 phiên nằm trong repo git. */
+  {
+    const lay = (ep) => fetch(URL + ep, { headers: { 'X-Dash-Token': token } })
+      .then((r) => r.json().then((j) => ({ ...j, _code: r.status })))
+      .catch((e) => ({ _code: 0, error: e.message }));
+
+    // phiên của chính dự án này — chắc chắn là repo git
+    const ds = (await snapshot()).data.sessions || [];
+    const trongGit = ds.find((x) => x.duAn && x.duAn.repo);
+    if (!trongGit) {
+      ok('git diff: có phiên trong repo để thử', false, 'không tìm được phiên nào có repo');
+    } else {
+      const st = await lay('/api/diff/' + trongGit.sid);
+      ok('git diff trả được thay đổi (không cần hỏi Claude)',
+        st._code === 200 && st.ok === true && st.laGit === true,
+        'mã ' + st._code + ' ' + String(st.error || '').slice(0, 40));
+
+      /* Mặc định `--stat`: bản đầy đủ có thể vài nghìn dòng, mở trên điện thoại là
+         cuộn mãi. Phải NGẮN hơn bản ?day=1 mới đúng ý. */
+      const day = await lay('/api/diff/' + trongGit.sid + '?day=1');
+      if (st.ok && day.ok && !st.sach) {
+        ok('mặc định là --stat (ngắn), ?day=1 mới trả từng dòng',
+          String(day.diff || '').length >= String(st.diff || '').length
+          && /^diff --git|^@@/m.test(String(day.diff || '')),
+          `stat ${String(st.diff || '').length}B, đầy ${String(day.diff || '').length}B`);
+      } else {
+        ok('mặc định là --stat (ngắn), ?day=1 mới trả từng dòng', st.sach === true,
+          st.sach ? 'repo sạch, bỏ qua' : 'không đọc được');
+      }
+    }
+
+    /* Phiên KHÔNG có thư mục dự án (chạy ở chỗ đã xoá) phải báo rõ, đừng để người
+       dùng đoán vì sao trống. */
+    const khong = await lay('/api/diff/khong-co-phien-nay');
+    ok('phiên không có thư mục dự án -> báo rõ, không 500',
+      khong._code === 404 && /thư mục dự án/.test(String(khong.error || '')),
+      'mã ' + khong._code);
+  }
+
   /* ---------- Nén gzip ----------
      Server trước đây KHÔNG nén gì cả. Đo thật trên máy này: mở app tải 1.733 KB
      JS+CSS, và dòng SSE 131,5 KB mỗi nhịp — nhịp 2 giây tức 3,8 MB/phút. Qua
