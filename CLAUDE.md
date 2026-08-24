@@ -24,17 +24,27 @@ trình cũ chưa chết.
 
 ```
 src/server/     backend Node THUẦN, zero dependency
-  index.js      định tuyến + logic (46 endpoint)
+  index.js      TẤT CẢ: định tuyến, logic, hằng số, json/readBody/hostAllowed
   tools.js      tool_use/tool_result -> dữ liệu cho thẻ tool
-  config.js     hằng số dùng chung
-  http-utils.js json, readBody, hostAllowed
-bin/control.js  điểm vào khi cài bằng npm (--port, --version, --help)
+bin/control.js  điểm vào khi cài bằng npm (--port, --version, --autostart, --help)
 web-next/       GIAO DIỆN CHÍNH — Next.js 16 + React 19 + Tailwind v4 + shadcn/ui
   out/          bản build tĩnh — ĐƯỢC COMMIT, server phục vụ ở cùng cổng 7799
-web/legacy/     giao diện cũ — đường lui, bật bằng NEW_UI=0
+web/legacy/     giao diện cũ — CHỈ CÒN ĐỂ THAM KHẢO, xem cảnh báo bên dưới
 tests/          ui-new (giao diện mới), e2e (bản cũ), du-an (server), may-moi, push
 docs/           FEATURES.md (bảng kiểm), CLAUDE-DATA.md (cấu trúc ~/.claude), CAI-DAT.md
 ```
+
+**`web/legacy` KHÔNG còn là đường lui dùng được.** Chạm lần cuối 13/8/2026, từ đó
+72 commit (34 cái `feat:`). Nó không biết 14 endpoint mới — resume, an, fav,
+duyet-quyen, tim, imgs, pg, docker, quota, claude, plan, files, cauhinh, capnhat. Bật
+`NEW_UI=0` giờ ra một bản MẤT một nửa tính năng, không phải bản dự phòng. Giữ lại chỉ
+vì `tests/e2e.js` (147 assertion, phần lớn phủ tab AGY) chưa chuyển sang `ui-new.js`.
+Chuyển xong thì xoá cả hai.
+
+**Từng có `config.js` và `http-utils.js` trong `src/server/` — KHÔNG AI require chúng.**
+Mọi hằng số và `json`/`readBody`/`hostAllowed` đều được định nghĩa lại trong
+`index.js`. Hai file sống 284 dòng code chết mà tài liệu này mô tả như kiến trúc thật,
+nên ai đọc cũng tưởng phải sửa ở đó. Đã xoá.
 
 **Một tiến trình, một cổng.** Frontend là static export do chính server Node phục vụ —
 bắt buộc, vì Web Push và service worker vỡ nếu tách hai cổng khi vào từ điện thoại qua

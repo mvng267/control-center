@@ -218,6 +218,26 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 159 | `/api/plan` chặn đọc file ngoài `~/.claude/plans` | `~/.ssh/id_rsa` và `plans/../../.zshrc` → 400 | ui-new |
 | 160 | iPhone: đang chat thì **ẩn header + thanh tab** | khung chat 656px → 720px | ui-new |
 | 161 | Ẩn xong vẫn quay lại được danh sách | bấm mũi tên ← | ui-new |
+| 162 | Nhiều câu hỏi → **tab ngang** như CLI, mỗi lúc một câu | 3 câu: 623px → 280px | ui-new |
+| 163 | Chọn xong tự nhảy sang câu chưa trả lời | `ask-tab` đổi `data-active` | ui-new |
+| 164 | Còn câu bỏ trống → nói rõ còn mấy câu | "Còn 2 câu chưa chọn" | ui-new |
+| 165 | Lựa chọn KHÔNG mất khi poll 2s | React key bất biến qua cửa sổ trượt | ui-new |
+| 166 | Chế độ quyền + mức nghĩ nằm ở **dòng trạng thái** dưới ô gõ | đúng chỗ CLI in ra, không phải header | ui-new |
+| 167 | Dòng trạng thái HIỆN trên iPhone | trước bị `hidden sm:flex` ẩn hẳn ở 390px | ui-new |
+| 168 | **Xem mọi ảnh trong phiên** (ngoài cửa sổ 30 tin) | menu ⋯ → Ảnh trong phiên; phiên thật có 130 ảnh | ui-new |
+| 169 | Ảnh trong bảng tải THẬT, không phải ô rỗng | `naturalWidth > 0` | ui-new |
+| 170 | Ô ảnh và hàng lưới cao theo nội dung | ô 144px, hàng 144px — không bị chia đều 10.78px | ui-new |
+| 171 | Chấm `⏺` của LƯỢT khác màu chấm của TOOL | trắng = Claude nói, tím = chạy lệnh | ui-new |
+| 172 | Dòng `⎿` thụt vào làm con của tool (18px) | trước chỉ 3px, dính sát lề | ui-new |
+| 173 | Dòng `⎿` hook lỗi cũng thụt cùng mức | nó sinh ra TỪ một tool cụ thể | ui-new |
+| 174 | Dấu nhắc `❯` đúng như CLI (không phải `>`) | bắt bằng PTY thật | ui-new |
+| 175 | Khung nhập là **đường kẻ ngang**, không phải hộp bo góc | CLI dùng 80 dấu `─`, không có ┌┐└┘ | ui-new |
+| 176 | Ô gõ không có nền (`dark:bg-input/30` bị đè) | terminal không có nền nào | ui-new |
+| 177 | Gợi ý ngăn nhau bằng `·` như CLI | "Enter to confirm · Esc to cancel" | tay |
+| 178 | **Bông hoa Claude xoay** khi đang chạy | `hoa-xoay` đổi ký tự mỗi 120ms | ui-new |
+| 179 | Trạng thái có động từ + số giây trôi | "Đang nghĩ… 2s" → "Vẫn đang chạy" → "Chạy khá lâu rồi" | ui-new |
+| 180 | Ô nhập cao 44px trên điện thoại (5 chỗ) | trước 32–36px, dưới ngưỡng ngón tay | ui-new |
+| 181 | Ô chọn phiên có vùng chạm 44×44 | ô vuông vẫn 14px, `<label>` bọc ngoài nới ra | ui-new |
 
 ---
 
@@ -292,24 +312,3 @@ file đó là gỡ khoá.
 2. Sau **mỗi bước**: chạy lại, so với mốc.
 3. Ở bước cuối (B5c): mở trên **iPhone thật**, tick tay toàn bộ mục ghi `tay`.
 4. Mục nào không tick được → dừng, sửa xong mới đi tiếp.
-
-| 162 | Nhiều câu hỏi → **tab ngang** như CLI, mỗi lúc một câu | 3 câu: 623px → 280px | ui-new |
-| 163 | Chọn xong tự nhảy sang câu chưa trả lời | `ask-tab` đổi `data-active` | ui-new |
-| 164 | Còn câu bỏ trống → nói rõ còn mấy câu | "Còn 2 câu chưa chọn" | ui-new |
-| 165 | Lựa chọn KHÔNG mất khi poll 2s | React key bất biến qua cửa sổ trượt | ui-new |
-| 166 | Chế độ quyền + mức nghĩ nằm ở **dòng trạng thái** dưới ô gõ | đúng chỗ CLI in ra, không phải header | ui-new |
-| 167 | Dòng trạng thái HIỆN trên iPhone | trước bị `hidden sm:flex` ẩn hẳn ở 390px | ui-new |
-| 168 | **Xem mọi ảnh trong phiên** (ngoài cửa sổ 30 tin) | menu ⋯ → Ảnh trong phiên; phiên thật có 130 ảnh | ui-new |
-| 169 | Ảnh trong bảng tải THẬT, không phải ô rỗng | `naturalWidth > 0` | ui-new |
-| 170 | Ô ảnh và hàng lưới cao theo nội dung | ô 144px, hàng 144px — không bị chia đều 10.78px | ui-new |
-| 171 | Chấm `⏺` của LƯỢT khác màu chấm của TOOL | trắng = Claude nói, tím = chạy lệnh | ui-new |
-| 172 | Dòng `⎿` thụt vào làm con của tool (18px) | trước chỉ 3px, dính sát lề | ui-new |
-| 173 | Dòng `⎿` hook lỗi cũng thụt cùng mức | nó sinh ra TỪ một tool cụ thể | ui-new |
-| 174 | Dấu nhắc `❯` đúng như CLI (không phải `>`) | bắt bằng PTY thật | ui-new |
-| 175 | Khung nhập là **đường kẻ ngang**, không phải hộp bo góc | CLI dùng 80 dấu `─`, không có ┌┐└┘ | ui-new |
-| 176 | Ô gõ không có nền (`dark:bg-input/30` bị đè) | terminal không có nền nào | ui-new |
-| 177 | Gợi ý ngăn nhau bằng `·` như CLI | "Enter to confirm · Esc to cancel" | tay |
-| 178 | **Bông hoa Claude xoay** khi đang chạy | `hoa-xoay` đổi ký tự mỗi 120ms | ui-new |
-| 179 | Trạng thái có động từ + số giây trôi | "Đang nghĩ… 2s" → "Vẫn đang chạy" → "Chạy khá lâu rồi" | ui-new |
-| 180 | Ô nhập cao 44px trên điện thoại (5 chỗ) | trước 32–36px, dưới ngưỡng ngón tay | ui-new |
-| 181 | Ô chọn phiên có vùng chạm 44×44 | ô vuông vẫn 14px, `<label>` bọc ngoài nới ra | ui-new |

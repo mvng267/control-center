@@ -3249,16 +3249,11 @@ const server = http.createServer(async (req, res) => {
     return res.end(img.buf);
   }
 
-  if ((m = p.match(/^\/api\/status\/([\w-]+)$/))) {
-    const sid = m[1];
-    const file = findSessionFile(sid);
-    let mt = 0;
-    if (file) { try { mt = fs.statSync(file).mtimeMs; } catch {} }
-    return json(res, 200, { sid, status: statusOf(sid, mt), running: procs.has(sid), typing: procs.has(sid) });
-  }
-
-  // (Handler /api/export thứ hai từng nằm ở đây đã được XOÁ: nó không bao giờ
-  //  chạy được vì handler ở phần trên đã return trước — code chết.)
+  /* (Đã XOÁ hai handler code chết từng nằm ở đây:
+      - /api/export thứ hai: không bao giờ chạy vì handler phía trên return trước.
+      - /api/status/:sid: không client nào và không test nào gọi. `/api/history` trả
+        cùng thông tin (status + typing) kèm cả tin nhắn, còn danh sách thì SSE đẩy
+        sẵn mỗi 2 giây — endpoint này chỉ còn là một đường vào không ai đi.) */
 
   // ---- /model: set model cho task mới ----
   if (p === '/api/model' && req.method === 'POST') {
