@@ -1499,9 +1499,15 @@ async function snapshot() {
       ok('cwd = nhà: không đọc được file nào',
         f.status === 403 && !fb.noiDung, f.status + ' ' + (fb.error || ''));
 
-      // và phiên dự án BÌNH THƯỜNG vẫn phải mở được, không chặn quá tay
+      /* Phiên dự án BÌNH THƯỜNG vẫn phải mở được, không chặn quá tay.
+
+         Lọc theo điều kiện bài này CẦN, đừng lấy phần tử đầu khớp: danh sách xoay
+         theo thời gian nên phiên đầu lúc là dự án thật, lúc là phiên `(không rõ)`
+         — server đặt khoá `(unknown)` cho phiên không đọc được cwd, và phiên đó
+         KHÔNG có cây file nên bài đỏ oan. Đúng bẫy CLAUDE.md đã ghi. */
       const thuong = (snap2.data.sessions || []).find((s) => s.duAn && s.duAn.conTonTai
-        && !s.duAn.laNhap && s.duAn.khoa !== os.homedir());
+        && !s.duAn.laNhap && s.duAn.khoa !== os.homedir()
+        && String(s.duAn.khoa || '').startsWith('/'));
       if (thuong) {
         const t2 = await fetch(`${URL}/api/tree?sid=${thuong.sid}`, { headers: { 'X-Dash-Token': token } })
           .then((r) => r.json()).catch(() => ({}));

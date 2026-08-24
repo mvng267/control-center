@@ -1175,10 +1175,15 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
         return { so: ds.length, hien: ds.filter((e) => !!e.offsetParent).length,
           nhan: ds.map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24)) };
       });
-      // 4 ky tu mo dau + dinh anh + xem file + xem diff
-      // (xem diff PHAI co o day: hang goi y trong khung chat bi `hidden` tren dien
-      //  thoai, nen bang chon nay la duong DUY NHAT vao tinh nang do tu iPhone)
-      ok('iPhone: sheet chuc nang hien du 7 muc', mucSheet.hien === 7,
+      /* Dem DONG, khong chot so cung: moi lan them mot muc vao bang chon la bai nay
+         do vi lech so — da xay ra hai lan lien tiep (them "Claude da doi gi" roi
+         "Quay lai luot truoc"). Dieu can chot la MOI muc dung ra deu HIEN duoc, chu
+         khong phai con so bao nhieu.
+
+         Bang chon nay quan trong vi tren dien thoai hang goi y trong khung chat bi
+         `hidden` — day la duong DUY NHAT vao mot so tinh nang tu iPhone. */
+      ok('iPhone: sheet chuc nang — moi muc dung ra deu hien duoc',
+        mucSheet.hien === mucSheet.so && mucSheet.so >= 6,
         mucSheet.hien + '/' + mucSheet.so + ': ' + mucSheet.nhan.join(' | '));
 
       // Bam muc `/` trong sheet phai CHEN ky tu vao o nhap (nhu go tay)
