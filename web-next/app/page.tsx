@@ -7,9 +7,23 @@ import { AppShell, TABS, type TabId } from '@/components/layout/app-shell';
 import { ManCauHinh } from '@/components/layout/man-cau-hinh';
 import { usePullToRefresh, useSwipeTabs } from '@/lib/use-gestures';
 import { TokenGate } from '@/components/token-gate';
-import { AgyTab } from '@/components/agy/agy-tab';
+import dynamic from 'next/dynamic';
 import { DockerTab } from '@/components/docker/docker-tab';
-import { StatsTab } from '@/components/stats/stats-tab';
+
+/* AGY và Thống kê tải LƯỜI: chỉ hai tab này dùng recharts, mà recharts nằm trong
+   chunk 1 MB — hơn nửa toàn bộ bundle 1.733 KB. Tab mặc định là `cli`, nên trước đây
+   mở app từ điện thoại là tải cả thư viện biểu đồ cho hai tab có thể không bao giờ mở.
+
+   `ssr: false` bắt buộc với `output: 'export'`: không có server để render trước, mà
+   recharts đọc kích thước DOM lúc dựng. */
+const AgyTab = dynamic(() => import('@/components/agy/agy-tab').then((m) => ({ default: m.AgyTab })), {
+  ssr: false,
+  loading: () => <div className="p-4 text-[14px] text-muted-foreground">đang tải Agy Proxy…</div>,
+});
+const StatsTab = dynamic(() => import('@/components/stats/stats-tab').then((m) => ({ default: m.StatsTab })), {
+  ssr: false,
+  loading: () => <div className="p-4 text-[14px] text-muted-foreground">đang tải Thống kê…</div>,
+});
 import { QuotaTab } from '@/components/quota/quota-tab';
 import { HermesTab } from '@/components/hermes/hermes-tab';
 import { SessionList } from '@/components/cli/session-list';

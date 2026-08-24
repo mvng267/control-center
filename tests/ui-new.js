@@ -1175,8 +1175,10 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
         return { so: ds.length, hien: ds.filter((e) => !!e.offsetParent).length,
           nhan: ds.map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24)) };
       });
-      // 4 ky tu mo dau + dinh anh + xem file
-      ok('iPhone: sheet chuc nang hien du 6 muc', mucSheet.hien === 6,
+      // 4 ky tu mo dau + dinh anh + xem file + xem diff
+      // (xem diff PHAI co o day: hang goi y trong khung chat bi `hidden` tren dien
+      //  thoai, nen bang chon nay la duong DUY NHAT vao tinh nang do tu iPhone)
+      ok('iPhone: sheet chuc nang hien du 7 muc', mucSheet.hien === 7,
         mucSheet.hien + '/' + mucSheet.so + ': ' + mucSheet.nhan.join(' | '));
 
       // Bam muc `/` trong sheet phai CHEN ky tu vao o nhap (nhu go tay)
