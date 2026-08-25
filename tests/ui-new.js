@@ -1588,7 +1588,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       const cx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const pg = await cx.newPage();
       await pg.goto(URL, { waitUntil: 'networkidle' });
-      await pg.locator('[data-testid=nav-agy]:visible').first().click();
+      await pg.locator('[data-testid=nav-agy]:visible, [data-testid=tabbar-agy]:visible').first().click();
       /* CHỜ SELECTOR, không chờ thời gian. Tab AGY nay tải lười (next/dynamic vì nó
          kéo recharts 1MB) nên 4 giây cứng có lúc chưa kịp mount — bài đỏ mà mã không
          sai. Chờ đúng thứ cần rồi mới đếm. */
@@ -3220,7 +3220,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       } else { ok('nut doi theme doi that (class tren <html>)', true, 'bo qua: khong thay nut'); }
 
       // 46: bieu do stats
-      const tabStats = pg.locator('[data-testid=nav-stats]').first();
+      const tabStats = pg.locator('[data-testid=nav-stats]:visible, [data-testid=tabbar-stats]:visible').first();
       if (await tabStats.count()) {
         await tabStats.click();
         await pg.waitForTimeout(2500);
@@ -3241,17 +3241,29 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       }
 
       // 58: banner offline
-      await pg.context().setOffline(true);
-      await pg.waitForTimeout(4000);
+      /* KHONG dung `ctx.setOffline()` + ban su kien tay: `onNet` trong use-stream.ts
+         doc `navigator.onLine` chu khong tin su kien, ma Playwright headless khong doi
+         co do — da do, ban su kien roi banner van khong hien.
+
+         Dung duong THU HAI, cung la duong that hay xay ra hon: SSE dut > 8 giay thi
+         `setOffline(true)`. Chan `/stream` roi doi. */
+      /* Chan TRUOC khi tai trang. `route` chi chan ket noi MOI — chan sau khi trang
+         da mo thi EventSource dang chay van song, hen bao 8 giay khong bao gio dat.
+         Da do ca hai cach: chan sau -> banner khong hien du doi 15 giay; chan truoc ->
+         hien o giay thu ~10, dung nhu hen. */
+      await pg.route('**/stream*', (r) => r.abort());
+      await pg.goto(URL, { waitUntil: 'domcontentloaded' });
+      await pg.waitForTimeout(11000);
       const ob = await pg.locator('[data-testid=offline-bar]').count();
-      ok('mat mang -> hien banner offline', ob >= 1, 'offline-bar=' + ob);
-      await pg.context().setOffline(false);
-      await pg.waitForTimeout(3000);
-      ok('co mang lai -> banner offline bien mat',
+      ok('SSE dut qua 8 giay -> hien banner mat ket noi', ob >= 1, 'offline-bar=' + ob);
+      await pg.unroute('**/stream*');
+      await pg.reload({ waitUntil: 'networkidle' });
+      await pg.waitForTimeout(2500);
+      ok('noi lai duoc -> banner mat ket noi bien mat',
         await pg.locator('[data-testid=offline-bar]').count() === 0);
 
       // 4 + 18: doi ten phien, nut copy ca luot
-      const tabCli = pg.locator('[data-testid=nav-cli]').first();
+      const tabCli = pg.locator('[data-testid=nav-cli]:visible, [data-testid=tabbar-cli]:visible').first();
       if (await tabCli.count()) { await tabCli.click(); await pg.waitForTimeout(1200); }
       const hg = pg.locator('[data-testid=session-row]:visible').first();
       if (await hg.count()) {
@@ -3340,9 +3352,12 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
         }
         d.remove(); return r;
       });
+      /* CHI chot ba cai du an THAT SU dung. `text-lg/xl/2xl` khong co trong bundle —
+         Tailwind v4 chi sinh class duoc dung, ma ca ba chi xuat hien trong chu thich
+         globals.css. Doi chung = 20px la doi mot thu khong ton tai: do ra 16px vi do
+         la co mac dinh cua <div>, khong phai thang chu hong. */
       ok('thang chu giu dung mac dinh Tailwind (khong khai lech)',
-        cỡ['text-xs'] === '12px' && cỡ['text-sm'] === '14px'
-        && cỡ['text-base'] === '16px' && cỡ['text-xl'] === '20px',
+        cỡ['text-xs'] === '12px' && cỡ['text-sm'] === '14px' && cỡ['text-base'] === '16px',
         JSON.stringify(cỡ));
       await pg.close();
     }
@@ -3382,7 +3397,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
         jp >= 0, 'jobs-panel=' + jp);
 
       // Hermes: danh sach hoi thoai
-      const navH = pg.locator('[data-testid=nav-hermes]').first();
+      const navH = pg.locator('[data-testid=nav-hermes]:visible, [data-testid=tabbar-hermes]:visible').first();
       if (await navH.count()) {
         await navH.click();
         await pg.waitForTimeout(2500);
@@ -3391,7 +3406,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       } else { ok('tab Hermes dung duoc danh sach hoi thoai', true, 'bo qua: khong thay tab'); }
 
       // AGY: khoi dieu khien (bat/tat/khoi dong lai)
-      const navA = pg.locator('[data-testid=nav-agy]').first();
+      const navA = pg.locator('[data-testid=nav-agy]:visible, [data-testid=tabbar-agy]:visible').first();
       if (await navA.count()) {
         await navA.click();
         await pg.waitForTimeout(2500);
@@ -3437,7 +3452,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
         !cong.gate, 'gate=' + cong.gate);
 
       // Muc 38 + 41: AGY thanh phan bo tai khoan, nhom model
-      const navA = pg.locator('[data-testid=nav-agy]').first();
+      const navA = pg.locator('[data-testid=nav-agy]:visible, [data-testid=tabbar-agy]:visible').first();
       if (await navA.count()) {
         await navA.click();
         await pg.waitForTimeout(3000);
@@ -3459,7 +3474,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       }
 
       // Muc 51: lich su lenh ↑ trong o chat
-      const navC = pg.locator('[data-testid=nav-cli]').first();
+      const navC = pg.locator('[data-testid=nav-cli]:visible, [data-testid=tabbar-cli]:visible').first();
       if (await navC.count()) { await navC.click(); await pg.waitForTimeout(1200); }
       const hg = pg.locator('[data-testid=session-row]:visible').first();
       if (await hg.count()) {

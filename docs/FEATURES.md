@@ -324,6 +324,29 @@ vào hư không.
 nó bị ngắt giữa chừng thì có thể để sót `~/.claude/dashboard-passcode.json`. Xoá
 file đó là gỡ khoá.
 
+## Nợ lưới test còn lại (đo 25/8/2026)
+
+Cột Test ở trên giờ nói đúng: mọi mục đều có runner thật, hoặc ghi `tay` khi cần
+phần cứng. Nhưng **bảng này không phủ hết giao diện**.
+
+Đo bằng cách quét mọi `data-testid` trong `web-next/` rồi tìm xem có file test nào
+nhắc tới:
+
+```
+321 testid trong mã
+161 chưa test nào chạm tới  (đầu đợt: 205)
+```
+
+Nghĩa là một nửa giao diện chưa có lưới. Selector gãy ở đó thì không gì báo cả.
+Không phải mục nào cũng đáng viết test, nhưng con số này nên GIẢM qua mỗi đợt —
+đo lại bằng:
+
+```bash
+grep -rhoE 'data-testid="[a-z0-9-]+"' web-next/components web-next/app \
+  | sort -u | sed 's/data-testid=//' | tr -d '"' \
+  | while read id; do grep -q "$id" tests/*.js || echo "$id"; done | wc -l
+```
+
 ## Cách dùng khi di trú
 
 1. Trước khi bắt đầu: chạy `node scripts/test-all.js`, lưu output làm mốc.
