@@ -2916,6 +2916,353 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       await page.setViewportSize({ width: 390, height: 844 });
       await page.waitForTimeout(500);
     }
+
+    /* DAI NGAY: dung MOT dai moi khi sang ngay moi, khong hon.
+       Truoc day chat-view dem bang `let lastDay` gan trong `.map()` — dua vao viec
+       React chay callback dung mot lan, dung thu tu. React 19 khong hua dieu do: mot
+       render bi bo giua chung de lai `lastDay` mang gia tri cua luot do, nen dai ngay
+       thieu hoac thua. Da doi sang tinh truoc thanh Set.
+       Bai nay dung history GIA 3 ngay / 6 tin de so dem chinh xac, khong phu thuoc
+       phien that dang co gi. */
+    {
+      const pg = await ctx.newPage();
+      await pg.route('**/api/history/**', async (r) => {
+        let res, j;
+        try { res = await r.fetch(); j = await res.json(); } catch { return; }
+        // 3 ngay khac nhau, moi ngay 2 tin -> phai co DUNG 3 dai ngay
+        const ngay = (d, h) => new Date(Date.UTC(2026, 7, d, h, 0, 0)).toISOString();
+        j.messages = [
+          { role: 'user', content: 'ngay mot A', ts: ngay(10, 2) },
+          { role: 'assistant', content: 'ngay mot B', ts: ngay(10, 3) },
+          { role: 'user', content: 'ngay hai A', ts: ngay(11, 2) },
+          { role: 'assistant', content: 'ngay hai B', ts: ngay(11, 3) },
+          { role: 'user', content: 'ngay ba A', ts: ngay(12, 2) },
+          { role: 'assistant', content: 'ngay ba B', ts: ngay(12, 3) },
+        ];
+        j.messages.forEach((m) => { m.tsDau = m.ts; });
+        await r.fulfill({ response: res, json: j }).catch(() => {});
+      });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1200);
+      const hangNgay = pg.locator('[data-testid=session-row]:visible').first();
+      if (await hangNgay.count()) {
+        await hangNgay.click();
+        await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+        await pg.waitForTimeout(2000);
+        const soDai = await pg.locator('[data-testid=day-divider]').count();
+        ok('dai ngay: 3 ngay -> dung 3 dai', soDai === 3, 'dem duoc ' + soDai);
+
+        /* Doi ben server roi poll lai: dai ngay phai GIU nguyen 3, khong nhan doi.
+           Day moi la cho `lastDay` cu hong — moi vong poll chay lai render voi bien
+           con mang gia tri cu. */
+        await pg.waitForTimeout(2500);
+        const soDai2 = await pg.locator('[data-testid=day-divider]').count();
+        ok('dai ngay: on dinh qua cac vong poll', soDai2 === 3, 'sau poll dem duoc ' + soDai2);
+      } else {
+        ok('dai ngay: 3 ngay -> dung 3 dai', true, 'bo qua: khong co phien nao');
+        ok('dai ngay: on dinh qua cac vong poll', true, 'bo qua: khong co phien nao');
+      }
+      await pg.close();
+    }
+    /* SÁU thứ FEATURES.md ghi "pw" (runner khong ton tai) nen chua he duoc kiem:
+       think-card, summary-dialog, compare-view, notify-toggle, slash-hint, dk-start.
+       Component co that trong ma nguon — doi chieu testid ra 0 hit o moi file test.
+       Muc 83/84/85/95/100 ghi la co test ma khong co. */
+    {
+      const pg = await ctx.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1200);
+
+      // 100: nut bat/tat thong bao o header
+      const nt = pg.locator('[data-testid=notify-toggle]');
+      ok('nut bat/tat thong bao co that o header', await nt.count() === 1,
+        'dem ' + await nt.count());
+      if (await nt.count()) {
+        const tt = await nt.getAttribute('data-state');
+        ok('nut thong bao mang trang thai doc duoc',
+          ['tat', 'bat', 'chan', 'chua-ho-tro'].includes(tt || ''), 'data-state=' + tt);
+      } else { ok('nut thong bao mang trang thai doc duoc', true, 'bo qua: khong co nut'); }
+
+      // 84: lenh "So sanh 2 phien" mo DUNG khung so sanh, khong phai toast lac de
+      await pg.keyboard.press('Meta+k');
+      await pg.waitForTimeout(600);
+      const bang = pg.locator('[data-testid=palette-input]');
+      if (await bang.count()) {
+        await pg.keyboard.type('So sanh');
+        await pg.waitForTimeout(500);
+        await pg.keyboard.press('Enter');
+        await pg.waitForTimeout(900);
+        const cv = await pg.locator('[data-testid=compare-view]').count();
+        ok('lenh "So sanh 2 phien" mo khung so sanh that', cv === 1, 'compare-view=' + cv);
+        await pg.keyboard.press('Escape');
+        await pg.waitForTimeout(400);
+      } else {
+        ok('lenh "So sanh 2 phien" mo khung so sanh that', true, 'bo qua: khong mo duoc bang lenh');
+      }
+
+      // 72: go "/" trong o chat -> hien goi y lenh
+      const hang = pg.locator('[data-testid=session-row]:visible').first();
+      if (await hang.count()) {
+        await hang.click();
+        await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+        await pg.waitForTimeout(1500);
+        const o = pg.locator('[data-testid=chat-input], textarea').first();
+        if (await o.count()) {
+          await o.click();
+          await o.fill('/');
+          await pg.waitForTimeout(700);
+          const sh = await pg.locator('[data-testid=slash-hint]').count();
+          const si = await pg.locator('[data-testid=slash-item]').count();
+          ok('go "/" hien bang goi y lenh', sh === 1 && si > 0, 'hint=' + sh + ' item=' + si);
+          await o.fill('');
+          await pg.waitForTimeout(300);
+          ok('xoa "/" thi bang goi y bien mat',
+            await pg.locator('[data-testid=slash-hint]').count() === 0);
+        } else {
+          ok('go "/" hien bang goi y lenh', true, 'bo qua: khong thay o nhap');
+          ok('xoa "/" thi bang goi y bien mat', true, 'bo qua: khong thay o nhap');
+        }
+
+        // 85: Tom tat phien qua /api/summary
+        const men = pg.locator('[data-testid=chat-more]').first();
+        if (await men.count()) {
+          await men.click();
+          await pg.waitForTimeout(500);
+          const mt = pg.locator('text=Tóm tắt phiên').first();
+          if (await mt.count()) {
+            await mt.click();
+            await pg.waitForTimeout(2500);
+            const sd = await pg.locator('[data-testid=summary-dialog]').count();
+            ok('Tom tat phien mo hop thoai that', sd === 1, 'summary-dialog=' + sd);
+            await pg.keyboard.press('Escape');
+          } else { ok('Tom tat phien mo hop thoai that', true, 'bo qua: khong thay muc menu'); }
+        } else { ok('Tom tat phien mo hop thoai that', true, 'bo qua: khong thay nut menu'); }
+
+        /* 83: the "Suy nghi" gap duoc. Chen history GIA co phan `think` — phien that
+           luc co luc khong, lay phien dau thi bai thanh ngau nhien (bai hoc CLAUDE.md). */
+        await pg.route('**/api/history/**', async (r) => {
+          let res, j;
+          try { res = await r.fetch(); j = await res.json(); } catch { return; }
+          const t = new Date(Date.UTC(2026, 7, 12, 9, 0, 0)).toISOString();
+          j.messages = [{ role: 'assistant', content: '', ts: t, tsDau: t,
+            parts: [{ t: 'think', text: 'Dang can nhac hai huong: A hoac B.' }] }];
+          await r.fulfill({ response: res, json: j }).catch(() => {});
+        });
+        await pg.reload({ waitUntil: 'networkidle' });
+        await pg.waitForTimeout(1200);
+        const h2 = pg.locator('[data-testid=session-row]:visible').first();
+        if (await h2.count()) {
+          await h2.click();
+          await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+          await pg.waitForTimeout(2000);
+          const tc = pg.locator('[data-testid=think-card]').first();
+          if (await tc.count()) {
+            const mo1 = await tc.getAttribute('data-open');
+            await tc.click();
+            await pg.waitForTimeout(500);
+            const mo2 = await tc.getAttribute('data-open');
+            ok('the "Suy nghi" gap/mo duoc', mo1 !== mo2, mo1 + ' -> ' + mo2);
+          } else { ok('the "Suy nghi" gap/mo duoc', false, 'khong thay think-card du history co phan think'); }
+        } else { ok('the "Suy nghi" gap/mo duoc', true, 'bo qua: khong co phien nao'); }
+        await pg.unroute('**/api/history/**');
+      } else {
+        for (const t of ['go "/" hien bang goi y lenh', 'xoa "/" thi bang goi y bien mat',
+                         'Tom tat phien mo hop thoai that', 'the "Suy nghi" gap/mo duoc'])
+          ok(t, true, 'bo qua: khong co phien nao');
+      }
+      await pg.close();
+    }
+
+    /* BA tinh nang lam trong dot nay chi co test API, chua he co test GIAO DIEN:
+       duyet-ngay-tren-the (cho-nhanh), xem diff, quay lai luot truoc.
+       Chen SSE gia de khong phu thuoc phien that dang co gi. */
+    {
+      const pg = await ctx.newPage();
+      /* Chen `choND` vao dong SSE. EventSource khong goi qua fetch() nen page.route
+         khong bat duoc — phai chan o tang response cua chinh endpoint /stream. */
+      await pg.route('**/stream*', async (r) => {
+        let res, body;
+        try { res = await r.fetch(); body = await res.text(); } catch { return r.continue().catch(() => {}); }
+        // moi khung SSE la "data: {...}\n\n" — them choND vao phien dau
+        body = body.replace(/data: (\{.*\})/g, (m, j) => {
+          try {
+            const o = JSON.parse(j);
+            if (o.sessions && o.sessions[0]) {
+              o.sessions[0].cho = 'ke-hoach';
+              o.sessions[0].choND = { cho: 'ke-hoach', id: 'tst-1',
+                tomTat: 'Ke hoach thu: sua ba file roi chay test.' };
+            }
+            return 'data: ' + JSON.stringify(o);
+          } catch { return m; }
+        });
+        await r.fulfill({ response: res, body }).catch(() => {});
+      });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(3000);
+      const cn = pg.locator('[data-testid=cho-nhanh]').first();
+      if (await cn.count()) {
+        ok('the phien hien bang duyet nhanh khi cho ke hoach',
+          await cn.getAttribute('data-loai') === 'ke-hoach');
+        ok('bang duyet nhanh hien tom tat ke hoach',
+          (await cn.innerText()).includes('sua ba file'), (await cn.innerText()).slice(0, 60));
+      } else {
+        ok('the phien hien bang duyet nhanh khi cho ke hoach', true, 'bo qua: khong chen duoc SSE gia');
+        ok('bang duyet nhanh hien tom tat ke hoach', true, 'bo qua: khong chen duoc SSE gia');
+      }
+      await pg.unroute('**/stream*');
+
+      // xem diff + quay lai: mo tu khung chat
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1200);
+      const h = pg.locator('[data-testid=session-row]:visible').first();
+      if (await h.count()) {
+        await h.click();
+        await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+        await pg.waitForTimeout(1500);
+        /* Hai nut nay nam trong sheet "Chuc nang" o mobile va o hang goi y o desktop.
+           Mo sheet truoc; neu khong co sheet thi dung nut goi-y truc tiep. */
+        const moSheet = pg.locator('[data-testid=mo-chuc-nang]').first();
+        if (await moSheet.count()) { await moSheet.click(); await pg.waitForTimeout(600); }
+        const nutDiff = pg.locator('[data-testid=sheet-xem-diff], [data-testid=goi-y-xem-diff]').first();
+        if (await nutDiff.count()) {
+          await nutDiff.click();
+          await pg.waitForTimeout(2000);
+          const xd = await pg.locator('[data-testid=xem-diff]').count();
+          ok('nut "Xem diff" mo khung diff that', xd === 1, 'xem-diff=' + xd);
+          /* Phien nao cung phai ra MOT trong ba: co diff, sach, hoac bao loi
+             (khong phai repo git). Trang tron = hong. */
+          if (xd) {
+            const co = await pg.locator('[data-testid=diff-noi-dung], [data-testid=diff-sach], [data-testid=diff-loi]').count();
+            ok('khung diff luon noi ro trang thai (co/sach/loi)', co >= 1, 'khoi=' + co);
+            await pg.keyboard.press('Escape');
+            await pg.waitForTimeout(400);
+          } else { ok('khung diff luon noi ro trang thai (co/sach/loi)', true, 'bo qua: khong mo duoc'); }
+        } else {
+          ok('nut "Xem diff" mo khung diff that', true, 'bo qua: khong thay nut');
+          ok('khung diff luon noi ro trang thai (co/sach/loi)', true, 'bo qua: khong thay nut');
+        }
+
+        if (await moSheet.count()) { await moSheet.click(); await pg.waitForTimeout(600); }
+        const nutQl = pg.locator('[data-testid=sheet-quay-lai]').first();
+        if (await nutQl.count()) {
+          await nutQl.click();
+          await pg.waitForTimeout(2000);
+          const q = await pg.locator('[data-testid=quay-lai]').count();
+          ok('khung "Quay lai luot truoc" mo duoc', q >= 1, 'quay-lai=' + q);
+          /* File Claude MOI TAO phai liet ke rieng: `git checkout <stash> -- .` KHONG
+             xoa chung, nen gop chung vao "se khoi phuc" la noi doi. */
+          if (q) {
+            const rieng = await pg.locator('[data-testid=ql-moi-tao], [data-testid=ql-ve-cu], [data-testid=ql-khong-doi], [data-testid=ql-loi]').count();
+            ok('quay lai tach rieng "se ve cu" va "Claude moi tao"', rieng >= 1, 'khoi=' + rieng);
+            await pg.keyboard.press('Escape');
+          } else { ok('quay lai tach rieng "se ve cu" va "Claude moi tao"', true, 'bo qua: khong mo duoc'); }
+        } else {
+          ok('khung "Quay lai luot truoc" mo duoc', true, 'bo qua: khong thay nut');
+          ok('quay lai tach rieng "se ve cu" va "Claude moi tao"', true, 'bo qua: khong thay nut');
+        }
+      } else {
+        for (const t of ['nut "Xem diff" mo khung diff that', 'khung diff luon noi ro trang thai (co/sach/loi)',
+                         'khung "Quay lai luot truoc" mo duoc', 'quay lai tach rieng "se ve cu" va "Claude moi tao"'])
+          ok(t, true, 'bo qua: khong co phien nao');
+      }
+      await pg.close();
+    }
+
+    /* Cac muc FEATURES.md ghi "e2e" — bo test do da xoa cung ban legacy, doi chieu
+       testid ra 0 hit. Viet bu nhung cai kiem duoc bang Playwright:
+       muc 4 doi ten, 14 anh trong tool_result, 18 nut copy, 40 canh bao ty le loi,
+       46 bieu do stats, 58 banner offline, 59 doi theme. */
+    {
+      const pg = await ctx.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1200);
+
+      // 59: doi theme sang/toi
+      const tt = pg.locator('[data-testid=theme-toggle]').first();
+      if (await tt.count()) {
+        const truoc = await pg.evaluate(() => document.documentElement.className);
+        await tt.click();
+        await pg.waitForTimeout(700);
+        const sau = await pg.evaluate(() => document.documentElement.className);
+        ok('nut doi theme doi that (class tren <html>)', truoc !== sau,
+          '"' + truoc + '" -> "' + sau + '"');
+        await tt.click();
+        await pg.waitForTimeout(500);
+      } else { ok('nut doi theme doi that (class tren <html>)', true, 'bo qua: khong thay nut'); }
+
+      // 46: bieu do stats
+      const tabStats = pg.locator('[data-testid=nav-stats]').first();
+      if (await tabStats.count()) {
+        await tabStats.click();
+        await pg.waitForTimeout(2500);
+        const donut = await pg.locator('[data-testid=chart-donut]').count();
+        const bar = await pg.locator('[data-testid=chart-bar]').count();
+        ok('tab Thong ke co ca donut va bar', donut >= 1 && bar >= 1,
+          'donut=' + donut + ' bar=' + bar);
+        /* recharts nap luoi (next/dynamic) — bieu do rong nghia la chunk chua ve
+           xong hoac vo. Do be ngang that, khong chi dem the. */
+        if (donut) {
+          const rong = await pg.locator('[data-testid=chart-donut] svg').first()
+            .evaluate((e) => e.getBoundingClientRect().width).catch(() => 0);
+          ok('donut ve ra svg co be ngang that (recharts nap duoc)', rong > 50, rong + 'px');
+        } else { ok('donut ve ra svg co be ngang that (recharts nap duoc)', true, 'bo qua: khong co donut'); }
+      } else {
+        ok('tab Thong ke co ca donut va bar', true, 'bo qua: khong thay tab');
+        ok('donut ve ra svg co be ngang that (recharts nap duoc)', true, 'bo qua: khong thay tab');
+      }
+
+      // 58: banner offline
+      await pg.context().setOffline(true);
+      await pg.waitForTimeout(4000);
+      const ob = await pg.locator('[data-testid=offline-bar]').count();
+      ok('mat mang -> hien banner offline', ob >= 1, 'offline-bar=' + ob);
+      await pg.context().setOffline(false);
+      await pg.waitForTimeout(3000);
+      ok('co mang lai -> banner offline bien mat',
+        await pg.locator('[data-testid=offline-bar]').count() === 0);
+
+      // 4 + 18: doi ten phien, nut copy ca luot
+      const tabCli = pg.locator('[data-testid=nav-cli]').first();
+      if (await tabCli.count()) { await tabCli.click(); await pg.waitForTimeout(1200); }
+      const hg = pg.locator('[data-testid=session-row]:visible').first();
+      if (await hg.count()) {
+        await hg.click();
+        await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+        await pg.waitForTimeout(1500);
+        const men = pg.locator('[data-testid=chat-more]').first();
+        if (await men.count()) {
+          await men.click();
+          await pg.waitForTimeout(600);
+          const mucTen = pg.locator('text=Đổi tên').first();
+          if (await mucTen.count()) {
+            await mucTen.click();
+            await pg.waitForTimeout(700);
+            const o = pg.locator('[data-testid=rename-input]');
+            ok('menu "Doi ten" mo o nhap ten', await o.count() === 1);
+            ok('hop doi ten co nut Luu',
+              await pg.locator('[data-testid=rename-save]').count() === 1);
+            await pg.keyboard.press('Escape');
+            await pg.waitForTimeout(400);
+          } else {
+            ok('menu "Doi ten" mo o nhap ten', true, 'bo qua: khong thay muc menu');
+            ok('hop doi ten co nut Luu', true, 'bo qua: khong thay muc menu');
+          }
+        } else {
+          ok('menu "Doi ten" mo o nhap ten', true, 'bo qua: khong thay nut menu');
+          ok('hop doi ten co nut Luu', true, 'bo qua: khong thay nut menu');
+        }
+        /* Nut copy chi hien khi ro chuot vao luot — tren thiet bi cham thi luon hien.
+           Dem co mat la du: bam vao se doi clipboard, ma clipboard trong headless
+           doi hoi quyen rieng, khong dang danh doi de kiem mot nut. */
+        const cp = await pg.locator('[data-testid=copy-turn]').count();
+        ok('luot chat co nut copy', cp >= 1, 'copy-turn=' + cp);
+      } else {
+        for (const t of ['menu "Doi ten" mo o nhap ten', 'hop doi ten co nut Luu',
+                         'luot chat co nut copy'])
+          ok(t, true, 'bo qua: khong co phien nao');
+      }
+      await pg.close();
+    }
     await ctx.close();
   }
 

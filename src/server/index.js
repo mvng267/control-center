@@ -3288,6 +3288,32 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, sid });
   }
 
+  /* ---- KHÔI PHỤC PHIÊN TREO ----
+     Nút "Khôi phục" đã hiện trên thẻ phiên treo từ lâu (session-card.tsx gọi
+     `POST /api/resume/:sid`) nhưng KHÔNG có route nào khớp — bấm ra 404, im lặng.
+     Đo lại hôm nay: `curl -X POST /api/resume/xxx` -> 404.
+
+     Phiên bị coi là treo khi tiến trình còn trong `procs` mà `.jsonl` không nhúc nhích
+     quá 15 phút. Đó thường là Claude CLI kẹt ở một lệnh không bao giờ trả về. Việc cần
+     làm: giết tiến trình cũ rồi `--resume` lại từ chính `.jsonl` — CLI tự đọc ngữ cảnh,
+     không mất gì.
+
+     Dùng `spawnChat()` chứ không tự dựng lệnh: nó đã có --resume, model riêng phiên,
+     mức nghĩ, chế độ quyền, và chụp ảnh git trước lượt. Tự viết lại là chỗ để lệch. */
+  if ((m = p.match(/^\/api\/resume\/([\w-]+)$/)) && req.method === 'POST') {
+    const sid = m[1];
+    const f = findSessionFile(sid);
+    if (!f) return json(res, 404, { ok: false, error: 'không tìm thấy phiên' });
+
+    /* Giết tiến trình cũ TRƯỚC. Không giết thì hai tiến trình cùng ghi một .jsonl —
+       đã thấy nó trộn hai luồng trả lời vào nhau, đọc ra vô nghĩa. */
+    const cu = procs.get(sid);
+    if (cu) { try { cu.kill('SIGTERM'); } catch {} procs.delete(sid); }
+
+    spawnChat(sid, 'Tiếp tục công việc đang dở.');
+    return json(res, 200, { ok: true, sid, daGietTienTrinhCu: !!cu });
+  }
+
   /* ---- ghim / bỏ ghim phiên ----
      Không nhận `bat` từ client rồi tin theo: gửi cùng một giá trị hai lần thì trạng
      thái lệch với thứ đang hiện trên màn. Nhận `bat` tường minh (true/false), client

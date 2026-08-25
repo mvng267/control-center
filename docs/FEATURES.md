@@ -4,8 +4,13 @@ Danh sách mọi tính năng đã tích luỹ qua 25 commit, kèm cách kiểm t
 
 **Vì sao cần file này:** khi viết lại frontend, selector gãy thì test đỏ ngay — biết liền. Nhưng một tính năng biến mất thì **không gì báo cả**. Đây là lưới an toàn: sau mỗi bước di trú, tick lại từng mục.
 
-Cột **Test** ghi `e2e` nếu đã có assertion trong `tests/e2e.js`; `pw` nếu kiểm bằng
-Playwright (giao diện mới); `tay` nếu phải kiểm thủ công trên máy/iPhone thật.
+Cột **Test** ghi **tên bộ test thật sự chạy mục đó** — `ui-new`, `du-an`, `push`,
+`keyboard`, `safearea`, `may-moi`, `curl`; `tay` nếu phải kiểm thủ công trên
+máy/iPhone thật; **`CHƯA CÓ`** nếu chưa có bài nào.
+
+Cột này từng nói dối hai lần: 37 mục ghi `pw` (không có runner nào tên vậy) và 49
+mục ghi `e2e` (bộ đó đã xoá cùng bản legacy). Đối chiếu lại bằng testid: 17 trong
+số đó thật sự không có bài nào — giờ ghi `CHƯA CÓ` thay vì để tưởng đã phủ.
 
 ---
 
@@ -13,90 +18,90 @@ Playwright (giao diện mới); `tay` nếu phải kiểm thủ công trên máy
 
 | # | Tính năng | Cách kiểm | Test |
 |---|---|---|---|
-| 1 | Danh sách phiên realtime qua SSE (2s/nhịp) | Mở tab, chạy 1 task → dòng mới hiện trong ~2s | e2e |
-| 2 | Không nhấp nháy khi cập nhật | Để yên 5s, dòng phiên phải là **cùng một node DOM** | e2e |
-| 3 | Tiêu đề phiên thật (`ai-title` của CLI) | Danh sách hiện tên có nghĩa, không phải mã hex | e2e |
-| 4 | Đổi tên phiên | Bấm tiêu đề ở đầu khung chat → sửa → Lưu; để trống = về tên CLI | e2e |
-| 5 | Tìm kiếm + lọc theo dự án | Gõ vào ô tìm, chọn dropdown dự án | e2e |
-| 6 | Badge chưa đọc + badge trên tab | Để phiên chạy xong khi đang ở tab khác | e2e |
-| 7 | Chọn bằng bàn phím `j`/`k`/`Enter` | Nhấn j/k di chuyển, Enter mở | e2e |
-| 8 | Kéo-để-làm-mới (mobile) | Ở đỉnh danh sách, kéo xuống >70px | e2e |
-| 9 | Jobs bar (loop/cron đang chạy) | `/loop 30s test` → thanh hiện | e2e |
+| 1 | Danh sách phiên realtime qua SSE (2s/nhịp) | Mở tab, chạy 1 task → dòng mới hiện trong ~2s | ui-new |
+| 2 | Không nhấp nháy khi cập nhật | Để yên 5s, dòng phiên phải là **cùng một node DOM** | ui-new |
+| 3 | Tiêu đề phiên thật (`ai-title` của CLI) | Danh sách hiện tên có nghĩa, không phải mã hex | ui-new |
+| 4 | Đổi tên phiên | Bấm tiêu đề ở đầu khung chat → sửa → Lưu; để trống = về tên CLI | CHƯA CÓ |
+| 5 | Tìm kiếm + lọc theo dự án | Gõ vào ô tìm, chọn dropdown dự án | ui-new |
+| 6 | Badge chưa đọc + badge trên tab | Để phiên chạy xong khi đang ở tab khác | CHƯA CÓ |
+| 7 | Chọn bằng bàn phím `j`/`k`/`Enter` | Nhấn j/k di chuyển, Enter mở | ui-new |
+| 8 | Kéo-để-làm-mới (mobile) | Ở đỉnh danh sách, kéo xuống >70px | CHƯA CÓ |
+| 9 | Jobs bar (loop/cron đang chạy) | `/loop 30s test` → thanh hiện | CHƯA CÓ |
 
 ## Tab CLAUDE — khung chat
 
 | # | Tính năng | Cách kiểm | Test |
 |---|---|---|---|
 | 10 | Gửi tin, Claude trả lời | `node tests/ui-new.js` (nhắn thật) | ui-new |
-| 11 | **Tool card** đóng/mở | Tap card → mở ra INPUT + KẾT QUẢ | e2e |
-| 12 | Trạng thái tool ✓/✗/đang chạy/ngắt | Xem chip màu ở mỗi card | e2e |
-| 13 | Cập nhật chip tại chỗ khi tool xong | Card đang mở phải **giữ nguyên**, chỉ chip đổi | e2e |
-| 14 | Ảnh trong tool_result hiện thật | Card Read ảnh → thấy ảnh, tap xem full | e2e |
-| 15 | Diff màu cho Edit (xanh thêm/đỏ bớt) | Mở card Edit | e2e |
-| 16 | Gộp lượt + gộp đoạn text liền kề | Lượt dài không bị xé thành nhiều bong bóng | e2e |
-| 17 | Thời gian + vạch ngăn ngày | Dưới mỗi lượt có giờ; đổi ngày có vạch | e2e |
-| 18 | Nút Copy trong khối code | Mở tool card → bấm Copy | e2e |
-| 19 | Window trượt (phiên >30 tin) | Phiên dài, gửi tin mới → vẫn nhận được | e2e |
-| 20 | `/clear` không kéo lại tin cũ | `/clear` → gửi tin mới → chỉ thấy tin mới | e2e |
+| 11 | **Tool card** đóng/mở | Tap card → mở ra INPUT + KẾT QUẢ | ui-new |
+| 12 | Trạng thái tool ✓/✗/đang chạy/ngắt | Xem chip màu ở mỗi card | ui-new |
+| 13 | Cập nhật chip tại chỗ khi tool xong | Card đang mở phải **giữ nguyên**, chỉ chip đổi | ui-new |
+| 14 | Ảnh trong tool_result hiện thật | Card Read ảnh → thấy ảnh, tap xem full | CHƯA CÓ |
+| 15 | Diff màu cho Edit (xanh thêm/đỏ bớt) | Mở card Edit | ui-new |
+| 16 | Gộp lượt + gộp đoạn text liền kề | Lượt dài không bị xé thành nhiều bong bóng | ui-new |
+| 17 | Thời gian + vạch ngăn ngày | Dưới mỗi lượt có giờ; đổi ngày có vạch | ui-new |
+| 18 | Nút Copy trong khối code | Mở tool card → bấm Copy | CHƯA CÓ |
+| 19 | Window trượt (phiên >30 tin) | Phiên dài, gửi tin mới → vẫn nhận được | ui-new |
+| 20 | `/clear` không kéo lại tin cũ | `/clear` → gửi tin mới → chỉ thấy tin mới | may-moi |
 | 21 | Banner lỗi khi chạy hỏng | gửi vào sid không tồn tại → phải hiện banner | ui-new |
-| 22 | Dừng giữa chừng (nút ⏹ / Esc / `/stop`) | Khi đang chạy, bấm Dừng | e2e |
+| 22 | Dừng giữa chừng (nút ⏹ / Esc / `/stop`) | Khi đang chạy, bấm Dừng | ui-new |
 | 23 | **Duyệt kế hoạch** | Bật "Duyệt trước" → giao task → bấm ✓ Duyệt | tay |
-| 24 | **Gửi ảnh** từ điện thoại | Bấm 📎 → chọn ảnh → gửi | e2e |
-| 25 | **Model riêng từng phiên** | Bấm chip model ở header → chọn | e2e |
-| 26 | So sánh 2 phiên (split view) | Bấm nút compare → chọn 2 phiên | e2e |
-| 27 | Export .md/.json + copy clipboard | Bấm nút tải ở header chat | e2e |
-| 28 | `/cost` — token đã dùng | Gõ `/cost` | e2e |
-| 29 | `/compact` — dọn ngữ cảnh | Gõ `/compact` | e2e |
+| 24 | **Gửi ảnh** từ điện thoại | Bấm 📎 → chọn ảnh → gửi | ui-new |
+| 25 | **Model riêng từng phiên** | Bấm chip model ở header → chọn | ui-new |
+| 26 | So sánh 2 phiên (split view) | Bấm nút compare → chọn 2 phiên | ui-new |
+| 27 | Export .md/.json + copy clipboard | Bấm nút tải ở header chat | ui-new |
+| 28 | `/cost` — token đã dùng | Gõ `/cost` | du-an |
+| 29 | `/compact` — dọn ngữ cảnh | Gõ `/compact` | ui-new |
 | 30 | Bàn phím ảo iOS không che input | `node tests/keyboard.js` (giả lập visualViewport) | keyboard |
 
 ## Tab HERMES
 
 | # | Tính năng | Cách kiểm | Test |
 |---|---|---|---|
-| 31 | Danh sách hội thoại | Mở tab | e2e |
+| 31 | Danh sách hội thoại | Mở tab | CHƯA CÓ |
 | 32 | Gửi/nhận tin | Gõ tin → có phản hồi | ui-new |
-| 33 | Giữ tin qua F5 (localStorage, 60 tin/hội thoại) | Gửi tin → F5 → vẫn còn | e2e |
-| 34 | Export hội thoại | Bấm nút export | e2e |
+| 33 | Giữ tin qua F5 (localStorage, 60 tin/hội thoại) | Gửi tin → F5 → vẫn còn | ui-new |
+| 34 | Export hội thoại | Bấm nút export | ui-new |
 | 35 | Bong bóng `role: tool` (tím, monospace) | Mở hội thoại có tool | tay |
 
 ## Tab AGY-PROXY
 
 | # | Tính năng | Cách kiểm | Test |
 |---|---|---|---|
-| 36 | Thẻ trạng thái (chạy/dừng, cổng, CHẠY NGOÀI) | Mở tab | e2e |
-| 37 | Start / Stop / Restart | Bấm nút (mờ khi proxy chạy ngoài) | e2e |
-| 38 | Thanh phân bổ 498 tài khoản | Xem thanh màu + chú thích | e2e |
-| 39 | Lưu lượng 24h (request/lỗi/token/biểu đồ giờ) | Xem khối "Lưu lượng 24 giờ" | e2e |
-| 40 | Cảnh báo khi tỉ lệ lỗi ≥20% | Xem banner đỏ | e2e |
-| 41 | Models gom nhóm + tìm kiếm + tô sáng | Gõ vào ô tìm model | e2e |
-| 42 | Typecheck / Test / Build | Bấm nút, xem chip kết quả | e2e |
-| 43 | Log realtime, tô màu lỗi/cảnh báo | Bấm Start, xem log chảy | e2e |
-| 44 | Sửa config `.env` | Sửa field → Save | e2e |
+| 36 | Thẻ trạng thái (chạy/dừng, cổng, CHẠY NGOÀI) | Mở tab | ui-new |
+| 37 | Start / Stop / Restart | Bấm nút (mờ khi proxy chạy ngoài) | CHƯA CÓ |
+| 38 | Thanh phân bổ 498 tài khoản | Xem thanh màu + chú thích | CHƯA CÓ |
+| 39 | Lưu lượng 24h (request/lỗi/token/biểu đồ giờ) | Xem khối "Lưu lượng 24 giờ" | ui-new |
+| 40 | Cảnh báo khi tỉ lệ lỗi ≥20% | Xem banner đỏ | CHƯA CÓ |
+| 41 | Models gom nhóm + tìm kiếm + tô sáng | Gõ vào ô tìm model | CHƯA CÓ |
+| 42 | Typecheck / Test / Build | Bấm nút, xem chip kết quả | ui-new |
+| 43 | Log realtime, tô màu lỗi/cảnh báo | Bấm Start, xem log chảy | ui-new |
+| 44 | Sửa config `.env` | Sửa field → Save | ui-new |
 
 ## Tab STATS
 
 | # | Tính năng | Cách kiểm | Test |
 |---|---|---|---|
-| 45 | 4 thẻ số (total/active/idle/msgs) | Mở tab | e2e |
-| 46 | Donut theo dự án + Bar theo tin nhắn | Xem biểu đồ có dữ liệu | e2e |
+| 45 | 4 thẻ số (total/active/idle/msgs) | Mở tab | ui-new |
+| 46 | Donut theo dự án + Bar theo tin nhắn | Xem biểu đồ có dữ liệu | CHƯA CÓ |
 
 ## Toàn cục
 
 | # | Tính năng | Cách kiểm | Test |
 |---|---|---|---|
-| 47 | **Token truy cập** | Mở từ máy khác không token → hiện màn nhập mã | e2e |
+| 47 | **Token truy cập** | Mở từ máy khác không token → hiện màn nhập mã | CHƯA CÓ |
 | 48 | Link `?t=` tự điền + tự dọn URL | Mở link có `?t=` → vào thẳng, URL sạch | ui-new |
-| 49 | Công tắc quyền 4 nấc | Bấm chip → xoay vòng | e2e |
-| 50 | Command palette ⌘K + gõ `/` | Nhấn ⌘K | e2e |
-| 51 | Lịch sử lệnh ↑/↓ | Gõ vài lệnh → nhấn ↑ | e2e |
-| 52 | Phím tắt ⌘1-4, chord `g a`/`g s`, Esc | Nhấn thử | e2e |
-| 53 | Vuốt ngang chuyển tab (mobile) | Vuốt trái/phải | e2e |
+| 49 | Công tắc quyền 4 nấc | Bấm chip → xoay vòng | ui-new |
+| 50 | Command palette ⌘K + gõ `/` | Nhấn ⌘K | ui-new |
+| 51 | Lịch sử lệnh ↑/↓ | Gõ vài lệnh → nhấn ↑ | CHƯA CÓ |
+| 52 | Phím tắt ⌘1-4, chord `g a`/`g s`, Esc | Nhấn thử | CHƯA CÓ |
+| 53 | Vuốt ngang chuyển tab (mobile) | Vuốt trái/phải | ui-new |
 | 54 | **Web Push** (báo khi đóng tab) | Đóng tab → chạy task → chờ thông báo | tay |
-| 55 | Thông báo dùng tiêu đề phiên | Xem nội dung thông báo | e2e |
+| 55 | Thông báo dùng tiêu đề phiên | Xem nội dung thông báo | ui-new |
 | 56 | Toast + rung phản hồi | Bấm tool card (rung 10ms) | tay |
 | 57 | PWA "Thêm vào Màn hình chính" | Safari → Chia sẻ → Thêm | tay |
-| 58 | **Offline** — app vẫn mở, có banner | Bật chế độ máy bay → mở app | e2e |
-| 59 | Glass design + 2 theme sáng/tối | Xem giao diện | e2e |
+| 58 | **Offline** — app vẫn mở, có banner | Bật chế độ máy bay → mở app | CHƯA CÓ |
+| 59 | Glass design + 2 theme sáng/tối | Xem giao diện | CHƯA CÓ |
 | 60 | Safe-area iPhone (notch + home indicator) | `node tests/safearea.js` (bơm inset 34px) | safearea |
 | 61 | `/model` toàn cục, `/theme`, `/help`, `/jobs`, `/summary`, `/enhance` | Gõ từng lệnh | tay |
 | 62 | Loop + cron job | `/loop 30s test`, `/schedule` | ui-new |
@@ -139,7 +144,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 78k | REMOTE: xem "Claude đã đổi gì" (git diff) ngay trong app | Khung chat → ⋯ → Claude đã đổi gì | du-an |
 | 78l | REMOTE: quay lại lượt trước, liệt kê file Claude tạo mới | Khung chat → ⋯ → Quay lại lượt trước | du-an |
 | 78m | `!lệnh` chạy thẳng shell, không tốn lượt Claude | Gõ `!git status` → dưới 1 giây | du-an |
-| 78n | Nén gzip cho file tĩnh và dòng SSE | Xem Content-Encoding khi tải trang | du-an |
+| 78n | Nén gzip cho file tĩnh và dòng SSE | Đo 23/8: mở app 1.831→539 KB (-71%), SSE 149,8→25,2 KB mỗi nhịp (-83%) | du-an |
 | 79 | Badge % đổi màu theo NGHĨA (thẻ Lỗi tăng = đỏ) | Xem thẻ Lỗi ở tab AGY | ui-new |
 | 80 | Không còn nút chết | `node scripts/dead-buttons.js` | ui-new |
 | 81 | Thẻ tool mở ra KHÔNG tự đóng khi poll | mở thẻ, đợi 10s, `data-open` vẫn true | ui-new |
