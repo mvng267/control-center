@@ -29,17 +29,16 @@ src/server/     backend Node THUẦN, zero dependency
 bin/control.js  điểm vào khi cài bằng npm (--port, --version, --autostart, --help)
 web-next/       GIAO DIỆN CHÍNH — Next.js 16 + React 19 + Tailwind v4 + shadcn/ui
   out/          bản build tĩnh — ĐƯỢC COMMIT, server phục vụ ở cùng cổng 7799
-web/legacy/     giao diện cũ — CHỈ CÒN ĐỂ THAM KHẢO, xem cảnh báo bên dưới
-tests/          ui-new (giao diện mới), e2e (bản cũ), du-an (server), may-moi, push
+tests/          ui-new (giao diện), du-an (server), may-moi, push, keyboard, safearea
 docs/           FEATURES.md (bảng kiểm), CLAUDE-DATA.md (cấu trúc ~/.claude), CAI-DAT.md
 ```
 
-**`web/legacy` KHÔNG còn là đường lui dùng được.** Chạm lần cuối 13/8/2026, từ đó
-72 commit (34 cái `feat:`). Nó không biết 14 endpoint mới — resume, an, fav,
-duyet-quyen, tim, imgs, pg, docker, quota, claude, plan, files, cauhinh, capnhat. Bật
-`NEW_UI=0` giờ ra một bản MẤT một nửa tính năng, không phải bản dự phòng. Giữ lại chỉ
-vì `tests/e2e.js` (147 assertion, phần lớn phủ tab AGY) chưa chuyển sang `ui-new.js`.
-Chuyển xong thì xoá cả hai.
+**`web/legacy` và cờ `NEW_UI` ĐÃ BỎ.** Bản cũ chạm lần cuối 13/8/2026, sau đó 72
+commit mà không ai đụng — nó không biết 14 endpoint mới (resume, diff, quaylai, tim,
+quota, docker, pg…), nên `NEW_UI=0` ra một bản MẤT một nửa tính năng chứ không phải
+bản dự phòng. Đã chuyển hết lưới test của nó (`tests/e2e.js`, 147 assertion — AGY,
+xuất phiên, bảng lệnh, Hermes) sang `tests/ui-new.js` TRƯỚC khi xoá, rồi mới bỏ
+4.629 dòng.
 
 **Từng có `config.js` và `http-utils.js` trong `src/server/` — KHÔNG AI require chúng.**
 Mọi hằng số và `json`/`readBody`/`hostAllowed` đều được định nghĩa lại trong
@@ -144,10 +143,6 @@ cả khối đỏ), lúc là phiên chỉ toàn câu chữ (không có tool → 
 
 **`hostAllowed` không phải cơ chế bảo mật** — nó chỉ đọc header `Host` mà client tự
 khai được. Token mới là.
-
-**Client JS của `web/legacy` dùng chung scope.** 14 file nạp bằng thẻ `<script>` tuần
-tự, không phải module. Biến dùng xuyên file phải khai ở `js/core.js` (nạp đầu tiên).
-`npm run verify` có bước quét chặn.
 
 ## Quy ước
 

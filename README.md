@@ -81,9 +81,8 @@ src/server/        backend Node thuần, zero dependency
 web-next/          GIAO DIỆN CHÍNH — Next.js + shadcn/ui, kiểu Atlas
   app/ components/ lib/
   out/             bản build tĩnh (được commit)
-web/legacy/        giao diện cũ — đường lui, bật bằng NEW_UI=0
 bin/control.js     điểm vào khi cài bằng npm (--port, --version, --help)
-tests/             ui-new (171, giao diện mới), e2e (147, bản cũ), du-an (47),
+tests/             ui-new (giao diện), du-an (server),
                    may-moi (19), push (19), push-browser, keyboard, safearea
 scripts/           test-all, verify, dead-buttons, khoi-dong-lai, make-icons,
                    bench, check-procs, cap-nhat-debian.sh
@@ -106,8 +105,6 @@ npm run build      # xong thì build lại vào out/
 
 `web-next/out` **được commit**, nên trên máy mới chỉ cần `node src/server/index.js` là chạy — không phải cài gì.
 
-**Quay về giao diện cũ:** `NEW_UI=0 node src/server/index.js`. Bản cũ nằm ở `web/legacy/`, vẫn hoạt động đầy đủ.
-
 ## Test
 
 ```bash
@@ -117,7 +114,6 @@ npm run test:all   # chạy TẤT CẢ — tự bật server ở cổng riêng c
 npm run verify     # cú pháp server lẫn client JS
 npm run buttons    # tìm nút bấm không ra gì
 npm run test:ui    # GIAO DIỆN MỚI: 125 mục (cần server đang chạy ở 7799)
-npm test           # bản cũ: 147 assertion — PHẢI chạy với NEW_UI=0
 npm run test:push  # Web Push (VAPID + RFC 8291)
 ```
 

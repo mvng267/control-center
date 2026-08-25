@@ -398,6 +398,96 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
     await page.click('[data-testid=nav-docker]');
     await page.waitForTimeout(2500);
 
+    /* ---------- Xuất phiên, bảng lệnh, Hermes ----------
+       Ba vùng này trước đây CHỈ có lưới ở `tests/e2e.js` — bộ viết cho giao diện CŨ.
+       Đo được: e2e nhắc "export" 21 lần / "hermes" 19 / "palette" 6, còn ui-new gần
+       như không có. Cả ba đều CÓ ở giao diện mới (nút export ở session-list và
+       chat-toolbar, command-palette.tsx, 3 component hermes), tức chức năng còn, chỉ
+       là lưới nằm ở bản sắp bỏ. Chuyển sang đây trước, rồi mới xoá được web/legacy. */
+    {
+      const ctxB = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const pgB = await ctxB.newPage();
+      await pgB.goto(URL, { waitUntil: 'networkidle' });
+      await pgB.waitForSelector('[data-testid=session-row]', { timeout: 30000 });
+      await pgB.waitForTimeout(1200);
+
+      // ---- XUẤT PHIÊN ----
+      const sid = await pgB.evaluate(() =>
+        document.querySelector('[data-testid=session-row]')?.dataset.sid || '');
+      if (!sid) {
+        ok('xuất phiên: .md và .json tải được', true, 'bỏ qua: không có phiên nào');
+      } else {
+        const xu = await pgB.evaluate(async (s) => {
+          const lay = async (fmt) => {
+            const r = await fetch(`/api/export/${s}?fmt=${fmt}`);
+            const t = await r.text();
+            let hopLe = null;
+            if (fmt === 'json') { try { JSON.parse(t); hopLe = true; } catch { hopLe = false; } }
+            return { ok: r.ok, disp: r.headers.get('content-disposition') || '', dai: t.length, hopLe };
+          };
+          return { md: await lay('md'), js: await lay('json') };
+        }, sid);
+        /* `attachment` bắt buộc: thiếu nó thì trình duyệt MỞ file thay vì tải, mà nội
+           dung phiên là văn bản dài — mở ra trong tab là mất chỗ đang đọc. */
+        ok('xuất phiên .md: tải được, là attachment, có nội dung',
+          xu.md.ok && /attachment/.test(xu.md.disp) && xu.md.dai > 30,
+          `${xu.md.dai}B ${xu.md.disp.slice(0, 40)}`);
+        ok('xuất phiên .json: tải được và là JSON hợp lệ',
+          xu.js.ok && xu.js.hopLe && xu.js.dai > 30,
+          `${xu.js.dai}B hopLe=${xu.js.hopLe}`);
+      }
+      const ma404 = await pgB.evaluate(() =>
+        fetch('/api/export/sid-khong-ton-tai').then((r) => r.status).catch(() => 0));
+      ok('xuất phiên: sid lạ -> 404 chứ không 500', ma404 === 404, String(ma404));
+
+      // ---- BẢNG LỆNH (Cmd+K) ----
+      await pgB.keyboard.press('Meta+k');
+      await pgB.waitForTimeout(600);
+      const coBang = await pgB.evaluate(() =>
+        !!document.querySelector('[cmdk-root], [data-testid=command-palette]'));
+      if (!coBang) {
+        // một số nền tảng dùng Ctrl+K
+        await pgB.keyboard.press('Control+k');
+        await pgB.waitForTimeout(600);
+      }
+      const bang = await pgB.evaluate(() => {
+        const r = document.querySelector('[cmdk-root], [data-testid=command-palette]');
+        return { mo: !!r, soMuc: document.querySelectorAll('[cmdk-item]').length };
+      });
+      ok('bảng lệnh: mở được bằng Cmd/Ctrl+K', bang.mo, `mục=${bang.soMuc}`);
+      if (bang.mo) {
+        /* Gõ lọc rồi Esc — chốt hai việc: lọc có thu hẹp danh sách, và Esc đóng được
+           (không đóng được thì bảng che hết màn, trên điện thoại là kẹt). */
+        await pgB.keyboard.type('usage');
+        await pgB.waitForTimeout(500);
+        const sauLoc = await pgB.evaluate(() => document.querySelectorAll('[cmdk-item]').length);
+        ok('bảng lệnh: gõ vào thì lọc bớt mục',
+          sauLoc > 0 && sauLoc <= bang.soMuc, `${bang.soMuc} -> ${sauLoc}`);
+        await pgB.keyboard.press('Escape');
+        await pgB.waitForTimeout(500);
+        const daDong = await pgB.evaluate(() =>
+          !document.querySelector('[cmdk-root], [data-testid=command-palette]'));
+        ok('bảng lệnh: Esc đóng được', daDong);
+      }
+
+      // ---- TAB HERMES ----
+      await pgB.click('[data-testid=nav-hermes]');
+      await pgB.waitForTimeout(2500);
+      const he = await pgB.evaluate(() => {
+        const q = (t) => document.querySelector(`[data-testid=${t}]`);
+        return {
+          coTab: !!q('hermes-tab') || !!document.querySelector('[data-testid^=hermes-]'),
+          soHoiThoai: document.querySelectorAll('[data-testid=hermes-row], [data-testid=hermes-conv]').length,
+          coCongCu: !!document.querySelector('[data-testid=hermes-mo-cong-cu], [data-testid^=ht-]'),
+          tran: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        };
+      });
+      ok('tab Hermes: dựng được, không tràn ngang', he.coTab && !he.tran,
+        `coTab=${he.coTab} tran=${he.tran}`);
+
+      await ctxB.close();
+    }
+
     /* ---------- Tab AGY ----------
        Toàn bộ lưới an toàn cho AGY nằm ở `tests/e2e.js` — bộ viết cho GIAO DIỆN CŨ
        (`#agy-status`, `#agy-accbar`). Đo được: e2e nhắc "agy" 56 lần, ui-new 0 lần.
@@ -1509,7 +1599,9 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       ok('tab AGY: co bieu do HAN MUC, hoac bao ro khi agy tat',
         tt.quota === 1 || (tt.report === 1 && tt.baoLoi),
         `quota=${tt.quota} report=${tt.report} baoLoi=${tt.baoLoi}`);
-      if (coKhoi) {
+      /* Chỉ đo chi tiết biểu đồ khi nó CÓ MẶT — agy tắt thì AgyReport trả nhánh sớm,
+         không render con nào (xem bài ngay trên). */
+      if (tt.quota === 1) {
         await pg.locator('[data-testid=agy-quota-history]').scrollIntoViewIfNeeded();
         await pg.waitForTimeout(1500);
         const d = await pg.evaluate(() => {

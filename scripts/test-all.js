@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 /* Chạy TẤT CẢ bộ test, mỗi bộ trong đúng môi trường của nó.
 
-   Vì sao cần script này thay vì nối `npm run a && npm run b`:
-   tests/e2e.js viết cho giao diện CŨ (tìm #sidenav, #bubbles…), còn tests/ui-new.js
-   viết cho giao diện MỚI. Chạy nhầm chỗ thì e2e treo 3 giây mỗi selector rồi ném
-   TimeoutError — nhìn như code hỏng trong khi chỉ là chạy sai môi trường.
-
-   Nên: tự bật hai server ở hai cổng riêng (bản cũ NEW_UI=0, bản mới mặc định),
-   chạy đúng bộ vào đúng cổng, xong thì tắt cả hai. Không đụng server 7799 mà người dùng
-   đang dùng.
+   Tự bật server ở cổng RIÊNG (7897) rồi tắt — không đụng server 7799 người dùng đang
+   dùng. Trước đây phải bật HAI server vì tests/e2e.js viết cho giao diện cũ
+   (#sidenav, #bubbles) cần `NEW_UI=0`; cả hai đã bỏ sau khi chuyển lưới sang
+   tests/ui-new.js.
 */
 const { spawn, execFile } = require('child_process');
 const path = require('path');
@@ -16,14 +12,12 @@ const http = require('http');
 const fs = require('fs');
 
 const ROOT = path.join(__dirname, '..');
-const CONG_CU = 7896;   // bản cũ (NEW_UI=0)
-const CONG_MOI = 7897;  // bản mới
+const CONG_MOI = 7897;  // cổng riêng cho test, không đụng 7799
 
 const cho = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function batServer(cong, moi) {
+function batServer(cong) {
   const env = { ...process.env, PORT: String(cong) };
-  if (!moi) env.NEW_UI = '0';
   const p = spawn('node', [path.join(ROOT, 'src/server/index.js')],
     { cwd: ROOT, env, stdio: 'ignore' });
   p.unref();
@@ -143,7 +137,7 @@ function donCong() {
   const { execSync } = require('child_process');
   const im = (c) => { try { return execSync(c, { encoding: 'utf8' }).trim(); } catch { return ''; } };
   // Bộ test có thể còn chạy nền từ lần trước (Ctrl-C không giết tiến trình con)
-  for (const m of ['tests/e2e.js', 'tests/ui-new.js', 'tests/du-an.js', 'tests/push.js']) {
+  for (const m of ['tests/ui-new.js', 'tests/du-an.js', 'tests/push.js']) {
     if (im(`pgrep -f "${m}"`)) im(`pkill -f "${m}"`);
   }
   /* Chrome mồ côi của Playwright. Bộ test bị ngắt giữa chừng (Ctrl-C, phiên đóng) thì
@@ -161,7 +155,7 @@ function donCong() {
   }
 
   // 7797 = cổng của tests/push.js, hai cổng kia là của chính test-all
-  for (const c of [CONG_CU, CONG_MOI, 7797, 7869]) {
+  for (const c of [CONG_MOI, 7797, 7869, 7896]) {   // 7896: cổng bản cũ trước đây, dọn cho chắc
     const pid = im(`lsof -ti:${c}`);
     if (pid) {
       console.log(`  (dọn cổng ${c}: tiến trình cũ ${pid.split('\n').join(' ')} còn sống)`);
@@ -177,19 +171,18 @@ function donCong() {
 
   ket.push(await chay('cú pháp', 'scripts/verify.js', {}));
 
-  const sCu = batServer(CONG_CU, false);
-  const sMoi = batServer(CONG_MOI, true);
-  const donDep = () => { try { sCu.kill(); } catch {} try { sMoi.kill(); } catch {} };
+  const sMoi = batServer(CONG_MOI);
+  const donDep = () => { try { sMoi.kill(); } catch {} };
   process.on('exit', donDep);
   process.on('SIGINT', () => { donDep(); process.exit(130); });
 
   try {
-    await Promise.all([doiSan(CONG_CU), doiSan(CONG_MOI)]);
+    await doiSan(CONG_MOI);
     await cho(800);
 
     ket.push(await chay('rà nút chết', 'scripts/dead-buttons.js', { DASH_URL: `http://localhost:${CONG_MOI}/` }));
-    ket.push(await chay('giao diện cũ (e2e)', 'tests/e2e.js', { DASH_URL: `http://localhost:${CONG_CU}/` }));
-    ket.push(await chay('Web Push', 'tests/push.js', { DASH_URL: `http://localhost:${CONG_CU}/` }));
+    // push.js không dùng selector giao diện nào — chạy cổng chung được
+    ket.push(await chay('Web Push', 'tests/push.js', { DASH_URL: `http://localhost:${CONG_MOI}/` }));
     /* Bỏ qua phần NHẮN THẬT ở đây. Phần đó gọi Claude thật vào một phiên có sẵn,
        nhưng server tạm này vừa dựng nên chưa chắc có phiên nào để mở — nó sẽ chờ
        hết giờ rồi báo hỏng, nhìn như code lỗi trong khi chỉ là sai môi trường.

@@ -26,7 +26,7 @@
   },
   "scripts": {
     "start": "node src/server/index.js",
-    "test": "node tests/e2e.js",
+    "test": "node scripts/test-all.js",
     "test:push": "node tests/push.js",
     "test:kb": "node tests/keyboard.js",
     "test:safearea": "node tests/safearea.js",

@@ -2531,11 +2531,13 @@ function failWait(ip) {
 }
 
 /* ---------------- phục vụ giao diện tĩnh ----------------
-   Hai giao diện song song trong lúc di trú:
-     web-next/out  — bản mới (Next.js + shadcn, kiểu Atlas)
-     web/legacy    — bản cũ, giữ nguyên làm đường lui
-   NEW_UI=0 để quay về bản cũ tức thì nếu bản mới có vấn đề. */
-const LEGACY_DIR = path.join(__dirname, '..', '..', 'web', 'legacy');
+   Chỉ còn MỘT giao diện: `web-next/out` (Next.js + shadcn, kiểu Atlas).
+
+   Bản `web/legacy` và cờ `NEW_UI=0` đã bỏ. Nó chạm lần cuối 13/8/2026, sau đó 72
+   commit mà không ai đụng — không biết 14 endpoint mới (resume, diff, quaylai, tim,
+   quota, docker, pg…), nên `NEW_UI=0` ra một bản MẤT một nửa tính năng chứ không phải
+   bản dự phòng. Lưới test của nó (tests/e2e.js, 147 assertion) đã chuyển hết sang
+   tests/ui-new.js TRƯỚC khi xoá. */
 const NEXT_DIR = path.join(__dirname, '..', '..', 'web-next', 'out');
 /* Icon PWA: ưu tiên bản đã build trong `out`, lùi về `public` nếu chưa build.
    Trước đây chỉ đọc `public` — mà gói npm KHÔNG có thư mục đó (`files` chỉ gói
@@ -2545,7 +2547,6 @@ const NEXT_DIR = path.join(__dirname, '..', '..', 'web-next', 'out');
    có `out` — mà `out` thì luôn có icon vì Next copy sang lúc build. */
 const NEXT_PUBLIC_SRC = path.join(__dirname, '..', '..', 'web-next', 'public');
 const NEXT_PUBLIC = fs.existsSync(NEXT_PUBLIC_SRC) ? NEXT_PUBLIC_SRC : NEXT_DIR;
-const USE_NEW_UI = process.env.NEW_UI !== '0' && fs.existsSync(path.join(NEXT_DIR, 'index.html'));
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
                '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml',
                '.json': 'application/json', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8',
@@ -2596,9 +2597,6 @@ function sendFile(res, f, cache, req) {
   head['Content-Length'] = buf.length;
   res.writeHead(200, head);
   return res.end(buf);
-}
-function serveWeb(res, name, req) {
-  return sendFile(res, path.join(LEGACY_DIR, name), null, req); // no-cache: sửa file là thấy ngay
 }
 // Tài nguyên Next: /_next/... đặt tên theo hash nội dung nên cache vĩnh viễn được.
 // Chặn ../ bằng cách kiểm tra đường dẫn thật vẫn nằm trong NEXT_DIR.
@@ -2694,19 +2692,10 @@ const server = http.createServer(async (req, res) => {
     return json(res, 423, { error: 'cần mã khoá' });
   }
 
-  // Giao diện mới (Next.js, kiểu Atlas) — NEW_UI=0 để quay về bản cũ tức thì
-  if (USE_NEW_UI && (p === '/' || p === '/index.html')) return serveNext(res, '/', req);
-  if (USE_NEW_UI && p.startsWith('/_next/')) return serveNext(res, p, req);
-  if (USE_NEW_UI && p === '/favicon.ico') return serveNext(res, p, req);
-
-  // Giao diện cũ: file tĩnh trong web/legacy. Trước đây HTML/CSS/JS nhúng trong template
-  // literal -> viết \\n hay dấu backtick là âm thầm làm vỡ cả trang mà node -c không thấy.
-  if (p === '/' || p === '/index.html') return serveWeb(res, 'index.html', req);
-  if (p === '/app.css') return serveWeb(res, 'app.css', req);
-  // client JS chia theo tính năng: /js/core.js, /js/chat.js, /js/agy.js…
-  // chỉ nhận tên file phẳng [a-z-] để không thể dùng ../ thoát khỏi web/legacy
-  const jsFile = p.match(/^\/js\/([a-z-]+\.js)$/);
-  if (jsFile) return serveWeb(res, path.join('js', jsFile[1]));
+  // Giao diện (Next.js static export) — server phục vụ ở cùng cổng, một tiến trình
+  if (p === '/' || p === '/index.html') return serveNext(res, '/', req);
+  if (p.startsWith('/_next/')) return serveNext(res, p, req);
+  if (p === '/favicon.ico') return serveNext(res, p, req);
 
   // ---- PWA: manifest + service worker + icon ----
   if (p === '/manifest.json') {

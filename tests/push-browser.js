@@ -1,6 +1,6 @@
 // E2E Web Push với Chrome THẬT + FCM THẬT:
 // 1. Chrome (persistent context + CDP grant notifications/push) mở dashboard localhost
-// 2. setupPush() của app subscribe FCM thật -> server lưu subscription
+// 2. app tự subscribe FCM thật sau khi đăng ký SW -> server lưu subscription
 // 3. Đóng tab (không còn client visible) -> POST /api/push/send -> server mã hoá
 //    RFC 8291 + VAPID -> fcm.googleapis.com -> FCM đẩy về Chrome -> SW showNotification
 // 4. Mở lại origin -> registration.getNotifications() phải thấy notification thật
@@ -64,14 +64,17 @@ function req(method, url, body) {
   await page.goto(BASE + '/', { waitUntil: 'networkidle' });
   ok('quyền notification granted', await page.evaluate(() => Notification.permission) === 'granted');
 
-  // setupPush của app tự chạy sau SW register — đợi subscription xuất hiện
+  // app tự chạy đăng ký push sau SW register — đợi subscription xuất hiện
   const subInfo = await page.evaluate(async () => {
     try {
       const reg = await navigator.serviceWorker.ready;
+      /* KHÔNG gọi setupPush() nữa. Ở giao diện cũ nó là hàm global; giao diện mới đặt
+         nó trong hook use-pwa.ts (hàm cục bộ, không gắn lên window) và TỰ chạy sau khi
+         đăng ký service worker. Gọi tay là ReferenceError — chỉ cần chờ subscription
+         app tự tạo. */
       for (let i = 0; i < 30; i++) {
         const s = await reg.pushManager.getSubscription();
         if (s) return { ok: true, endpoint: s.endpoint };
-        await setupPush();
         await new Promise(r => setTimeout(r, 500));
       }
       return { ok: false, error: 'không có subscription sau 15s' };

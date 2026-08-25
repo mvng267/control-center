@@ -2,7 +2,7 @@
 //
 // Trước đây client JS nằm trong template literal của server nên `node -c` KHÔNG thấy
 // lỗi cú pháp phía trình duyệt — viết \n hay dấu backtick là âm thầm làm vỡ cả trang.
-// Từ khi tách web/legacy/app.js ra file thật thì chỉ cần node -c là đủ, không phải
+// Từ khi tách client JS ra file thật thì chỉ cần node -c là đủ, không phải
 // dựng server rồi bóc HTML như bản cũ.
 const { execFileSync } = require('child_process');
 const fs = require('fs');
@@ -22,8 +22,6 @@ function collect(dir, filter) {
 }
 
 collect('src/server');
-collect('web/legacy');
-collect('web/legacy/js');
 collect('tests');
 collect('scripts');
 
@@ -205,7 +203,21 @@ const GLOBAL_NODE = ['require', 'module', 'exports', '__dirname', '__filename', 
   'console', 'Buffer', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval',
   'setImmediate', 'queueMicrotask', 'URL', 'URLSearchParams', 'TextEncoder', 'TextDecoder',
   'crypto', 'fetch', 'AbortController', 'AbortSignal', 'structuredClone', 'performance',
-  'Intl', 'global', 'globalThis'];
+  'Intl', 'global', 'globalThis',
+  /* Bài test Playwright có `page.evaluate(() => …)` — thân hàm đó chạy TRONG TRÌNH
+     DUYỆT nên dùng document/window/DOM API là đúng, dù file chạy bằng Node. Liệt kê
+     đủ một lượt thay vì thêm dần từng cái mỗi lần bài test mới dùng API mới. */
+  'document', 'window', 'location', 'navigator', 'localStorage', 'sessionStorage',
+  'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia',
+  'innerHeight', 'innerWidth', 'outerHeight', 'outerWidth', 'scrollTo', 'scrollBy',
+  'scrollX', 'scrollY', 'pageXOffset', 'pageYOffset', 'devicePixelRatio',
+  'alert', 'confirm', 'prompt', 'history', 'screen', 'visualViewport',
+  'Notification', 'Image', 'Blob', 'File', 'FormData', 'DOMParser', 'XMLHttpRequest',
+  'Event', 'CustomEvent', 'MouseEvent', 'KeyboardEvent', 'TouchEvent', 'ClipboardEvent',
+  'PointerEvent', 'DragEvent', 'InputEvent', 'WheelEvent', 'FocusEvent',
+  'HTMLElement', 'Element', 'Node', 'NodeList', 'DataTransfer', 'Range', 'Selection',
+  'MutationObserver', 'IntersectionObserver', 'ResizeObserver', 'getSelection',
+  'atob', 'btoa', 'CSS', 'caches', 'indexedDB', 'ServiceWorkerRegistration'];
 
 (async () => {
   const dlEslint = path.join(ROOT, 'web-next/node_modules/eslint/lib/api.js');
@@ -225,8 +237,20 @@ const GLOBAL_NODE = ['require', 'module', 'exports', '__dirname', '__filename', 
     },
     rules: { 'no-undef': 'error' },
   };
+  /* Quét cả tests/ và scripts/: một biến chết trong bài test làm cả BỘ ném
+     ReferenceError giữa chừng, các bài sau không chạy nữa — mà `node --check` vẫn
+     xanh. Đã xảy ra: sửa một bài, bỏ biến `coKhoi`, còn sót một chỗ dùng, cả bộ
+     ui-new dừng ở đó. */
   const tenXau = [];
-  for (const rel of ['src/server/index.js', 'src/server/tools.js', 'bin/control.js']) {
+  const dsQuet = ['src/server/index.js', 'src/server/tools.js', 'bin/control.js'];
+  for (const thuMuc of ['tests', 'scripts']) {
+    try {
+      for (const f of fs.readdirSync(path.join(ROOT, thuMuc))) {
+        if (f.endsWith('.js')) dsQuet.push(thuMuc + '/' + f);
+      }
+    } catch {}
+  }
+  for (const rel of dsQuet) {
     const f = path.join(ROOT, rel);
     if (!fs.existsSync(f)) continue;
     const loi = linter.verify(fs.readFileSync(f, 'utf8'), cfg, rel)
