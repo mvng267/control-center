@@ -135,6 +135,11 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 78i | Trần chi phí + model dự phòng cho việc nền | Tạo loop kèm budget → xem `ps` | tay |
 | 78a | Hermes: khung chat kiểu terminal (không phải bong bóng) — header tên+giờ, gập lượt, Markdown | Mở tab Hermes, xem một hội thoại có tin của cả hai bên | **chưa có test** |
 | 78b | Hermes: kết quả tool là thẻ bung/gập được, KHÔNG cắt cứng 300 ký tự | Mở hội thoại có lệnh, bấm vào thẻ tool | **chưa có test** |
+| 78j | Hermes chat NHỚ ngữ cảnh (qua ACP, không phải `-z`) | Nhắn "nhớ số 42" rồi hỏi lại → phải trả 42 | du-an |
+| 78k | REMOTE: xem "Claude đã đổi gì" (git diff) ngay trong app | Khung chat → ⋯ → Claude đã đổi gì | du-an |
+| 78l | REMOTE: quay lại lượt trước, liệt kê file Claude tạo mới | Khung chat → ⋯ → Quay lại lượt trước | du-an |
+| 78m | `!lệnh` chạy thẳng shell, không tốn lượt Claude | Gõ `!git status` → dưới 1 giây | du-an |
+| 78n | Nén gzip cho file tĩnh và dòng SSE | Xem Content-Encoding khi tải trang | du-an |
 | 79 | Badge % đổi màu theo NGHĨA (thẻ Lỗi tăng = đỏ) | Xem thẻ Lỗi ở tab AGY | pw |
 | 80 | Không còn nút chết | `node scripts/dead-buttons.js` | pw |
 | 81 | Thẻ tool mở ra KHÔNG tự đóng khi poll | mở thẻ, đợi 10s, `data-open` vẫn true | pw |
