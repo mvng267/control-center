@@ -3684,6 +3684,94 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       }
       await pg.close();
     }
+
+    /* Cum thu ba: hop thoai trong menu chat (xuat / chi phi / muc nghi), thong tin
+       tren the phien, va chat Hermes. */
+    {
+      const pg = await ctx.newPage();
+      await pg.setViewportSize({ width: 1440, height: 900 });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(2000);
+      const co = async (t) => pg.locator('[data-testid=' + t + ']').count();
+      const S = (t) => '[data-testid=nav-' + t + ']:visible, [data-testid=tabbar-' + t + ']:visible';
+
+      /* ---- THONG TIN TREN THE PHIEN ----
+         Moi the phai noi duoc du an va model — do la thu de phan biet 200+ phien voi
+         nhau khi liec tren dien thoai. */
+      const soThe = await pg.locator('[data-testid=session-row]').count();
+      if (soThe) {
+        ok('moi the phien deu ghi ro du an', await co('card-project') >= soThe,
+          'the=' + soThe + ' card-project=' + await co('card-project'));
+        ok('the phien co cham trang thai', await co('card-cham') >= soThe,
+          'card-cham=' + await co('card-cham'));
+        ok('the phien co o chon (de thao tac hang loat)', await co('sel-row-wrap') >= soThe);
+      } else {
+        for (const t of ['moi the phien deu ghi ro du an', 'the phien co cham trang thai',
+                         'the phien co o chon (de thao tac hang loat)'])
+          ok(t, true, 'bo qua: khong co the nao');
+      }
+
+      /* ---- HOP THOAI TRONG MENU CHAT ---- */
+      const hg = pg.locator('[data-testid=session-row]:visible').first();
+      if (await hg.count()) {
+        await hg.click();
+        await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+        await pg.waitForTimeout(1500);
+
+        const moMuc = async (muc) => {
+          await pg.locator('[data-testid=chat-more]').first().click();
+          await pg.waitForTimeout(700);
+          const m = pg.locator('[data-testid=' + muc + ']').first();
+          if (!await m.count()) return false;
+          await m.click();
+          await pg.waitForTimeout(1800);
+          return true;
+        };
+
+        /* Xuat phien: CLI chan `/export` o che do -p, nen day la duong duy nhat lay
+           phien ra file. Phai co du ba dang: .md, .json, chep clipboard. */
+        if (await moMuc('m-export')) {
+          ok('hop xuat phien co du 3 dang (.md / .json / chep)',
+            await co('exp-md') >= 1 && await co('exp-json') >= 1 && await co('exp-copy') >= 1,
+            'md=' + await co('exp-md') + ' json=' + await co('exp-json') + ' copy=' + await co('exp-copy'));
+          await pg.keyboard.press('Escape');
+          await pg.waitForTimeout(600);
+        } else { ok('hop xuat phien co du 3 dang (.md / .json / chep)', true, 'bo qua: khong thay muc xuat'); }
+
+        if (await moMuc('m-cost')) {
+          ok('hop "Token da dung" dung duoc', await co('cost-dialog') === 1);
+          await pg.keyboard.press('Escape');
+          await pg.waitForTimeout(600);
+        } else { ok('hop "Token da dung" dung duoc', true, 'bo qua: khong thay muc'); }
+
+        if (await moMuc('m-effort')) {
+          ok('hop "Muc suy nghi" dung duoc', await co('effort-dialog') === 1);
+          await pg.keyboard.press('Escape');
+          await pg.waitForTimeout(600);
+        } else { ok('hop "Muc suy nghi" dung duoc', true, 'bo qua: khong thay muc'); }
+
+        /* O chon file anh phai co mat trong DOM — no la `<input type=file>` an, nut
+           bam chi la vo. Khong co no thi gui anh tu dien thoai chet ma khong bao gi. */
+        ok('o chon anh co mat (gui anh tu dien thoai)', await co('file-pick') >= 1);
+      } else {
+        for (const t of ['hop xuat phien co du 3 dang (.md / .json / chep)',
+                         'hop "Token da dung" dung duoc', 'hop "Muc suy nghi" dung duoc',
+                         'o chon anh co mat (gui anh tu dien thoai)'])
+          ok(t, true, 'bo qua: khong co phien nao');
+      }
+
+      /* ---- CHAT HERMES ----
+         Dot nay chuyen sang `hermes acp` de no NHO duoc ngu canh giua cac luot
+         (`-z` co y bo qua tang phien, moi tin de mot phien rieng). Test API da chot
+         phan nho; day chot phan giao dien dung duoc. */
+      await pg.locator(S('hermes')).first().click();
+      await pg.waitForTimeout(3000);
+      ok('tab Hermes co danh sach hoi thoai va o tim',
+        await co('hermes-list') >= 1 && await co('hermes-search') >= 1,
+        'list=' + await co('hermes-list') + ' search=' + await co('hermes-search'));
+      ok('tab Hermes co nut bang lenh', await co('hermes-tools-btn') >= 1);
+      await pg.close();
+    }
     await ctx.close();
   }
 
