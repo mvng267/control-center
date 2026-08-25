@@ -80,13 +80,19 @@ export function AttachButton({ onAttach, render }: {
     setBusy(false);
   };
 
+  /* Tách ra thành hàm có tên. Viết thẳng `() => fileRef.current?.click()` ngay trong
+     JSX thì React 19 compiler báo "Cannot access refs during render" — nó không phân
+     biệt được closure ĐỌC ref lúc gọi với việc đọc ref lúc render. Cùng một hành vi,
+     chỉ khác chỗ khai. */
+  const moChon = () => fileRef.current?.click();
+
   return (
     <>
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pick}
         data-testid="file-pick" />
-      {render ? render(() => fileRef.current?.click(), busy) : (
+      {render ? render(moChon, busy) : (
         <Button variant="ghost" size="icon" className="size-11 shrink-0" title="Đính kèm ảnh"
-          data-testid="attach-btn" disabled={busy} onClick={() => fileRef.current?.click()}>
+          data-testid="attach-btn" disabled={busy} onClick={moChon}>
           {busy ? <Loader2 className="size-[18px] animate-spin" /> : <ImagePlus className="size-[18px]" />}
         </Button>
       )}
@@ -95,16 +101,14 @@ export function AttachButton({ onAttach, render }: {
 }
 
 export function ChatToolbar({
-  sid, title, model, effort, usage, onTitle, onModel,
+  sid, title, effort, usage, onTitle,
 }: {
   sid: string;
   title: string;
-  model: string | null;
   /** mức nghĩ đang có hiệu lực cho phiên này */
   effort?: string;
   usage?: { turns: number; inTok: number; outTok: number; cacheRead: number; cacheWrite: number } | null;
   onTitle: (t: string) => void;
-  onModel: (m: string | null) => void;
 }) {
   const [dlg, setDlg] = useState<null | 'rename' | 'effort' | 'cost' | 'export' | 'summary' | 'anh'>(null);
   const [summary, setSummary] = useState('');
@@ -208,10 +212,16 @@ export function ChatToolbar({
             <DialogHeader><DialogTitle>Tải hoặc chép phiên</DialogTitle></DialogHeader>
             <div className="flex flex-col gap-2">
               <Button variant="outline" size="sm" data-testid="exp-md"
+                /* eslint-disable-next-line @next/next/no-location-assign-relative-destination --
+                TẢI FILE, không phải điều hướng. Endpoint trả Content-Disposition: attachment;
+                dùng router.push thì Next chặn lại rồi render 404 vì không có route nào khớp. */
                 onClick={() => { location.href = '/api/export/' + sid + '?fmt=md'; setDlg(null); }}>
                 <Download className="size-3.5" /> Tải .md — để đọc
               </Button>
               <Button variant="outline" size="sm" data-testid="exp-json"
+                /* eslint-disable-next-line @next/next/no-location-assign-relative-destination --
+                TẢI FILE, không phải điều hướng. Endpoint trả Content-Disposition: attachment;
+                dùng router.push thì Next chặn lại rồi render 404 vì không có route nào khớp. */
                 onClick={() => { location.href = '/api/export/' + sid + '?fmt=json'; setDlg(null); }}>
                 <Braces className="size-3.5" /> Tải .json — để xử lý tiếp
               </Button>

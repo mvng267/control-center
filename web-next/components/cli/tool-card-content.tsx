@@ -164,6 +164,11 @@ function ToolImage({ src, n, onZoom }: { src: string; n: number; onZoom: (s: str
       </div>
     );
   }
+  /* next/image không chạy với output: 'export' (không có server tối ưu ảnh), mà ảnh ở
+     đây đến từ /api/img theo phiên nên cũng không biết trước kích thước. Bao bằng
+     disable/enable chứ không disable-next-line: `<img>` nằm sau `return (` nên
+     "dòng kế tiếp" là dấu ngoặc, không phải thẻ. */
+  /* eslint-disable @next/next/no-img-element */
   return (
     <img
       data-testid="tool-image"
@@ -178,6 +183,7 @@ function ToolImage({ src, n, onZoom }: { src: string; n: number; onZoom: (s: str
       className="max-h-[260px] max-w-full cursor-zoom-in rounded border border-border object-contain"
     />
   );
+  /* eslint-enable @next/next/no-img-element */
 }
 
 export function ImageZoom({ src, onClose }: { src: string; onClose: () => void }) {
@@ -187,6 +193,9 @@ export function ImageZoom({ src, onClose }: { src: string; onClose: () => void }
       onClick={onClose}
       className="fixed inset-0 z-[140] flex items-center justify-center bg-background/90 p-4 backdrop-blur-sm"
     >
+        {/* eslint-disable-next-line @next/next/no-img-element --
+            next/image không chạy với output: 'export' (không có server tối ưu ảnh),
+            mà ảnh ở đây đến từ /api/img theo phiên nên cũng không biết trước kích thước. */}
       <img src={src} alt="" className="max-h-full max-w-full rounded-xl object-contain" />
       <button
         onClick={onClose}

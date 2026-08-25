@@ -18,8 +18,11 @@ export function usePullToRefresh(onRefresh: () => void | Promise<void>) {
   // đạt ngưỡng. Đưa cả onRefresh vào ref để effect không phải chạy lại giữa cú kéo.
   const st = useRef({ y0: 0, box: null as HTMLElement | null, active: false, pull: 0, busy: false });
   const cb = useRef(onRefresh);
-  cb.current = onRefresh;
-  st.current.busy = busy;
+  /* Gán trong effect chứ không lúc render. React 19 có thể DỰNG một render rồi bỏ
+     (concurrent) — gán lúc render thì ref mang giá trị của lần render bị bỏ đó. Effect
+     chỉ chạy khi render được commit thật. Không có mảng dependency: mỗi lần commit đều
+     phải làm mới, vì onRefresh là hàm mới mỗi render. */
+  useEffect(() => { cb.current = onRefresh; st.current.busy = busy; });
 
   useEffect(() => {
     if (!('ontouchstart' in window)) return;
@@ -88,7 +91,7 @@ export function useSwipeTabs(onSwipe: (dir: 1 | -1) => void) {
   // onSwipe là hàm mới mỗi lần render (nó đóng trên tab/openSid). Nếu để nó làm
   // dependency thì listener bị gỡ/gắn lại liên tục và cú vuốt đang dở mất touchstart.
   const cb = useRef(onSwipe);
-  cb.current = onSwipe;
+  useEffect(() => { cb.current = onSwipe; });   // xem lý do ở usePullToRefresh phía trên
 
   useEffect(() => {
     if (!('ontouchstart' in window)) return;

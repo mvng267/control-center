@@ -222,7 +222,10 @@ function CopyTurn({ parts }: { parts: Part[] }) {
   );
 }
 
-export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: () => void; perm?: string; effort?: string }) {
+/* KHÔNG nhận `perm`/`effort` từ ngoài: bên trong đã dùng `h?.permHieuLuc` và
+   `h?.effortHieuLuc` đọc từ history của chính phiên — chính xác hơn giá trị chung mà
+   danh sách phiên truyền vào, và không lệch khi đổi ở một nơi. */
+export function ChatView({ sid, onBack }: { sid: string; onBack: () => void }) {
   const [h, setH] = useState<History | null>(null);
   /* Số tin CŨ đã xin thêm ngoài cửa sổ 30 mặc định. Mỗi lần bấm "xem thêm" cộng 30.
      Reset khi đổi phiên — nếu không, mở phiên ngắn sau phiên dài sẽ xin thừa. */
@@ -299,12 +302,12 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
   const [gapLuot, setGapLuot] = useState<Set<string>>(new Set());
   const toggleLuot = (k: string) => setGapLuot((s) => {
     const n = new Set(s);
-    n.has(k) ? n.delete(k) : n.add(k);
+    if (n.has(k)) n.delete(k); else n.add(k);
     return n;
   });
   const toggleTool = (id: string) => setOpenTools((s) => {
     const n = new Set(s);
-    n.has(id) ? n.delete(id) : n.add(id);
+    if (n.has(id)) n.delete(id); else n.add(id);
     return n;
   });
   const [text, setText] = useState('');
@@ -544,7 +547,20 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
     try { await api('/api/kill/' + sid, { method: 'POST' }); toast('Đã dừng Claude'); } catch {}
   };
 
-  let lastDay = '';
+  /* Nhóm nào phải vẽ dải ngày — tính TRƯỚC, không gán biến chạy trong `.map()`.
+     Cách cũ (`let lastDay` ngoài, `if (showDay) lastDay = k` trong map) dựa vào việc
+     React chạy callback đúng một lần và đúng thứ tự. React 19 không hứa điều đó: một
+     render bị bỏ giữa chừng để lại `lastDay` mang giá trị của lượt dở, nên lần sau
+     dải ngày thiếu hoặc thừa. Set các mốc `tsDau` cần vẽ thì không phụ thuộc thứ tự. */
+  const ngayCanVe = useMemo(() => {
+    const r = new Set<string>();
+    let truoc = '';
+    for (const m of groups) {
+      const k = dayKey(m.ts);
+      if (k && k !== truoc) { r.add(m.tsDau || m.ts || ''); truoc = k; }
+    }
+    return r;
+  }, [groups]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-testid="chat-view"
@@ -598,10 +614,9 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
           {/* Chế độ quyền + mức nghĩ chuyển XUỐNG dòng trạng thái dưới ô gõ, đúng chỗ
               Claude CLI in chúng. Để trên này thì lẫn giữa các nút icon, và trên iPhone
               còn bị đẩy khuất. */}
-          <ChatToolbar sid={sid} title={h?.title || ''} model={h?.model ?? null}
+          <ChatToolbar sid={sid} title={h?.title || ''}
             effort={h?.effortHieuLuc} usage={h?.usage}
-            onTitle={(t) => setH((x) => (x ? { ...x, title: t } : x))}
-            onModel={(mo) => setH((x) => (x ? { ...x, model: mo } : x))} />
+            onTitle={(t) => setH((x) => (x ? { ...x, title: t } : x))} />
         </div>
 
         {/* MỘT dòng, cuộn ngang nếu chật — không cho xuống hàng. Đo trên iPhone
@@ -769,11 +784,9 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
             Xem thêm 30 tin trước · còn {h?.start}
           </button>
         )}
-        {groups.map((m, gi) => {
+        {groups.map((m) => {
           const parts = m.parts?.length ? mergeTextParts(m.parts) : [{ t: 'text', text: m.content } as TextPart];
-          const k = dayKey(m.ts);
-          const showDay = k && k !== lastDay;
-          if (showDay) lastDay = k;
+          const showDay = ngayCanVe.has(m.tsDau || m.ts || '');
           return (
             /* key phải BẤT BIẾN qua các vòng poll, nếu không React dựng lại cả lượt
                và mọi state bên trong về 0.
@@ -1160,7 +1173,7 @@ export function ChatView({ sid, onBack, perm, effort }: { sid: string; onBack: (
 
           {/* MÁY TÍNH: đủ bề ngang thì bày thẳng, không bắt bấm thêm một lần */}
           <div className="hidden min-w-0 flex-1 items-center gap-1.5 overflow-x-auto an-thanh-cuon sm:flex">
-            {CHUC_NANG.map(({ k, nhan, Icon }) => (
+            {CHUC_NANG.map(({ k, nhan }) => (
               <button key={k} type="button" data-testid={'goi-y-' + nhan}
                 onClick={() => chen(k)}
                 className="tap44 inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 font-mono text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground active:scale-95">

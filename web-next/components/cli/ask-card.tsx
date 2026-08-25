@@ -41,7 +41,7 @@ export function AskCard({
        nên đặt setState khác vào trong là mất cả hai. Đo được: bấm câu thứ ba làm
        sạch luôn cả ba lựa chọn (✓✓✓ -> trống trơn), nút Gửi khoá vĩnh viễn. */
     const cu = chon[qi] ? new Set(chon[qi]) : new Set<number>();
-    if (nhieu) { cu.has(oi) ? cu.delete(oi) : cu.add(oi); }
+    if (nhieu) { if (cu.has(oi)) cu.delete(oi); else cu.add(oi); }
     else { cu.clear(); cu.add(oi); }
     const moi = { ...chon, [qi]: cu };
     setChon(moi);

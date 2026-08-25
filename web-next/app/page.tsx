@@ -122,6 +122,9 @@ export default function Page() {
       setTimeout(() => document.querySelector<HTMLButtonElement>(`[data-testid=${trongMenu[id]}]`)?.click(), 150);
       return;
     }
+    /* eslint-disable-next-line @next/next/no-location-assign-relative-destination --
+    TẢI FILE, không phải điều hướng. Endpoint trả Content-Disposition: attachment;
+    dùng router.push thì Next chặn lại rồi render 404 vì không có route nào khớp. */
     if (id === "ui:export" && openSid) { location.href = "/api/export/" + openSid + "?fmt=md"; return; }
     // Lệnh này VỐN ĐÃ có trong bảng lệnh nhưng không có nhánh xử lý -> bấm ra toast
     // lạc đề "Mở phiên rồi dùng nút tương ứng…". Giờ mở thật.
@@ -142,7 +145,7 @@ export default function Page() {
      bản cũ". Đo được: EventSource -> 401, còn fetch cùng URL từ trong trang -> 423,
      chênh nhau đúng vì fetch chạy sau khi effect đã nạp token.
      useState(initializer) chạy MỘT LẦN lúc dựng component, trước mọi hook phía dưới. */
-  const [ready, setReady] = useState(() => { initToken(); return true; });
+  const [ready] = useState(() => { initToken(); return true; });
   const { data, offline, unauthorized } = useStream();
   const pass = usePasscode();
   usePwa();
@@ -229,8 +232,7 @@ export default function Page() {
                 tệ — 145 phiên đọc ở màn rộng thoải mái hơn hẳn. */}
             {!!openSid && (
               <div className="h-full min-h-0 min-w-0 flex-1">
-                <ChatView sid={openSid} onBack={() => setOpenSid(null)} perm={data?.perm}
-                  effort={data?.effort} />
+                <ChatView sid={openSid} onBack={() => setOpenSid(null)} />
               </div>
             )}
           </div>
@@ -271,10 +273,3 @@ export default function Page() {
   );
 }
 
-function Placeholder({ name }: { name: string }) {
-  return (
-    <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
-      {name} — đang chuyển sang giao diện mới
-    </div>
-  );
-}

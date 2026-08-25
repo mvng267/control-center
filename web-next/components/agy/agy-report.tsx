@@ -82,6 +82,9 @@ export function AgyReport() {
       <Segmented items={RANGES} value={range} onChange={setRange} testid="agy-range" size="sm" />
       <Button variant="outline" size="sm" className="tap44 ml-auto h-8 text-[12px]"
         data-testid="agy-csv" title="Tải toàn bộ request dạng CSV"
+        /* eslint-disable-next-line @next/next/no-location-assign-relative-destination --
+        TẢI FILE, không phải điều hướng. Endpoint trả Content-Disposition: attachment;
+        dùng router.push thì Next chặn lại rồi render 404 vì không có route nào khớp. */
         onClick={() => { location.href = '/api/agy/export.csv?range=' + range; }}>
         <Download className="size-3.5" /> CSV
       </Button>

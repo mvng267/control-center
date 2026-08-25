@@ -240,7 +240,7 @@ export function SessionList({
   // nhìn người dùng; chỉ server mới phân biệt tiến trình còn sống hay file vừa đổi.
   const tally = useMemo(() => {
     let run = 0, idle = 0;
-    for (const s of sessions) (['RUNNING', 'ACTIVE'].includes(s.status) ? run++ : idle++);
+    for (const s of sessions) { if (['RUNNING', 'ACTIVE'].includes(s.status)) run++; else idle++; }
     return { run, idle };   // tổng đã có ở huy hiệu cạnh tiêu đề, không đếm lại
   }, [sessions]);
 
@@ -543,7 +543,7 @@ export function SessionList({
                       <button data-testid="nhom-gap"
                         onClick={() => setGapNhom((s) => {
                           const n = new Set(s);
-                          gap ? n.delete(g.khoa) : n.add(g.khoa);
+                          if (gap) n.delete(g.khoa); else n.add(g.khoa);
                           return n;
                         })}
                         className="tap44 flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left transition-colors hover:bg-accent/40">
@@ -584,7 +584,7 @@ export function SessionList({
                             onGiuLau={() => setCheDoChon(true)}
                             onChon={(v) => {
                               const next = new Set(sel);
-                              v ? next.add(s.sid) : next.delete(s.sid);
+                              if (v) next.add(s.sid); else next.delete(s.sid);
                               setSel(next);
                             }}
                             dangMo={s.sid === sidMo}
@@ -612,7 +612,7 @@ export function SessionList({
                   onGiuLau={() => setCheDoChon(true)}
                   onChon={(v) => {
                     const next = new Set(sel);
-                    v ? next.add(s.sid) : next.delete(s.sid);
+                    if (v) next.add(s.sid); else next.delete(s.sid);
                     setSel(next);
                   }}
                   dangMo={s.sid === sidMo}
@@ -808,6 +808,9 @@ function RowMenu({ s, onOpen, onAn }: {
           <MessageSquare className="size-4" /> Mở phiên
         </DropdownMenuItem>
         <DropdownMenuItem data-testid="row-export"
+          /* eslint-disable-next-line @next/next/no-location-assign-relative-destination --
+          TẢI FILE, không phải điều hướng. Endpoint trả Content-Disposition: attachment;
+          dùng router.push thì Next chặn lại rồi render 404 vì không có route nào khớp. */
           onClick={() => { location.href = '/api/export/' + s.sid + '?fmt=md'; }}>
           <Download className="size-4" /> Tải bản ghi (.md)
         </DropdownMenuItem>

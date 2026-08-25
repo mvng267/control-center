@@ -110,22 +110,22 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 
 | # | Tính năng | Cách kiểm | Test |
 |---|---|---|---|
-| 63 | Page header 4/4 tab (tiêu đề + số đếm + mô tả + nút) | Xem đầu mỗi tab | pw |
-| 64 | Dải tóm tắt trên bảng phiên, bấm để lọc | Bấm "Đang chạy" → chỉ còn phiên đang chạy | pw |
-| 65 | Menu ⋯ mỗi dòng: mở / tải .md / dừng | Bấm ⋯ ở một dòng | pw |
-| 66 | Lối tắt "Xem nhanh" lọc thật, không chỉ đổi tab | Bấm "Phiên đang chạy" ở sidebar | pw |
-| 67 | Chế độ quyền 4 nấc **trong khung chat** | Mở phiên → nút khiên ở header | pw |
-| 68 | Nút ảnh nằm cạnh ô nhắn tin | Mở phiên → nhìn trái ô nhập | pw |
-| 69 | Tin của mình hiện ngay (~50ms), không đợi server | Gửi tin, bấm giờ | pw |
+| 63 | Page header 4/4 tab (tiêu đề + số đếm + mô tả + nút) | Xem đầu mỗi tab | ui-new |
+| 64 | Dải tóm tắt trên bảng phiên, bấm để lọc | Bấm "Đang chạy" → chỉ còn phiên đang chạy | ui-new |
+| 65 | Menu ⋯ mỗi dòng: mở / tải .md / dừng | Bấm ⋯ ở một dòng | ui-new |
+| 66 | Lối tắt "Xem nhanh" lọc thật, không chỉ đổi tab | Bấm "Phiên đang chạy" ở sidebar | ui-new |
+| 67 | Chế độ quyền 4 nấc **trong khung chat** | Mở phiên → nút khiên ở header | ui-new |
+| 68 | Nút ảnh nằm cạnh ô nhắn tin | Mở phiên → nhìn trái ô nhập | ui-new |
+| 69 | Tin của mình hiện ngay (~50ms), không đợi server | Gửi tin, bấm giờ | ui-new |
 | 70 | Nhịp poll co giãn: 700ms khi chạy, 2s khi rảnh | Xem Network lúc Claude chạy | ui-new |
-| 71 | Thanh việc-đang-làm (TodoWrite mới nhất) | Mở phiên đang chạy có todo | pw |
-| 72 | Gõ `/` trong ô chat → gợi ý lệnh, ↑↓/Tab/Esc | Gõ `/` rồi `/comp` | pw |
+| 71 | Thanh việc-đang-làm (TodoWrite mới nhất) | Mở phiên đang chạy có todo | ui-new |
+| 72 | Gõ `/` trong ô chat → gợi ý lệnh, ↑↓/Tab/Esc | Gõ `/` rồi `/comp` | ui-new |
 | 73 | Bàn phím ảo iOS không che ô nhập (`--kb`) | `node tests/keyboard.js` — đo ô nhập nằm trên mép bàn phím | keyboard |
-| 74 | Kéo-để-làm-mới + vuốt ngang chuyển tab | iPhone thật | pw |
+| 74 | Kéo-để-làm-mới + vuốt ngang chuyển tab | iPhone thật | ui-new |
 | 75 | AGY: log thời gian thực tô màu, tạm dừng/xoá | Bật agy từ dashboard | tay |
 | 76 | AGY: sửa `.env` tại chỗ, báo khi cần Restart | Đổi `PORT` → hiện nhắc Restart | tay |
-| 77 | Hermes: tên hội thoại rút gọn + tin đầu làm phụ đề | Xem tab Hermes | pw |
-| 78 | Hermes: ô tìm hội thoại | Gõ vào ô tìm | pw |
+| 77 | Hermes: tên hội thoại rút gọn + tin đầu làm phụ đề | Xem tab Hermes | ui-new |
+| 78 | Hermes: ô tìm hội thoại | Gõ vào ô tìm | ui-new |
 | 78c | REMOTE: duyệt kế hoạch NGAY ở danh sách, không mở phiên | Phiên chờ duyệt → bấm "Duyệt" trên thẻ | du-an |
 | 78d | REMOTE: chọn phương án NGAY ở danh sách | Claude hỏi → bấm lựa chọn + "Gửi" trên thẻ | du-an |
 | 78e | Nhắn được cả khi Claude đang chạy (xếp hàng, không còn 409) | Phiên đang chạy → gửi tin → hiện "Còn N tin đang chờ" | du-an |
@@ -140,41 +140,41 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 78l | REMOTE: quay lại lượt trước, liệt kê file Claude tạo mới | Khung chat → ⋯ → Quay lại lượt trước | du-an |
 | 78m | `!lệnh` chạy thẳng shell, không tốn lượt Claude | Gõ `!git status` → dưới 1 giây | du-an |
 | 78n | Nén gzip cho file tĩnh và dòng SSE | Xem Content-Encoding khi tải trang | du-an |
-| 79 | Badge % đổi màu theo NGHĨA (thẻ Lỗi tăng = đỏ) | Xem thẻ Lỗi ở tab AGY | pw |
-| 80 | Không còn nút chết | `node scripts/dead-buttons.js` | pw |
-| 81 | Thẻ tool mở ra KHÔNG tự đóng khi poll | mở thẻ, đợi 10s, `data-open` vẫn true | pw |
+| 79 | Badge % đổi màu theo NGHĨA (thẻ Lỗi tăng = đỏ) | Xem thẻ Lỗi ở tab AGY | ui-new |
+| 80 | Không còn nút chết | `node scripts/dead-buttons.js` | ui-new |
+| 81 | Thẻ tool mở ra KHÔNG tự đóng khi poll | mở thẻ, đợi 10s, `data-open` vẫn true | ui-new |
 | 82 | ~~Chat có avatar + nhãn vai~~ → đã BỎ, thay bằng kiểu terminal (mục 121-125) | — | — |
-| 83 | Thẻ "Suy nghĩ" gập được, không đổ hết ra màn | `think-card` mặc định `data-open=false` | pw |
-| 84 | So sánh 2 phiên (lệnh ⌘K mở thật, không toast lạc đề) | ⌘K → ui:compare → `compare-view` | pw |
-| 85 | Tóm tắt phiên qua /api/summary | menu ⋯ → Tóm tắt → `summary-dialog` | pw |
-| 86 | Hook lỗi / lỗi API / mốc /compact hiện trong chat | `note-line` xuất hiện ở phiên có hook lỗi | pw |
-| 87 | Lịch sử lệnh ↑/↓ trong ô chat | gõ ↑ ra tin cũ, ↓ quay lại | pw |
-| 88 | Chart đúng số đo Atlas | lưới `4 8`, 0 trục Y, badge 12px/bo 6px | pw |
-| 89 | Vỏ khớp Atlas | sidebar 256/không viền, mục 32px/bo 8px, header 64px | pw |
-| 90 | Mọi nút ≥ 44px vùng chạm trên cảm ứng | quét `button` ở 390px, không cái nào < 44 | pw |
+| 83 | Thẻ "Suy nghĩ" gập được, không đổ hết ra màn | `think-card` mặc định `data-open=false` | ui-new |
+| 84 | So sánh 2 phiên (lệnh ⌘K mở thật, không toast lạc đề) | ⌘K → ui:compare → `compare-view` | ui-new |
+| 85 | Tóm tắt phiên qua /api/summary | menu ⋯ → Tóm tắt → `summary-dialog` | ui-new |
+| 86 | Hook lỗi / lỗi API / mốc /compact hiện trong chat | `note-line` xuất hiện ở phiên có hook lỗi | ui-new |
+| 87 | Lịch sử lệnh ↑/↓ trong ô chat | gõ ↑ ra tin cũ, ↓ quay lại | ui-new |
+| 88 | Chart đúng số đo Atlas | lưới `4 8`, 0 trục Y, badge 12px/bo 6px | ui-new |
+| 89 | Vỏ khớp Atlas | sidebar 256/không viền, mục 32px/bo 8px, header 64px | ui-new |
+| 90 | Mọi nút ≥ 44px vùng chạm trên cảm ứng | quét `button` ở 390px, không cái nào < 44 | ui-new |
 | 91 | Mã khoá chặn CẢ loopback | `curl localhost/api/jobs` → 423 khi đã đặt mã | curl |
-| 92 | Mã sai rồi mã đúng vẫn vào được (ô được xoá) | gõ sai → `passcode-dots` về 0 → gõ đúng → vào | pw |
+| 92 | Mã sai rồi mã đúng vẫn vào được (ô được xoá) | gõ sai → `passcode-dots` về 0 → gõ đúng → vào | ui-new |
 | 93 | Chống dò mã: sai ≥5 lần phải chờ | 7 lần sai liên tiếp → 429 | curl |
 | 94 | Quên mã: xoá file passcode là mở lại | `rm ~/.claude/dashboard-passcode.json` + restart | ui-new |
-| 95 | Docker: xem/bật/tắt/khởi động lại/log | tab Docker → `dk-row`, bấm `dk-start` | pw |
+| 95 | Docker: xem/bật/tắt/khởi động lại/log | tab Docker → `dk-row`, bấm `dk-start` | ui-new |
 | 96 | Docker chặn lệnh nguy hiểm | action rm/kill/exec/run → từ chối; id có `;` → từ chối | curl |
 | 97 | Docker KHÔNG có nút xoá container/volume | không tồn tại testid nào cho xoá | ui-new |
-| 98 | 5 tab vừa màn 320px | mỗi tab 64px, chữ không tràn | pw |
-| 99 | Việc nền gập lại khi rảnh, tự mở khi có job | `jobs-toggle` | pw |
-| 100 | Nút bật/tắt thông báo ở header | bấm `notify-toggle` → `data-state` đổi bat/tat | pw |
-| 101 | Bật đúng MỘT đăng ký (không trùng) | bật 1 lần → `.push-state.json` có đúng 1 sub | pw |
-| 102 | Tắt rồi KHÔNG tự bật lại khi focus | tắt → phát sự kiện focus → vẫn 0 sub | pw |
+| 98 | 5 tab vừa màn 320px | mỗi tab 64px, chữ không tràn | ui-new |
+| 99 | Việc nền gập lại khi rảnh, tự mở khi có job | `jobs-toggle` | ui-new |
+| 100 | Nút bật/tắt thông báo ở header | bấm `notify-toggle` → `data-state` đổi bat/tat | ui-new |
+| 101 | Bật đúng MỘT đăng ký (không trùng) | bật 1 lần → `.push-state.json` có đúng 1 sub | ui-new |
+| 102 | Tắt rồi KHÔNG tự bật lại khi focus | tắt → phát sự kiện focus → vẫn 0 sub | ui-new |
 | 103 | Mức suy nghĩ (--effort) truyền xuống CLI | giao task → `ps -o args=` thấy `--effort` | tay |
-| 104 | Báo cáo agy qua API (không phải SQLite) | tab AGY → thẻ hiện 8.7k request, 33%, p95 | pw |
-| 105 | Cảnh báo khi tỉ lệ thành công thấp | `rp-canhbao` hiện khi okRate < 70% | pw |
+| 104 | Báo cáo agy qua API (không phải SQLite) | tab AGY → thẻ hiện 8.7k request, 33%, p95 | ui-new |
+| 105 | Cảnh báo khi tỉ lệ thành công thấp | `rp-canhbao` hiện khi okRate < 70% | ui-new |
 | 106 | Điều khiển agy: 4 lệnh an toàn | đổi rotation → agy xác nhận → gateway VẪN bật | curl |
 | 107 | Chặn lệnh agy nguy hiểm | bulk/check/restart/regenerateKey → từ chối | curl |
-| 108 | Hermes: bảng 12 lệnh bấm chạy được | mở Công cụ → bấm Phiên bản → ra kết quả thật | pw |
-| 109 | Component chuẩn Atlas dùng chung | Segmented vỏ bo 10px, chọn bo 8px cao 25px | pw |
-| 110 | Câu hỏi của Claude hiện thành bảng chọn | `ask-card` với lựa chọn đánh số, bấm được | pw |
+| 108 | Hermes: bảng 12 lệnh bấm chạy được | mở Công cụ → bấm Phiên bản → ra kết quả thật | ui-new |
+| 109 | Component chuẩn Atlas dùng chung | Segmented vỏ bo 10px, chọn bo 8px cao 25px | ui-new |
+| 110 | Câu hỏi của Claude hiện thành bảng chọn | `ask-card` với lựa chọn đánh số, bấm được | ui-new |
 | 111 | Bấm lựa chọn -> gửi thành tin nhắn mới | `node tests/ui-new.js` (kiểm nội dung gửi đi) | ui-new |
-| 112 | Kế hoạch render markdown, gập được | `plan-card`, dài > 900 ký tự thì gập | pw |
-| 113 | Nút chọn chế độ cuộn được trên iPhone | `mode-seg` scrollWidth > clientWidth | pw |
+| 112 | Kế hoạch render markdown, gập được | `plan-card`, dài > 900 ký tự thì gập | ui-new |
+| 113 | Nút chọn chế độ cuộn được trên iPhone | `mode-seg` scrollWidth > clientWidth | ui-new |
 | 114 | Hook lỗi KHÔNG cắt đôi lượt của Claude | 1 khối "Claude" thay vì 3 (dựng assistant→note→assistant) | ui-new |
 | 115 | Mốc `/compact` VẪN cắt lượt (ranh giới thật) | 2 khối "Claude" quanh dải phân cách | ui-new |
 | 116 | Dán ảnh từ clipboard vào ô chat | bắn sự kiện `paste` kèm File → lên thanh đính kèm | ui-new |
@@ -298,14 +298,22 @@ Nhóm này sinh ra từ một câu hỏi đo được: dashboard chỉ hiện **
 ## Chạy test
 
 ```bash
-node scripts/verify.js          # cú pháp + thứ tự nạp
+node scripts/test-all.js        # CHẠY TẤT CẢ — mỗi bộ ở đúng môi trường của nó
+node scripts/verify.js          # cú pháp + biến chưa khai + chốt token
 node scripts/dead-buttons.js    # nút bấm không ra gì
-node tests/ui-new.js            # GIAO DIỆN MỚI — 125 mục (server ở 7799)
+node tests/ui-new.js            # giao diện (server ở 7799)
 SKIP_CHAT=1 node tests/ui-new.js # bỏ qua phần nhắn thật cho nhanh
-NEW_UI=0 PORT=7895 node src/server/index.js &   # rồi:
-DASH_URL=http://localhost:7895/ node tests/e2e.js   # bản cũ, 147 mục
-node tests/push.js              # Web Push, 19 mục
+node tests/du-an.js             # server + endpoint
+node tests/push.js              # Web Push
+node tests/push-browser.js      # Web Push qua trình duyệt thật
+node tests/keyboard.js          # bàn phím ảo iOS
+node tests/safearea.js          # safe-area iPhone
+node tests/may-moi.js           # cài trên máy mới
 ```
+
+Cột cuối mỗi bảng là **tên bộ test chạy mục đó**. Trước đây 37 mục ghi `pw` — không
+có runner nào tên vậy, `package.json` cũng không có script đó, nên cột này từng chỉ
+vào hư không.
 
 `tests/ui-new.js` tự đặt/gỡ mã khoá trong lúc chạy và dọn sạch sau đó — nhưng nếu
 nó bị ngắt giữa chừng thì có thể để sót `~/.claude/dashboard-passcode.json`. Xoá
@@ -313,7 +321,7 @@ file đó là gỡ khoá.
 
 ## Cách dùng khi di trú
 
-1. Trước khi bắt đầu: chạy `node e2e-test.js`, lưu output làm mốc.
+1. Trước khi bắt đầu: chạy `node scripts/test-all.js`, lưu output làm mốc.
 2. Sau **mỗi bước**: chạy lại, so với mốc.
 3. Ở bước cuối (B5c): mở trên **iPhone thật**, tick tay toàn bộ mục ghi `tay`.
 4. Mục nào không tick được → dừng, sửa xong mới đi tiếp.
