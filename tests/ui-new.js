@@ -3496,6 +3496,194 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       } else { ok('↑ tren o rong goi lai tin cu (hoac giu rong neu chua co lich su)', true, 'bo qua: khong co phien nao'); }
       await pg.close();
     }
+
+    /* NO LUOI TEST: quet moi `data-testid` trong web-next roi doi chieu voi tests/ ra
+       161/321 chua bai nao cham toi. Dot nay lap bon cum dung THAT hang ngay:
+       chon-nhieu, menu ⋯ moi dong, tim trong phien, phan trang.
+       Chay o 1440px: bo cuc hai cot, moi thu hien cung luc, khong phai mo sheet. */
+    {
+      const pg = await ctx.newPage();
+      await pg.setViewportSize({ width: 1440, height: 900 });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(2000);
+      const co = async (t) => pg.locator('[data-testid=' + t + ']').count();
+
+      /* ---- CHON NHIEU ----
+         Dai thao tac hang loat chi hien khi da chon it nhat mot phien. Truoc day
+         khong bai nao cham toi no — dai nay co nut "Dung" ban vao nhieu phien mot luc,
+         hong ma khong ai biet la hong nang. */
+      const box = pg.locator('[data-testid=session-row] input[type=checkbox], [data-testid=sel-row-wrap]').first();
+      if (await box.count()) {
+        ok('chua chon gi -> KHONG hien dai thao tac hang loat', await co('bulk-bar') === 0);
+        await box.click();
+        await pg.waitForTimeout(800);
+        ok('chon mot phien -> hien dai thao tac hang loat', await co('bulk-bar') === 1);
+        ok('dai hang loat co ca nut Dung va nut Bo chon',
+          await co('bulk-stop') === 1 && await co('bulk-clear') === 1,
+          'stop=' + await co('bulk-stop') + ' clear=' + await co('bulk-clear'));
+        await pg.locator('[data-testid=bulk-clear]').first().click();
+        await pg.waitForTimeout(700);
+        ok('bam "Bo chon" -> dai bien mat', await co('bulk-bar') === 0);
+      } else {
+        for (const t of ['chua chon gi -> KHONG hien dai thao tac hang loat',
+                         'chon mot phien -> hien dai thao tac hang loat',
+                         'dai hang loat co ca nut Dung va nut Bo chon',
+                         'bam "Bo chon" -> dai bien mat'])
+          ok(t, true, 'bo qua: khong co o chon nao');
+      }
+
+      /* ---- MENU ⋯ MOI DONG ---- */
+      const more = pg.locator('[data-testid=row-more], [data-testid=session-row] button[aria-haspopup]').first();
+      if (await more.count()) {
+        await more.click();
+        await pg.waitForTimeout(800);
+        const muc = { open: await co('row-open'), exp: await co('row-export'),
+                      stop: await co('row-stop'), an: await co('row-an') };
+        ok('menu ⋯ moi dong co du 4 muc (mo / tai .md / dung / an)',
+          muc.open >= 1 && muc.exp >= 1 && muc.stop >= 1 && muc.an >= 1, JSON.stringify(muc));
+        await pg.keyboard.press('Escape');
+        await pg.waitForTimeout(500);
+      } else { ok('menu ⋯ moi dong co du 4 muc (mo / tai .md / dung / an)', true, 'bo qua: khong thay nut ⋯'); }
+
+      /* ---- PHAN TRANG ---- */
+      const tr = { prev: await co('page-prev'), next: await co('page-next') };
+      ok('danh sach co nut sang trang truoc/sau', tr.prev >= 1 && tr.next >= 1, JSON.stringify(tr));
+      ok('co nut doi thu tu sap xep', await co('sort-hien-tai') >= 1);
+
+      /* ---- TIM TRONG PHIEN ----
+         O tim o danh sach chi quet ten phien + tin cuoi. Tim trong NOI DUNG phien la
+         duong duy nhat de tim lai dieu da ban giua phien — do tren phien control
+         19.806 luot thi cua so 30 tin chi xem duoc 0,2%. */
+      const hang = pg.locator('[data-testid=session-row]:visible').first();
+      if (await hang.count()) {
+        await hang.click();
+        await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+        await pg.waitForTimeout(1500);
+        ok('khung chat co nut tim trong noi dung', await co('chat-tim-btn') === 1);
+        await pg.locator('[data-testid=chat-tim-btn]').first().click();
+        await pg.waitForTimeout(900);
+        ok('bam nut tim -> hien o nhap tim', await co('chat-tim-input') === 1);
+        const o = pg.locator('[data-testid=chat-tim-input]').first();
+        if (await o.count()) {
+          /* Go DUOI 2 ky tu thi server khong tim (chayTim tra ve som) — go 3 ky tu. */
+          await o.fill('the');
+          await pg.waitForTimeout(3000);
+          const kq = await co('chat-tim-ket');
+          const so = await co('chat-tim-so');
+          /* Phien nao cung phai ra MOT trong hai: co ket qua, hoac o dem hien "0".
+             Ca hai cung rong = hong im lang, dung thu can bat. */
+          ok('tim ra ket qua hoac bao ro so luong', kq >= 1 || so >= 1,
+            'ket=' + kq + ' so=' + so);
+          await pg.locator('[data-testid=chat-tim-dong]').first().click().catch(() => {});
+          await pg.waitForTimeout(600);
+          ok('dong o tim -> o nhap bien mat', await co('chat-tim-input') === 0);
+        } else {
+          ok('tim ra ket qua hoac bao ro so luong', true, 'bo qua: khong mo duoc o tim');
+          ok('dong o tim -> o nhap bien mat', true, 'bo qua: khong mo duoc o tim');
+        }
+      } else {
+        for (const t of ['khung chat co nut tim trong noi dung', 'bam nut tim -> hien o nhap tim',
+                         'tim ra ket qua hoac bao ro so luong', 'dong o tim -> o nhap bien mat'])
+          ok(t, true, 'bo qua: khong co phien nao');
+      }
+      await pg.close();
+    }
+
+    /* Cum thu hai: tab Han muc, xem file, va Docker. Ca ba deu 0 bai truoc dot nay. */
+    {
+      const pg = await ctx.newPage();
+      await pg.setViewportSize({ width: 1440, height: 900 });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1800);
+      const co = async (t) => pg.locator('[data-testid=' + t + ']').count();
+      const S = (t) => '[data-testid=nav-' + t + ']:visible, [data-testid=tabbar-' + t + ']:visible';
+
+      /* ---- TAB HAN MUC ----
+         Goi `claude -p /usage` that nen cham; cung la tab duy nhat lam `settings.json`
+         doi mtime, nen bai nao do mtime o day se duong tinh gia (xem CLAUDE.md). */
+      const nq = pg.locator(S('quota')).first();
+      if (await nq.count()) {
+        await nq.click();
+        await pg.waitForTimeout(5000);
+        const bang = await co('quota-list');
+        const loi = await co('quota-loi');
+        /* Phai ra MOT trong hai: bang han muc, hoac khoi bao loi. Ca hai deu rong =
+           tab trang tron, dung thu can bat. */
+        ok('tab Han muc: ra bang hoac bao ro loi', bang >= 1 || loi >= 1,
+          'list=' + bang + ' loi=' + loi);
+        if (bang) {
+          const muc = await co('quota-muc');
+          const pt = await co('quota-phantram');
+          ok('moi muc han muc deu co phan tram di kem', muc >= 1 && pt >= muc,
+            'muc=' + muc + ' phantram=' + pt);
+          ok('tab Han muc co nut lam moi va chon kieu',
+            await co('quota-lam-moi') >= 1 && await co('quota-kieu') >= 1);
+        } else {
+          ok('moi muc han muc deu co phan tram di kem', true, 'bo qua: khong doc duoc han muc');
+          ok('tab Han muc co nut lam moi va chon kieu', true, 'bo qua: khong doc duoc han muc');
+        }
+      } else {
+        for (const t of ['tab Han muc: ra bang hoac bao ro loi',
+                         'moi muc han muc deu co phan tram di kem',
+                         'tab Han muc co nut lam moi va chon kieu'])
+          ok(t, true, 'bo qua: khong thay tab Han muc');
+      }
+
+      /* ---- DOCKER ----
+         Daemon co the tat. Do la moi truong, khong phai loi ma — theo khuon
+         "bo qua kem ly do" da dung cho agy. */
+      const nd = pg.locator(S('docker')).first();
+      if (await nd.count()) {
+        await nd.click();
+        await pg.waitForTimeout(4000);
+        const ds = await co('docker-list');
+        /* Dung TESTID `docker-loi`, khong khop chuoi chu: thong bao that la "Docker
+           khong phan hoi (Docker Desktop dang tat?)" — khop chu se truot ngay khi ai
+           do sua lai cau van, ma khoi bao loi thi van con. */
+        const tat = await co('docker-loi');
+        if (ds >= 1) {
+          ok('tab Docker: dung duoc danh sach container', true, 'docker-list=' + ds);
+          ok('moi container co nut log / khoi dong lai / dung',
+            await co('dk-log') >= 1 && await co('dk-restart') >= 1 && await co('dk-stop') >= 1,
+            'log=' + await co('dk-log') + ' restart=' + await co('dk-restart') + ' stop=' + await co('dk-stop'));
+        } else {
+          ok('tab Docker: dung duoc danh sach container hoac bao ro daemon tat',
+            tat >= 1, 'khong co list ma cung khong bao gi');
+          ok('moi container co nut log / khoi dong lai / dung', true, 'bo qua: Docker daemon tat');
+        }
+      } else {
+        ok('tab Docker: dung duoc danh sach container', true, 'bo qua: khong thay tab');
+        ok('moi container co nut log / khoi dong lai / dung', true, 'bo qua: khong thay tab');
+      }
+
+      /* ---- XEM FILE ----
+         Moi endpoint doc file phai di qua `moFileAnToan()`. Panel nay la mat truoc cua
+         no — symlink tro ra ngoai tung doc duoc nguyen khoa SSH rieng (xem CLAUDE.md). */
+      await pg.locator(S('cli')).first().click();
+      await pg.waitForTimeout(1500);
+      const hg = pg.locator('[data-testid=session-row]:visible').first();
+      if (await hg.count()) {
+        await hg.click();
+        await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+        await pg.waitForTimeout(1500);
+        const nx = pg.locator('[data-testid=goi-y-xem-file]:visible').first();
+        if (await nx.count()) {
+          await nx.click();
+          await pg.waitForTimeout(2500);
+          ok('panel xem file dung duoc (co tieu de + o tim)',
+            await co('file-title') >= 1 && await co('file-search') >= 1);
+          ok('panel xem file liet ke duoc thu muc', await co('file-dir') >= 1,
+            'file-dir=' + await co('file-dir'));
+        } else {
+          ok('panel xem file dung duoc (co tieu de + o tim)', true, 'bo qua: khong thay nut');
+          ok('panel xem file liet ke duoc thu muc', true, 'bo qua: khong thay nut');
+        }
+      } else {
+        ok('panel xem file dung duoc (co tieu de + o tim)', true, 'bo qua: khong co phien nao');
+        ok('panel xem file liet ke duoc thu muc', true, 'bo qua: khong co phien nao');
+      }
+      await pg.close();
+    }
     await ctx.close();
   }
 
