@@ -1760,6 +1760,111 @@ function listJobs() {
   }));
 }
 
+/* ---------------- Hermes qua ACP (JSON-RPC 2 chiều) ----------------
+
+   Vì sao KHÔNG dùng `hermes -z` nữa: nó cố ý bỏ qua tầng phiên. Đọc mã nguồn
+   `hermes_cli/oneshot.py:1-4` — *"Oneshot (-z) mode… Bypasses cli.py entirely"*, và
+   `_create_session_db_for_oneshot()` tự dựng SessionDB MỚI mỗi lần. Đo thật cả ba
+   cách (`-z --resume`, `-z --continue`, `--resume` + stdin): mỗi tin đẻ MỘT phiên
+   riêng trong state.db, tức Hermes KHÔNG nhớ gì giữa các câu người dùng gõ. Đó là lý
+   do giao diện phải vá bằng localStorage.
+
+   `hermes acp` là adapter JSON-RPC qua stdio, sinh ra cho editor (VS Code, Zed). Đo
+   thật: bắt tay `initialize` trả
+     sessionCapabilities: { fork, list, resume }, loadSession: true
+   Gửi hai lượt "nhớ số 42" rồi "số vừa bảo là gì" -> trả lời đúng 42, và CẢ BỐN tin
+   vào CÙNG session_id trong state.db. Dashboard đọc được ngay, không cần vá gì.
+
+   Một process cho một phiên chat, sống tới khi im 10 phút. Lượt đầu tốn 11-17 giây
+   (nạp 55 plugin), các lượt sau nhanh hơn hẳn vì process đã ấm. */
+const acpProcs = new Map();   // sidHermes -> { proc, sid, cho, id, luc, buf }
+const ACP_IM_TOI_DA = 10 * 60 * 1000;
+
+function dungACP(k) {
+  const a = acpProcs.get(k);
+  if (!a) return;
+  try { a.proc.kill('SIGTERM'); } catch {}
+  acpProcs.delete(k);
+}
+
+/* Dọn process ACP im quá lâu. Không dọn thì mỗi phiên chat để lại một tiến trình
+   Python nạp 55 plugin — vài phiên là đủ ăn hết RAM. */
+setInterval(() => {
+  const gio = Date.now();
+  for (const [k, a] of acpProcs) if (gio - a.luc > ACP_IM_TOI_DA) dungACP(k);
+}, 60000).unref?.();
+
+function moACP(k) {
+  const co = acpProcs.get(k);
+  if (co && co.proc.exitCode === null) return co;
+  if (co) acpProcs.delete(k);
+
+  const proc = spawn(HERMES_BIN, ['acp'], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+  const a = { proc, sid: null, cho: new Map(), id: 0, luc: Date.now(), buf: '', noi: '' };
+  acpProcs.set(k, a);
+
+  proc.stdout.on('data', (d) => {
+    a.buf += d;
+    const ds = a.buf.split('\n');
+    a.buf = ds.pop();
+    for (const l of ds) {
+      if (!l.trim()) continue;
+      let j; try { j = JSON.parse(l); } catch { continue; }
+      if (j.id && a.cho.has(j.id)) { a.cho.get(j.id)(j); a.cho.delete(j.id); continue; }
+      /* Nội dung trả lời đi qua NOTIFICATION `session/update`, không nằm trong
+         response — response chỉ có stopReason + usage.
+
+         CHỈ lấy `agent_message_chunk`. Đo trên một lượt thật: 42 mẩu
+         `agent_thought_chunk` (suy nghĩ nội bộ) so với 2 mẩu `agent_message_chunk`
+         (câu trả lời). Gom cả hai thì người dùng đọc được nguyên dòng suy nghĩ tiếng
+         Anh trước câu trả lời — bản đầu đã ra đúng như vậy. */
+      if (j.method === 'session/update') {
+        const u = (j.params && j.params.update) || {};
+        if (u.sessionUpdate === 'agent_message_chunk') {
+          const t = (u.content && u.content.text) || '';
+          if (t) a.noi += t;
+        }
+      }
+    }
+  });
+  proc.stderr.on('data', () => {});   // log nạp plugin rất ồn, bỏ
+  proc.on('exit', () => { acpProcs.delete(k); });
+  proc.on('error', () => { acpProcs.delete(k); });
+  return a;
+}
+
+function goiACP(a, method, params, hanCho) {
+  return new Promise((giai, hong) => {
+    const id = ++a.id;
+    const hen = setTimeout(() => { a.cho.delete(id); hong(new Error('ACP quá hạn: ' + method)); },
+      hanCho || 60000);
+    a.cho.set(id, (j) => { clearTimeout(hen); giai(j); });
+    try {
+      a.proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params: params || {} }) + '\n');
+    } catch (e) { clearTimeout(hen); a.cho.delete(id); hong(e); }
+  });
+}
+
+/* Gửi một tin qua ACP. `khoa` là hội thoại phía dashboard; phiên Hermes thật (`sid`)
+   được tạo ở lần gửi đầu rồi dùng lại — đó chính là chỗ giữ được ngữ cảnh. */
+async function guiACP(khoa, text) {
+  const a = moACP(khoa);
+  a.luc = Date.now();
+  a.noi = '';
+  if (!a.sid) {
+    await goiACP(a, 'initialize', { protocolVersion: 1, clientCapabilities: {} }, 90000);
+    const ns = await goiACP(a, 'session/new', { cwd: os.homedir(), mcpServers: [] }, 90000);
+    a.sid = ns.result && ns.result.sessionId;
+    if (!a.sid) throw new Error('ACP không tạo được phiên');
+  }
+  /* 180 giây: lượt đầu đo được 11-17 giây, nhưng câu hỏi nặng có thể lâu hơn nhiều.
+     Cùng hạn với đường `-z` cũ. */
+  const r = await goiACP(a, 'session/prompt',
+    { sessionId: a.sid, prompt: [{ type: 'text', text }] }, 180000);
+  if (r.error) throw new Error(String(r.error.message || 'ACP lỗi').slice(0, 300));
+  return { noi: a.noi.trim(), sid: a.sid };
+}
+
 /* ---------------- Hermes (state.db SQLite qua sqlite3 CLI) ---------------- */
 
 // Cache 1.5s — client poll 2.5s (realtime), vẫn tránh spawn sqlite3 dồn dập khi nhiều client
@@ -3611,7 +3716,10 @@ const server = http.createServer(async (req, res) => {
     if (HERMES_SAFE.indexOf(cmd) < 0) return json(res, 400, { ok: false, error: 'lệnh không được phép: ' + cmd });
     const camArg = args.find((a) => HERMES_CO_CAM.has(a));
     if (camArg) return json(res, 400, { ok: false, error: 'cờ chạy-mãi không được phép: ' + camArg });
-    execFile(HERMES_BIN, [cmd, ...args], { maxBuffer: 4 * 1024 * 1024, timeout: 30000, env: process.env },
+    /* 60 giây chứ không 30: `hermes doctor` đo thật 5,4 giây lúc máy rảnh, nhưng khi
+       test-all chạy song song với Playwright thì vượt 30s và bài đỏ oan — mà đọc mã
+       không thấy sai. Nới gấp đôi, vẫn đủ ngắn để người dùng không ngồi chờ vô hạn. */
+    execFile(HERMES_BIN, [cmd, ...args], { maxBuffer: 4 * 1024 * 1024, timeout: 60000, env: process.env },
       (err, stdout, stderr) => {
         const out = ((stdout || '') + (stderr || '')).trim();
         if (err && !out) return json(res, 500, { ok: false, error: err.message.slice(0, 300) });
@@ -3741,20 +3849,24 @@ const server = http.createServer(async (req, res) => {
     try { body = await readBody(req); } catch { return json(res, 400, { ok: false, error: 'bad json' }); }
     const text = (body.text || '').trim();
     if (!text) return json(res, 400, { ok: false, error: 'text required' });
+    /* `khoa` = hội thoại phía dashboard. Mỗi hội thoại giữ một process ACP riêng, nên
+       hai hội thoại khác nhau không lẫn ngữ cảnh của nhau. Không truyền thì gom vào
+       một phiên chung — hợp với ô chat trống ở tab Hermes. */
+    const khoa = String(body.conv || '__chung__').slice(0, 120);
     hermesSending++;
-    execFile(HERMES_BIN, ['-z', text, '-m', HERMES_MODEL],
-      { maxBuffer: 10 * 1024 * 1024, timeout: 180000, env: process.env },
-      (err, stdout, stderr) => {
-        hermesSending = Math.max(0, hermesSending - 1);
-        hermesCache.at = 0; // reply có thể đã ghi vào state.db -> poll kế tiếp đọc data mới ngay
-        if (err) {
-          const msg = ((stderr || '').trim() || err.message || 'hermes error').slice(-2000);
-          return json(res, 500, { ok: false, error: msg });
-        }
-        notifyPush('Hermes đã trả lời');
-        json(res, 200, { ok: true, reply: (stdout || '').trim() || '(hermes không trả output)' });
-      });
-    return; // response trả trong callback execFile
+    try {
+      const r = await guiACP(khoa, text);
+      hermesCache.at = 0;   // reply đã ghi vào state.db -> poll kế tiếp đọc data mới ngay
+      notifyPush('Hermes đã trả lời');
+      return json(res, 200, { ok: true, reply: r.noi || '(hermes không trả output)', sid: r.sid });
+    } catch (e) {
+      /* Process ACP hỏng thì GIẾT hẳn, đừng để nó nằm đó: lần gửi sau `moACP` thấy
+         entry cũ còn sống sẽ dùng lại đúng cái đang hỏng. */
+      dungACP(khoa);
+      return json(res, 500, { ok: false, error: String(e.message || 'hermes error').slice(-2000) });
+    } finally {
+      hermesSending = Math.max(0, hermesSending - 1);
+    }
   }
 
   /* ---- DOCKER: xem trạng thái + bật/tắt/khởi động lại ----

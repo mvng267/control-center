@@ -676,6 +676,46 @@ async function snapshot() {
       'kiểm ' + (snapFav.data.sessions || []).length + ' phiên');
   }
 
+  /* ---------- Hermes qua ACP: chat NHỚ ngữ cảnh ----------
+     Trước đây `/api/hermes/send` chạy `hermes -z`, mà `-z` CỐ Ý bỏ qua tầng phiên —
+     `hermes_cli/oneshot.py`: "Bypasses cli.py entirely", và
+     `_create_session_db_for_oneshot()` dựng SessionDB mới mỗi lần. Đo cả ba cách
+     (`-z --resume`, `-z --continue`, `--resume` + stdin): mỗi tin đẻ MỘT phiên riêng
+     trong state.db. Hermes không nhớ gì giữa các câu người dùng gõ.
+
+     Nay đi qua `hermes acp` (JSON-RPC 2 chiều). Bài này chốt đúng thứ đáng chốt: gửi
+     hai lượt, lượt hai phải nhớ được lượt một.
+
+     CHẬM: lượt đầu nạp 55 plugin, đo được 11-23 giây. Bỏ qua khi SKIP_CHAT=1. */
+  if (!process.env.SKIP_CHAT) {
+    const gui = (conv, text) => fetch(URL + '/api/hermes/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Dash-Token': token },
+      body: JSON.stringify({ conv, text }),
+    }).then((r) => r.json()).catch((e) => ({ ok: false, error: e.message }));
+
+    const conv = 'test-acp-' + Date.now();
+    const so = String(100 + Math.floor(Math.random() * 800));
+    const r1 = await gui(conv, `Nhớ số ${so}. Đáp đúng một từ: ok`);
+    ok('Hermes ACP: gửi được tin, có sid phiên',
+      r1.ok === true && !!r1.sid, r1.sid ? r1.sid.slice(0, 8) : String(r1.error || '').slice(0, 50));
+
+    /* Câu trả lời phải SẠCH. ACP phát 42 mẩu `agent_thought_chunk` (suy nghĩ nội bộ,
+       tiếng Anh) so với 2 mẩu `agent_message_chunk` (câu trả lời) — gom cả hai thì
+       người dùng đọc nguyên dòng suy nghĩ trước câu trả lời. Bản đầu đã ra đúng vậy. */
+    ok('Hermes ACP: trả lời SẠCH, không lẫn dòng suy nghĩ',
+      typeof r1.reply === 'string' && r1.reply.length < 200
+      && !/^The user (wants|asks|says)/i.test(r1.reply.trim()),
+      String(r1.reply || '').slice(0, 60));
+
+    const r2 = await gui(conv, 'Số tôi vừa bảo nhớ là gì? Đáp đúng con số.');
+    ok('Hermes ACP: lượt sau NHỚ được lượt trước',
+      r2.ok === true && String(r2.reply || '').includes(so),
+      `nhắc ${so}, trả "${String(r2.reply || '').slice(0, 30)}"`);
+    ok('Hermes ACP: hai lượt cùng MỘT phiên',
+      !!r1.sid && r1.sid === r2.sid, `${String(r1.sid).slice(0, 8)} vs ${String(r2.sid).slice(0, 8)}`);
+  }
+
   /* ---------- Quay lại lượt trước ----------
      Claude sửa nhầm 5 file thì terminal bấm `/rewind`. Dashboard trước đây KHÔNG có
      gì — phải tự `git checkout` qua một phiên Claude khác, trên điện thoại là bế tắc.

@@ -40,7 +40,14 @@ function firstLine(c: { messages?: { role: string; content: string }[] }) {
   return first.content.replace(/\s+/g, ' ').trim().slice(0, 90);
 }
 
-const EXTRA_KEY = 'hermesExtra';   // tin gửi từ dashboard, giữ qua F5 (cap 60/hội thoại)
+/* Tin gửi từ dashboard, giữ qua F5 (cap 60/hội thoại).
+
+   VẪN CẦN dù chat giờ đi qua ACP và tin ĐÃ vào state.db thật: `/api/hermes` cache 1,5
+   giây và chỉ đọc 30 tin cuối của 15 phiên gần nhất, nên có độ trễ giữa lúc gửi xong
+   và lúc tin hiện ra từ DB. Không có lớp này thì bấm Gửi xong màn hình trống một nhịp,
+   nhìn như mất tin. Khác trước ở chỗ: giờ nó chỉ là ĐỆM tạm, không còn là nguồn dữ
+   liệu duy nhất. */
+const EXTRA_KEY = 'hermesExtra';
 
 function loadExtra(): Record<string, HMsg[]> {
   try { return JSON.parse(localStorage.getItem(EXTRA_KEY) || '{}'); } catch { return {}; }
@@ -88,8 +95,10 @@ export function HermesTab() {
     setExtra(next); saveExtra(next);
     try {
       const r = await api<{ reply?: string; error?: string }>('/api/hermes/send', {
-        // server đọc trường `text` (không phải `message`) — gửi sai tên là luôn 400
-        method: 'POST', body: JSON.stringify({ text: v }),
+        /* server đọc trường `text` (không phải `message`) — gửi sai tên là luôn 400.
+           `conv`: server giữ MỘT process ACP cho mỗi hội thoại, nên hai hội thoại khác
+           nhau không lẫn ngữ cảnh. Thiếu nó thì mọi hội thoại dồn vào một phiên chung. */
+        method: 'POST', body: JSON.stringify({ text: v, conv: openId }),
       });
       if (r.reply) {
         const withReply = { ...next, [openId]: [...(next[openId] || []),
