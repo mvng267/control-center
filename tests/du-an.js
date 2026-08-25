@@ -763,6 +763,61 @@ async function snapshot() {
       khong._code === 404 && /ảnh chụp/.test(String(khong.error || '')), 'mã ' + khong._code);
   }
 
+  /* ---------- Chế độ quyền ĐỌC TỪ Claude CLI ----------
+     Bấm Shift+Tab sang chế độ kế hoạch trong terminal rồi mở app: công tắc vẫn hiện
+     chế độ cũ. Vì `permFor()` chỉ đọc cấu hình riêng của dashboard, chưa từng nhìn
+     vào `.jsonl` xem terminal đang ở chế độ nào.
+
+     CLI ghi theo HAI dạng, tuỳ bản:
+       - dòng riêng `type: "permission-mode"` (bản mới) — đếm 503 dòng trên phiên control
+       - trường `permissionMode` đính vào mỗi lượt `user` (bản cũ) — 262 bypass, 20 plan
+     Cả hai đều phải đọc, lấy cái xuất hiện SAU. */
+  {
+    const fsx = require('fs'), pathx = require('path'), osx = require('os');
+    const goc = pathx.join(osx.homedir(), '.claude', 'projects');
+    let ds = [];
+    try {
+      for (const d of fsx.readdirSync(goc)) {
+        const t = pathx.join(goc, d);
+        if (!fsx.statSync(t).isDirectory()) continue;
+        for (const n of fsx.readdirSync(t)) if (n.endsWith('.jsonl')) ds.push(pathx.join(t, n));
+      }
+    } catch {}
+    ds = ds.map((p) => ({ p, m: fsx.statSync(p).mtimeMs })).sort((a, b) => b.m - a.m).slice(0, 12);
+
+    /* Tim phien co che do THAT trong .jsonl. Khong co thi bo qua kem ly do — dung
+       lay phien dau danh sach roi doi no phai co (bai hoc CLAUDE.md). */
+    let thu = null;
+    for (const { p } of ds) {
+      let raw;
+      try { raw = fsx.readFileSync(p, 'utf8'); } catch { continue; }
+      const kh = raw.match(/"permissionMode":"([a-zA-Z]+)"/g);
+      if (!kh || !kh.length) continue;
+      const cuoi = kh[kh.length - 1].replace(/.*:"/, '').replace(/"/, '');
+      thu = { sid: pathx.basename(p, '.jsonl'), mode: cuoi };
+      break;
+    }
+
+    if (!thu) {
+      ok('chế độ quyền đọc được từ .jsonl của Claude CLI', true,
+        'bỏ qua: không phiên nào ghi permissionMode');
+    } else {
+      const h = await fetch(URL + '/api/history/' + thu.sid, { headers: { 'X-Dash-Token': token } })
+        .then((r) => r.json()).catch(() => ({}));
+      /* Phien co the da duoc dat rieng tren dashboard — luc do dat rieng THANG, dung
+         thiet ke. Chi chot khi khong co dat rieng. */
+      const rieng = await fetch(URL + '/api/cauhinh', { headers: { 'X-Dash-Token': token } })
+        .then((r) => r.json()).then((j) => (j.phien || {})[thu.sid]).catch(() => null);
+      if (rieng && rieng.perm) {
+        ok('chế độ đặt RIÊNG trên dashboard thắng chế độ của CLI',
+          h.permHieuLuc === rieng.perm, `riêng=${rieng.perm} api=${h.permHieuLuc}`);
+      } else {
+        ok('chế độ quyền đọc được từ .jsonl của Claude CLI',
+          h.permHieuLuc === thu.mode, `jsonl=${thu.mode} api=${h.permHieuLuc}`);
+      }
+    }
+  }
+
   /* ---------- `!lệnh` chạy thẳng, không qua Claude ----------
      Terminal `!git status` chạy thẳng bash, không tốn token. Dashboard trước đây vẫn
      spawn `claude -p` — đo thật `!echo`: 6,4 giây. Chú thích ở mode-hint.tsx đã hứa
@@ -1586,14 +1641,18 @@ async function snapshot() {
           h0.effortHieuLuc === cliEffort, `CLI=${cliEffort} dashboard=${h0.effortHieuLuc}`);
       }
 
-      // đặt riêng cho A, B phải không đổi
+      /* Đo B TRƯỚC khi đặt riêng cho A, rồi so trước/sau. KHÔNG đòi `B !== 'plan'`:
+         từ khi permFor() đọc `.jsonl`, B có thể ĐANG THẬT SỰ ở chế độ kế hoạch vì
+         người dùng bấm Shift+Tab trên terminal — đó là hành vi đúng, không phải rò rỉ
+         từ A. Thứ cần chốt là B KHÔNG ĐỔI, chứ không phải B mang giá trị nào. */
+      const bTruoc = (await su('/api/history/' + Bp)).permHieuLuc;
       await fetch(`${URL}/api/perm/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ mode: 'plan' }) });
       await fetch(`${URL}/api/effort/${A}`, { method: 'POST', headers: H2, body: JSON.stringify({ effort: 'max' }) });
       const hA = await su('/api/history/' + A);
       const hB = await su('/api/history/' + Bp);
       ok('đặt quyền cho phiên A thì phiên B KHÔNG đổi theo',
-        hA.permHieuLuc === 'plan' && hB.permHieuLuc !== 'plan',
-        `A=${hA.permHieuLuc} B=${hB.permHieuLuc}`);
+        hA.permHieuLuc === 'plan' && hB.permHieuLuc === bTruoc,
+        `A=${hA.permHieuLuc} B: ${bTruoc} -> ${hB.permHieuLuc}`);
       ok('đặt mức nghĩ cho phiên A thì phiên B KHÔNG đổi theo',
         hA.effortHieuLuc === 'max' && hB.effortHieuLuc !== 'max',
         `A=${hA.effortHieuLuc} B=${hB.effortHieuLuc}`);

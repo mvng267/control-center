@@ -295,6 +295,13 @@ function parseSessionFile(file) {
     firstUser: '', // dự phòng khi session chưa có ai-title: câu đầu của user
     model: '',     // model + mức nghĩ của lượt assistant mới nhất
     effort: '',
+    /* Chế độ quyền Claude CLI ĐANG dùng, đọc từ dòng `user` mới nhất. CLI ghi
+       `permissionMode` ngay cấp cao nhất mỗi lượt — đếm trên một phiên thật:
+       262 dòng bypassPermissions, 36 acceptEdits, 20 plan.
+       Trước đây dashboard không đọc trường này: bấm Shift+Tab sang chế độ kế hoạch
+       trong terminal rồi mở app thì công tắc vẫn hiện chế độ cũ, vì `permFor()` chỉ
+       biết cấu hình riêng của dashboard. */
+    permCLI: '',
     du: '',        // dòng cuối bị cắt giữa chừng, ghép với phần đọc lần sau
     /* Ký tự UTF-8 bị cắt đôi ở ranh giới byte. StringDecoder giữ lại byte lẻ và nối
        vào lần decode sau, nên "xin chào" cắt giữa chữ "à" vẫn ra đúng chữ thay vì "�". */
@@ -330,6 +337,11 @@ function parseSessionFile(file) {
     if (obj.type === 'ai-title') { if (obj.aiTitle) aiTitle = obj.aiTitle; continue; }
     // Tên do NGƯỜI DÙNG đặt trên CLI — thắng ai-title do máy sinh (xem titleOf)
     if (obj.type === 'custom-title') { if (obj.customTitle) customTitle = obj.customTitle; continue; }
+    /* Đổi chế độ quyền giữa phiên (Shift+Tab trên terminal). Bản CLI mới ghi thành
+       DÒNG RIÊNG `type: "permission-mode"` — đếm trên phiên control: 503 dòng. Dòng
+       này không có `message` nên bị câu `continue` phía dưới bỏ mất; phải bắt ở đây.
+       Bản cũ chỉ đính `permissionMode` vào từng lượt `user`, xử lý bên dưới. */
+    if (obj.type === 'permission-mode') { if (obj.permissionMode) S.permCLI = obj.permissionMode; continue; }
 
     /* Các dòng dưới đây TRƯỚC ĐÂY BỊ BỎ HẾT bởi một câu `continue`. Đếm trên 180 file
        .jsonl thật: 11.881 hook chạy LỖI, 4.023 dòng subagent, 16 lỗi API (có cả 401
@@ -531,6 +543,9 @@ function parseSessionFile(file) {
     if (!parts.length) continue;
     const text = flattenParts(parts);
     if (!text.trim()) continue;
+    /* Lấy của lượt MỚI NHẤT chứ không phải lượt đầu: chế độ đổi giữa phiên là
+       chuyện thường (Shift+Tab), lượt cuối mới là chế độ đang có hiệu lực. */
+    if (obj.type === 'user' && obj.permissionMode) S.permCLI = obj.permissionMode;
     if (!firstUser && obj.type === 'user') {
       // bỏ lệnh slash / output hệ thống, lấy câu người thật gõ
       const t = text.trim();
@@ -642,6 +657,7 @@ function parseSessionFile(file) {
 
   const data = {
     msgs, mtimeMs: st.mtimeMs, title, planFile, usage, model, effort, cho, choChiTiet, dangChay,
+    permCLI: S.permCLI,
     agents, agentChay, laLenh,
     tsMs: msgs.map(m => Date.parse(m.ts) || 0),
   };
@@ -910,10 +926,24 @@ function boDau(s) {
     .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
 }
 
-// sid rỗng (lệnh một phát chưa gắn phiên nào) -> rơi thẳng về mặc định chung
+/* sid rỗng (lệnh một phát chưa gắn phiên nào) -> rơi thẳng về mặc định chung.
+
+   Thứ tự ưu tiên:
+     1. Đặt RIÊNG cho phiên này trên dashboard — người dùng vừa bấm, phải thắng.
+     2. Chế độ Claude CLI ĐANG dùng, đọc từ `.jsonl`. Trước đây bỏ qua bước này, nên
+        bấm Shift+Tab sang chế độ kế hoạch trong terminal rồi mở app thì công tắc vẫn
+        hiện chế độ cũ — nhìn vào tưởng app hỏng, mà thực ra app chưa từng biết.
+     3. Cấu hình chung, rồi mặc định.
+
+   KHÔNG lấy `permCLI` đè lên lựa chọn riêng: đặt riêng là hành động có chủ ý của
+   người dùng trên dashboard, còn permCLI chỉ là thứ terminal đang dùng. */
 function permFor(sid) {
   const r = sid && loadPhien()[sid];
-  return (r && r.perm) || cauHinhCLI().perm || permMode;
+  if (r && r.perm) return r.perm;
+  const f = sid && findSessionFile(sid);
+  const p = f && parseSessionFile(f);
+  if (p && p.permCLI) return p.permCLI;
+  return cauHinhCLI().perm || permMode;
 }
 function effortFor(sid) {
   const r = sid && loadPhien()[sid];
