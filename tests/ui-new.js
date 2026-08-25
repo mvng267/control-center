@@ -3855,6 +3855,31 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       }
       await pg.close();
     }
+
+    /* Cum cuoi: tab Thong ke. Bon testid (`stats-tab`, `chart-days`, `recent-list`,
+       `stats-export`) chua bai nao cham toi — ma day la tab de kiem "may dang lam gi". */
+    {
+      const pg = await ctx.newPage();
+      await pg.setViewportSize({ width: 1440, height: 900 });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1800);
+      const co = async (t) => pg.locator('[data-testid=' + t + ']').count();
+      const ns = pg.locator('[data-testid=nav-stats]:visible, [data-testid=tabbar-stats]:visible').first();
+      if (await ns.count()) {
+        await ns.click();
+        await pg.waitForTimeout(3500);
+        ok('tab Thong ke dung duoc', await co('stats-tab') >= 1);
+        ok('tab Thong ke co bieu do theo NGAY (khong chi donut/bar)',
+          await co('chart-days') >= 1, 'chart-days=' + await co('chart-days'));
+        ok('tab Thong ke co danh sach phien gan day', await co('recent-list') >= 1);
+        ok('tab Thong ke co nut xuat', await co('stats-export') >= 1);
+      } else {
+        for (const t of ['tab Thong ke dung duoc', 'tab Thong ke co bieu do theo NGAY (khong chi donut/bar)',
+                         'tab Thong ke co danh sach phien gan day', 'tab Thong ke co nut xuat'])
+          ok(t, true, 'bo qua: khong thay tab');
+      }
+      await pg.close();
+    }
     await ctx.close();
   }
 

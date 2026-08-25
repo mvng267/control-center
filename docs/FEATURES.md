@@ -334,14 +334,14 @@ nhắc tới:
 
 ```
 321 testid trong mã
-113 chưa test nào chạm tới  (đầu đợt: 205)
+109 chưa test nào chạm tới  (đầu đợt: 205)
 ```
 
-Đợt này lấp 92 cái, ưu tiên thứ dùng thật hàng ngày: chọn nhiều, menu ⋯ mỗi dòng,
+Đợt này lấp 96 cái, ưu tiên thứ dùng thật hàng ngày: chọn nhiều, menu ⋯ mỗi dòng,
 tìm trong phiên, phân trang, tab Hạn mức, Docker, xem file, hộp xuất/chi phí/mức
 nghĩ, thẻ phiên, Hermes, điều khiển AGY, khung so sánh.
 
-113 còn lại vẫn là nợ. Selector gãy ở đó thì không gì báo cả.
+109 còn lại vẫn là nợ. Selector gãy ở đó thì không gì báo cả.
 Không phải mục nào cũng đáng viết test, nhưng con số này nên GIẢM qua mỗi đợt —
 đo lại bằng:
 
