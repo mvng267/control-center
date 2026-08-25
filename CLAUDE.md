@@ -144,6 +144,22 @@ cả khối đỏ), lúc là phiên chỉ toàn câu chữ (không có tool → 
 **`hostAllowed` không phải cơ chế bảo mật** — nó chỉ đọc header `Host` mà client tự
 khai được. Token mới là.
 
+## Giới hạn đã biết — đừng thử sửa
+
+**Không có hộp thoại xin quyền như terminal.** Terminal: lệnh nguy hiểm bị chặn ->
+hộp y/n -> bấm y là chạy tiếp TRONG CÙNG LƯỢT. Dashboard: lệnh chạy -> hỏng -> đọc
+lỗi -> bấm "Cho phép" (ghi luật vào `settings.local.json`) -> phải nhắn lại. Ba nhịp
+thay vì một.
+
+Muốn có thì phải bỏ `-p`, chuyển sang PTY thật (`node-pty`) và phân tích màn hình
+terminal — viết lại toàn bộ tầng spawn, phá luôn quy tắc zero-dependency, đánh đổi cả
+tính ổn định hiện có. Đây là ràng buộc kiến trúc, không phải việc còn nợ.
+
+**Chưa kiểm trên iPhone thật qua Tailscale.** Cả đợt chỉ kiểm bằng Playwright trên
+MacBook. `scripts/verify.js` có bước quét chặn ở mức mã nguồn (mọi `src=` trỏ `/api/*`
+phải gắn token), nhưng quét mã không thay được một lần mở thật từ máy khác — ba lỗi
+phân quyền trước đây đều CHỈ lộ khi vào từ IP thật.
+
 ## Quy ước
 
 - **Backend zero dependency.** Web Push tự cài đặt VAPID + RFC 8291. Không thêm package.

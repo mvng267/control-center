@@ -204,7 +204,8 @@ export function SessionCard({
         )}
 
         {s.unread > 0 && (
-          <span className="shrink-0 rounded-full bg-destructive px-1.5 text-[12px] font-semibold text-white">
+          <span data-testid="card-unread" data-so={s.unread}
+            className="shrink-0 rounded-full bg-destructive px-1.5 text-[12px] font-semibold text-white">
             {s.unread}
           </span>
         )}

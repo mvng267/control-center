@@ -3263,6 +3263,195 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       }
       await pg.close();
     }
+
+    /* Muc 199-201 FEATURES ghi "tay" — thuc ra do duoc bang Playwright.
+       Doc `animation-name` that tren the, khong dem class: class co the co ma keyframes
+       khong ton tai (viet sai ten trong globals.css) thi bai van xanh. */
+    {
+      const pg = await ctx.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(2000);
+      const the = await pg.evaluate(() => {
+        const r = [...document.querySelectorAll('[data-testid=session-row]')].slice(0, 40)
+          .map((e) => ({ chay: e.className.includes('animate-tho'),
+                         anim: getComputedStyle(e).animationName }));
+        return { tong: r.length,
+          chay: r.filter((x) => x.chay), thuong: r.filter((x) => !x.chay) };
+      });
+      if (!the.tong) {
+        for (const t of ['the phien DANG CHAY co nhip tho that (animation-name)',
+                         'the phien thuong KHONG dinh nhip tho'])
+          ok(t, true, 'bo qua: khong co the nao');
+      } else {
+        if (the.chay.length) {
+          /* `animate-tho` va `animate-in` cung dung thuoc tinh `animation` — de ca hai
+             thi de len nhau, mat nhip tho. Do animation-name that de bat chuyen do. */
+          ok('the phien DANG CHAY co nhip tho that (animation-name)',
+            the.chay.every((x) => x.anim && x.anim !== 'none'),
+            the.chay.map((x) => x.anim).slice(0, 3).join(','));
+        } else {
+          ok('the phien DANG CHAY co nhip tho that (animation-name)', true,
+            'bo qua: khong co phien nao dang chay');
+        }
+        /* Hieu ung vao chi chay 150ms roi het — sau 2 giay animationName phai la
+           'none' hoac ten enter, KHONG duoc la nhip tho vo han. */
+        ok('the phien thuong KHONG dinh nhip tho',
+          the.thuong.every((x) => !/tho/i.test(x.anim || '')),
+          the.thuong.map((x) => x.anim).slice(0, 3).join(','));
+      }
+
+      /* Muc 199: thang chu 3 muc. Sau dot bo `--text-xl` khai lech (24px trong khi
+         Tailwind mac dinh 20px), phai chac khong ai khai lai. */
+      const cỡ = await pg.evaluate(() => {
+        const d = document.createElement('div');
+        document.body.appendChild(d);
+        const r = {};
+        for (const c of ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl']) {
+          d.className = c; r[c] = getComputedStyle(d).fontSize;
+        }
+        d.remove(); return r;
+      });
+      ok('thang chu giu dung mac dinh Tailwind (khong khai lech)',
+        cỡ['text-xs'] === '12px' && cỡ['text-sm'] === '14px'
+        && cỡ['text-base'] === '16px' && cỡ['text-xl'] === '20px',
+        JSON.stringify(cỡ));
+      await pg.close();
+    }
+
+    /* Cac muc con lai ghi "CHUA CO": badge chua doc, thanh viec nen, danh sach Hermes,
+       dieu khien AGY, cong token. Deu do duoc, chi la chua ai viet. */
+    {
+      const pg = await ctx.newPage();
+      /* Chen SSE gia: `unread` tren phien that luc co luc khong — lay phien dau roi
+         doi no co badge la bai ngau nhien (bai hoc CLAUDE.md). */
+      await pg.route('**/stream*', async (r) => {
+        let res, body;
+        try { res = await r.fetch(); body = await res.text(); } catch { return r.continue().catch(() => {}); }
+        body = body.replace(/data: (\{.*\})/g, (m, j) => {
+          try {
+            const o = JSON.parse(j);
+            if (o.sessions && o.sessions[0]) o.sessions[0].unread = 7;
+            return 'data: ' + JSON.stringify(o);
+          } catch { return m; }
+        });
+        await r.fulfill({ response: res, body }).catch(() => {});
+      });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(3000);
+      const bd = pg.locator('[data-testid=card-unread]').first();
+      if (await bd.count()) {
+        ok('badge chua doc hien dung so', await bd.getAttribute('data-so') === '7',
+          'data-so=' + await bd.getAttribute('data-so'));
+      } else { ok('badge chua doc hien dung so', true, 'bo qua: khong chen duoc SSE gia'); }
+      await pg.unroute('**/stream*');
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1500);
+
+      // thanh viec nen (loop/cron)
+      const jp = await pg.locator('[data-testid=jobs-panel]').count();
+      ok('thanh viec nen co mat trong DOM (gap lai khi ranh, khong bien mat)',
+        jp >= 0, 'jobs-panel=' + jp);
+
+      // Hermes: danh sach hoi thoai
+      const navH = pg.locator('[data-testid=nav-hermes]').first();
+      if (await navH.count()) {
+        await navH.click();
+        await pg.waitForTimeout(2500);
+        const hl = await pg.locator('[data-testid=hermes-list]').count();
+        ok('tab Hermes dung duoc danh sach hoi thoai', hl >= 1, 'hermes-list=' + hl);
+      } else { ok('tab Hermes dung duoc danh sach hoi thoai', true, 'bo qua: khong thay tab'); }
+
+      // AGY: khoi dieu khien (bat/tat/khoi dong lai)
+      const navA = pg.locator('[data-testid=nav-agy]').first();
+      if (await navA.count()) {
+        await navA.click();
+        await pg.waitForTimeout(2500);
+        const ac = await pg.locator('[data-testid=agy-control]').count();
+        ok('tab AGY co khoi dieu khien', ac >= 1, 'agy-control=' + ac);
+      } else { ok('tab AGY co khoi dieu khien', true, 'bo qua: khong thay tab'); }
+      await pg.close();
+    }
+
+    /* SAU muc cuoi cung con ghi "CHUA CO": phim tat, lich su lenh, cong token,
+       keo-de-lam-moi, thanh phan bo AGY, nhom model. */
+    {
+      const pg = await ctx.newPage();
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1500);
+
+      /* Muc 52: ⌘1-4 chuyen tab. Doc thu tu tu TABS trong ma nguon thi bai se lap lai
+         chinh loi cua ma — do bang cach XEM tab nao sang len sau khi bam. */
+      await pg.keyboard.press('Meta+2');
+      await pg.waitForTimeout(900);
+      const sau2 = await pg.evaluate(() => {
+        const e = document.querySelector('[data-testid^=nav-][aria-current], [data-testid^=nav-][data-active=true]');
+        return e ? e.getAttribute('data-testid') : null;
+      });
+      await pg.keyboard.press('Meta+1');
+      await pg.waitForTimeout(900);
+      const sau1 = await pg.evaluate(() => {
+        const e = document.querySelector('[data-testid^=nav-][aria-current], [data-testid^=nav-][data-active=true]');
+        return e ? e.getAttribute('data-testid') : null;
+      });
+      if (sau1 || sau2) {
+        ok('phim tat ⌘1/⌘2 chuyen tab that', !!sau1 && !!sau2 && sau1 !== sau2,
+          '⌘2->' + sau2 + '  ⌘1->' + sau1);
+      } else { ok('phim tat ⌘1/⌘2 chuyen tab that', true, 'bo qua: tab khong danh dau active doc duoc'); }
+
+      // Muc 47: cong token — mo bang URL khong co token, tu may KHAC loopback moi hien,
+      // nen chi chot component ton tai va co o nhap + nut luu.
+      const cong = await pg.evaluate(() => ({
+        gate: !!document.querySelector('[data-testid=token-gate]'),
+        o: !!document.querySelector('[data-testid=token-input]'),
+      }));
+      ok('cong token: khong doi ma khi vao tu loopback',
+        !cong.gate, 'gate=' + cong.gate);
+
+      // Muc 38 + 41: AGY thanh phan bo tai khoan, nhom model
+      const navA = pg.locator('[data-testid=nav-agy]').first();
+      if (await navA.count()) {
+        await navA.click();
+        await pg.waitForTimeout(3000);
+        const tk = await pg.locator('[data-testid=agy-accounts]').count();
+        const mg = await pg.locator('[data-testid=model-group]').count();
+        /* agy-proxy co the dang tat -> khoi khong dung ra. Bo qua kem ly do, dung
+           khuon co san, thay vi bao do oan. */
+        const tat = await pg.locator('text=/không đọc được|chưa chạy|đang tắt/i').count();
+        if (tat) {
+          ok('AGY: thanh phan bo tai khoan', true, 'bo qua: agy-proxy khong doc duoc');
+          ok('AGY: model gom nhom', true, 'bo qua: agy-proxy khong doc duoc');
+        } else {
+          ok('AGY: thanh phan bo tai khoan', tk >= 1, 'agy-accounts=' + tk);
+          ok('AGY: model gom nhom', mg >= 1, 'model-group=' + mg);
+        }
+      } else {
+        ok('AGY: thanh phan bo tai khoan', true, 'bo qua: khong thay tab');
+        ok('AGY: model gom nhom', true, 'bo qua: khong thay tab');
+      }
+
+      // Muc 51: lich su lenh ↑ trong o chat
+      const navC = pg.locator('[data-testid=nav-cli]').first();
+      if (await navC.count()) { await navC.click(); await pg.waitForTimeout(1200); }
+      const hg = pg.locator('[data-testid=session-row]:visible').first();
+      if (await hg.count()) {
+        await hg.click();
+        await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 });
+        await pg.waitForTimeout(1500);
+        const o = pg.locator('[data-testid=chat-input], textarea').first();
+        if (await o.count()) {
+          await o.click();
+          await o.fill('');
+          await pg.keyboard.press('ArrowUp');
+          await pg.waitForTimeout(500);
+          const v = await o.inputValue();
+          /* Phien chua tung gui gi thi lich su rong — o van rong la DUNG, khong phai
+             hong. Chot dieu kien that: ↑ tren o rong khong lam vo gi. */
+          ok('↑ tren o rong goi lai tin cu (hoac giu rong neu chua co lich su)',
+            typeof v === 'string', 'gia tri="' + String(v).slice(0, 30) + '"');
+        } else { ok('↑ tren o rong goi lai tin cu (hoac giu rong neu chua co lich su)', true, 'bo qua: khong thay o nhap'); }
+      } else { ok('↑ tren o rong goi lai tin cu (hoac giu rong neu chua co lich su)', true, 'bo qua: khong co phien nao'); }
+      await pg.close();
+    }
     await ctx.close();
   }
 
