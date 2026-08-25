@@ -116,6 +116,17 @@ export function AgyTab() {
         )}
       </Card>
 
+      {/* Không đọc được state.db -> BÁO RÕ, đừng ẩn im lặng. Proxy đang chạy mà khối
+          lưu lượng biến mất thì người dùng tưởng dashboard hỏng. */}
+      {!usage && st.usage?.ok === false && (
+        <Card className="gap-0 p-4" data-testid="agy-khong-doc-duoc">
+          <div className="mb-1 text-[14px] font-semibold">Lưu lượng 24h</div>
+          <p className="text-[12px] leading-relaxed text-muted-foreground">
+            {('error' in st.usage && st.usage.error) || 'Không đọc được số liệu lưu lượng.'}
+          </p>
+        </Card>
+      )}
+
       {/* lưu lượng 24h — thẻ số liệu kiểu Atlas */}
       {usage && (
         <Card className="gap-0 p-4" data-testid="agy-usage">

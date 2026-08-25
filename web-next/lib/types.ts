@@ -114,7 +114,9 @@ export interface AgyStatus {
   models: string[];
   modelGroups: { name: string; items: string[] }[];
   acc: AgyAccounts;
-  usage: AgyUsage | { ok: false };
+  /* Không đọc được state.db của agy thì trả { ok:false, error } — có LÝ DO để giao
+     diện báo ra, thay vì ẩn khối im lặng làm người dùng tưởng dashboard hỏng. */
+  usage: AgyUsage | { ok: false; error?: string };
   external: boolean;
   dev: { pid: number; startedAt: number } | null;
   task: { name: string; startedAt: number } | null;

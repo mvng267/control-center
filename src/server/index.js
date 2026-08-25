@@ -2269,7 +2269,13 @@ async function getAgyUsage() {
     models: models || [],
     codes: codes || [],
     hours: hours || [],
-  } : { ok: false }; // không đọc được DB (thiếu sqlite3 CLI / file khoá) -> client ẩn khối này
+  } : {
+    /* Không đọc được state.db của agy. Trả kèm LÝ DO — trước đây chỉ `{ok:false}` nên
+       giao diện ẩn khối im lặng: proxy đang chạy mà không có khối lưu lượng, người
+       dùng không biết vì sao. Thường là thiếu `sqlite3` CLI hoặc file bị khoá. */
+    ok: false,
+    error: 'không đọc được state.db của agy (thiếu sqlite3 CLI, hoặc file đang bị khoá)',
+  };
   agyUsageCache = { at: Date.now(), data };
   return data;
 }

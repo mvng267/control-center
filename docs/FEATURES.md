@@ -47,7 +47,7 @@ Playwright (giao diện mới); `tay` nếu phải kiểm thủ công trên máy
 | 27 | Export .md/.json + copy clipboard | Bấm nút tải ở header chat | e2e |
 | 28 | `/cost` — token đã dùng | Gõ `/cost` | e2e |
 | 29 | `/compact` — dọn ngữ cảnh | Gõ `/compact` | e2e |
-| 30 | Bàn phím ảo iOS không che input | Mở chat trên iPhone, focus ô nhập | tay |
+| 30 | Bàn phím ảo iOS không che input | `node tests/keyboard.js` (giả lập visualViewport) | keyboard |
 
 ## Tab HERMES
 
@@ -97,7 +97,7 @@ Playwright (giao diện mới); `tay` nếu phải kiểm thủ công trên máy
 | 57 | PWA "Thêm vào Màn hình chính" | Safari → Chia sẻ → Thêm | tay |
 | 58 | **Offline** — app vẫn mở, có banner | Bật chế độ máy bay → mở app | e2e |
 | 59 | Glass design + 2 theme sáng/tối | Xem giao diện | e2e |
-| 60 | Safe-area iPhone (notch + home indicator) | Xem tab bar dưới | tay |
+| 60 | Safe-area iPhone (notch + home indicator) | `node tests/safearea.js` (bơm inset 34px) | safearea |
 | 61 | `/model` toàn cục, `/theme`, `/help`, `/jobs`, `/summary`, `/enhance` | Gõ từng lệnh | tay |
 | 62 | Loop + cron job | `/loop 30s test`, `/schedule` | ui-new |
 
@@ -120,7 +120,7 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 70 | Nhịp poll co giãn: 700ms khi chạy, 2s khi rảnh | Xem Network lúc Claude chạy | ui-new |
 | 71 | Thanh việc-đang-làm (TodoWrite mới nhất) | Mở phiên đang chạy có todo | pw |
 | 72 | Gõ `/` trong ô chat → gợi ý lệnh, ↑↓/Tab/Esc | Gõ `/` rồi `/comp` | pw |
-| 73 | Bàn phím ảo iOS không che ô nhập (`--kb`) | iPhone thật: chạm ô nhập | tay |
+| 73 | Bàn phím ảo iOS không che ô nhập (`--kb`) | `node tests/keyboard.js` — đo ô nhập nằm trên mép bàn phím | keyboard |
 | 74 | Kéo-để-làm-mới + vuốt ngang chuyển tab | iPhone thật | pw |
 | 75 | AGY: log thời gian thực tô màu, tạm dừng/xoá | Bật agy từ dashboard | tay |
 | 76 | AGY: sửa `.env` tại chỗ, báo khi cần Restart | Đổi `PORT` → hiện nhắc Restart | tay |

@@ -198,6 +198,13 @@ function donCong() {
       { DASH_URL: `http://localhost:${CONG_MOI}/` }));
     /* Cài trên máy mới: bộ này TỰ dựng server riêng với HOME giả trống rỗng, nên
        không dùng hai server ở trên và cũng không đụng ~/.claude thật. */
+    /* Ba bộ này TRƯỚC ĐÂY không nằm trong test-all — chạy `npm run test:all` xong
+       tưởng đã kiểm hết, mà 20 bài không ai chạy. Tệ hơn: hai bộ đầu viết cho giao
+       diện cũ nên sau khi bỏ web/legacy chúng CHẾT hẳn mà không ai biết, vì không
+       có gì gọi tới. Đã viết lại theo data-testid hiện tại và đưa vào đây. */
+    ket.push(await chay('bàn phím ảo iOS', 'tests/keyboard.js', { DASH_URL: `http://localhost:${CONG_MOI}/` }));
+    ket.push(await chay('safe-area iPhone', 'tests/safearea.js', { DASH_URL: `http://localhost:${CONG_MOI}/` }));
+    ket.push(await chay('Web Push qua trình duyệt', 'tests/push-browser.js', { DASH_URL: `http://localhost:${CONG_MOI}/` }));
     ket.push(await chay('cài trên máy mới', 'tests/may-moi.js', { PORT_TEST: '7869' }));
   } finally {
     donDep();

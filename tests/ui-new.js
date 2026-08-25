@@ -515,6 +515,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
         return {
           status: co('agy-status'), hero: co('agy-hero'), accbar: co('agy-accbar'),
           models: co('agy-models'), usage: co('agy-usage'), khongLuuLuong: co('agy-khong-luu-luong'),
+          khongDocDuoc: co('agy-khong-doc-duoc'),
           config: co('agy-config'), log: co('agy-log'),
           soAcc: document.querySelectorAll('[data-testid=agy-accbar] > *').length,
           chuStatus: (q('agy-status')?.textContent || '').trim().slice(0, 40),
@@ -527,8 +528,16 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       ok('tab AGY: không tràn ngang ở 1440px', !a.tran);
       /* Khối lưu lượng: có số liệu thì hiện biểu đồ, không đọc được state.db thì phải
          hiện khối báo — KHÔNG được biến mất im lặng để người dùng tưởng hỏng. */
-      ok('tab AGY: có khối lưu lượng hoặc báo rõ không đọc được',
-        a.usage || a.khongLuuLuong, `usage=${a.usage} khongLuuLuong=${a.khongLuuLuong}`);
+      /* BA trường hợp, cái nào cũng phải NÓI RA:
+           usage           đọc được số liệu -> hiện thẻ
+           khongLuuLuong   proxy chạy nhưng 24h chưa ai gọi
+           khongDocDuoc    không đọc được state.db (thiếu sqlite3 / file khoá)
+         Trước đây trường hợp thứ ba ẩn khối IM LẶNG: proxy đang chạy mà khối lưu
+         lượng biến mất, người dùng tưởng dashboard hỏng. Đã bắt được bằng chính bài
+         này khi agy bật lên. */
+      ok('tab AGY: có khối lưu lượng, hoặc báo rõ vì sao không có',
+        a.usage || a.khongLuuLuong || a.khongDocDuoc,
+        `usage=${a.usage} khongLuuLuong=${a.khongLuuLuong} khongDocDuoc=${a.khongDocDuoc}`);
       ok('tab AGY: có khối cấu hình và log', a.config && a.log,
         `config=${a.config} log=${a.log}`);
 
@@ -1642,16 +1651,26 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
             && Math.abs(a.getBoundingClientRect().top - b.getBoundingClientRect().top) < 8,
         };
       });
-      ok('the so AGY xep 2 cot tren iPhone (khong phai 1 cot)',
-        the.cungHang, 'cao=' + JSON.stringify(the.cao));
-      ok('the so AGY gon lai duoi 170px moi the',
-        the.cao.every((h) => h > 0 && h < 170), JSON.stringify(the.cao));
+      /* Ba thẻ số nằm TRONG khối lưu lượng. Khối đó chỉ hiện khi đọc được state.db
+         của agy — thiếu sqlite3 CLI hay file bị khoá thì không có thẻ nào để đo, mà
+         đó KHÔNG phải lỗi bố cục. Bỏ qua kèm lý do thay vì báo đỏ oan (đã dính:
+         cao=[-1,-1,-1] khi agy chạy nhưng state.db không đọc được). */
+      const coThe = the.cao.every((h) => h > 0);
+      if (!coThe) {
+        ok('the so AGY xep 2 cot tren iPhone (khong phai 1 cot)', true,
+          'bo qua: khong doc duoc luu luong agy');
+      } else {
+        ok('the so AGY xep 2 cot tren iPhone (khong phai 1 cot)',
+          the.cungHang, 'cao=' + JSON.stringify(the.cao));
+        ok('the so AGY gon lai duoi 170px moi the',
+          the.cao.every((h) => h < 170), JSON.stringify(the.cao));
 
-      // 24h rỗng phải NÓI RÕ, không để ba số 0 trần
-      const coBao = await pg.locator('[data-testid=agy-khong-luu-luong]').count();
-      const reqs = await pg.locator('[data-testid=agy-reqs-value]').innerText().catch(() => '?');
-      ok('24h khong co request -> noi ro ly do, khong de ba so 0 tran',
-        reqs.trim() !== '0' || coBao === 1, 'reqs=' + reqs.trim() + ' bao=' + coBao);
+        // 24h rỗng phải NÓI RÕ, không để ba số 0 trần
+        const coBao = await pg.locator('[data-testid=agy-khong-luu-luong]').count();
+        const reqs = await pg.locator('[data-testid=agy-reqs-value]').innerText().catch(() => '?');
+        ok('24h khong co request -> noi ro ly do, khong de ba so 0 tran',
+          reqs.trim() !== '0' || coBao === 1, 'reqs=' + reqs.trim() + ' bao=' + coBao);
+      }
       await mp.close();
     }
 
