@@ -3533,17 +3533,34 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       }
 
       /* ---- MENU ⋯ MOI DONG ---- */
-      const more = pg.locator('[data-testid=row-more], [data-testid=session-row] button[aria-haspopup]').first();
+      /* Mo menu ⋯ cua mot dong DANG CHAY neu co, khong thi lay dong dau. "Dung phien"
+         CHI hien khi phien dang chay (session-list.tsx:817 `{running && ...}`) — dung,
+         khong phai loi: dung mot phien da nghi thi khong co y nghia gi.
+         Bai dau toi viet doi du 4 muc vo dieu kien nen do oan o phien IDLE. */
+      /* `running` trong session-list.tsx:790 la ['RUNNING','ACTIVE'] — KHONG chi
+         RUNNING. Bat thieu ACTIVE thi bai tuong phien da nghi ma menu van co "Dung",
+         roi bao do oan. */
+      const dongChay = pg.locator('[data-testid=session-row][data-status=RUNNING], [data-testid=session-row][data-status=ACTIVE]').first();
+      const dong = await dongChay.count() ? dongChay
+                 : pg.locator('[data-testid=session-row]').first();
+      const dangChay = await dongChay.count() > 0;
+      const more = dong.locator('button[aria-haspopup]').first();
       if (await more.count()) {
         await more.click();
         await pg.waitForTimeout(800);
         const muc = { open: await co('row-open'), exp: await co('row-export'),
                       stop: await co('row-stop'), an: await co('row-an') };
-        ok('menu ⋯ moi dong co du 4 muc (mo / tai .md / dung / an)',
-          muc.open >= 1 && muc.exp >= 1 && muc.stop >= 1 && muc.an >= 1, JSON.stringify(muc));
+        ok('menu ⋯ moi dong co 3 muc luon co (mo / tai .md / an)',
+          muc.open >= 1 && muc.exp >= 1 && muc.an >= 1, JSON.stringify(muc));
+        ok('muc "Dung phien" chi hien khi phien DANG CHAY',
+          dangChay ? muc.stop >= 1 : muc.stop === 0,
+          (dangChay ? 'phien dang chay' : 'phien da nghi') + ', stop=' + muc.stop);
         await pg.keyboard.press('Escape');
         await pg.waitForTimeout(500);
-      } else { ok('menu ⋯ moi dong co du 4 muc (mo / tai .md / dung / an)', true, 'bo qua: khong thay nut ⋯'); }
+      } else {
+        ok('menu ⋯ moi dong co 3 muc luon co (mo / tai .md / an)', true, 'bo qua: khong thay nut ⋯');
+        ok('muc "Dung phien" chi hien khi phien DANG CHAY', true, 'bo qua: khong thay nut ⋯');
+      }
 
       /* ---- PHAN TRANG ---- */
       const tr = { prev: await co('page-prev'), next: await co('page-next') };
