@@ -72,8 +72,16 @@ export function CommandPalette({
   };
 
   // Input riêng (không dùng CommandInput) nên cmdk không tự lọc — lọc tay theo q
-  const needle = q.trim().toLowerCase();
-  const match = (c: Cmd) => !needle || (c.label + ' ' + c.desc).toLowerCase().includes(needle);
+  /* Bỏ dấu HAI PHÍA trước khi so khớp. Nhãn lệnh có dấu ("So sánh 2 phiên", "Tóm tắt
+     phiên") mà gõ trên điện thoại thì hay gõ không dấu — trước đây gõ "so sanh" ra 0
+     kết quả dù lệnh đó nằm ngay trong bảng. Ô tìm phiên (session-list.tsx) và tìm nội
+     dung ở server đều đã bỏ dấu từ lâu; riêng bảng lệnh thì sót.
+     NFD tách dấu thành ký tự tổ hợp rồi xoá; `đ` không phải tổ hợp nên thay tay. */
+  const boDau = (t: string) =>
+    t.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+  const needle = boDau(q.trim());
+  const match = (c: Cmd) => !needle || boDau(c.label + ' ' + c.desc).includes(needle);
   const groups: Cmd['group'][] = ['Claude', 'Hermes', 'Dashboard'];
   const nMatch = COMMANDS.filter(match).length;
 

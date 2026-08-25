@@ -2984,20 +2984,41 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       } else { ok('nut thong bao mang trang thai doc duoc', true, 'bo qua: khong co nut'); }
 
       // 84: lenh "So sanh 2 phien" mo DUNG khung so sanh, khong phai toast lac de
+      /* Bam ⌘K roi CHO bang lenh hien, thay vi doi no mo ngay sau 600ms. Do that:
+         o ngu canh mobile (hasTouch) bang lenh khong phai luc nao cung mo bang phim —
+         khong mo thi bo qua kem ly do, chu khong bao do. */
       await pg.keyboard.press('Meta+k');
-      await pg.waitForTimeout(600);
       const bang = pg.locator('[data-testid=palette-input]');
-      if (await bang.count()) {
-        await pg.keyboard.type('So sanh');
-        await pg.waitForTimeout(500);
-        await pg.keyboard.press('Enter');
-        await pg.waitForTimeout(900);
-        const cv = await pg.locator('[data-testid=compare-view]').count();
-        ok('lenh "So sanh 2 phien" mo khung so sanh that', cv === 1, 'compare-view=' + cv);
-        await pg.keyboard.press('Escape');
-        await pg.waitForTimeout(400);
+      const moDuoc = await bang.waitFor({ state: 'visible', timeout: 4000 })
+        .then(() => true).catch(() => false);
+      if (moDuoc) {
+        /* Go KHONG DAU: nhan la "So sánh 2 phiên". Bang lenh phai bo dau hai phia moi
+           khop — go tieng Viet co dau tren dien thoai rat phien, ma o tim phien va tim
+           noi dung o server deu da bo dau tu lau, rieng bang lenh thi sot. */
+        await bang.fill('So sanh');
+        await pg.waitForTimeout(700);
+        const muc = pg.locator('[data-testid=palette-item][data-cmd="ui:compare"]');
+        ok('bang lenh tim duoc lenh co dau khi go KHONG dau', await muc.count() === 1,
+          'so muc khop=' + await muc.count());
+        /* BAM thang vao muc, khong dua vao Enter: o nhap la `Input` rieng (khong phai
+           CommandInput) nen cmdk khong nhan phim tu no — Enter khong kich hoat gi. */
+        if (await muc.count()) {
+          await muc.first().click();
+          await pg.waitForTimeout(1500);
+          const cv = await pg.locator('[data-testid=compare-view]').count();
+          ok('lenh "So sanh 2 phien" mo khung so sanh that', cv === 1, 'compare-view=' + cv);
+          await pg.locator('[data-testid=cmp-close]').first().click().catch(() => {});
+          await pg.waitForTimeout(700);
+        } else {
+          ok('lenh "So sanh 2 phien" mo khung so sanh that', false, 'khong thay muc ui:compare');
+          await pg.keyboard.press('Escape');
+          await pg.waitForTimeout(500);
+        }
       } else {
-        ok('lenh "So sanh 2 phien" mo khung so sanh that', true, 'bo qua: khong mo duoc bang lenh');
+        ok('bang lenh tim duoc lenh co dau khi go KHONG dau', true,
+          'bo qua: ⌘K khong mo bang lenh o ngu canh cham');
+        ok('lenh "So sanh 2 phien" mo khung so sanh that', true,
+          'bo qua: ⌘K khong mo bang lenh o ngu canh cham');
       }
 
       // 72: go "/" trong o chat -> hien goi y lenh
@@ -3123,7 +3144,10 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
            Mo sheet truoc; neu khong co sheet thi dung nut goi-y truc tiep. */
         const moSheet = pg.locator('[data-testid=mo-chuc-nang]').first();
         if (await moSheet.count()) { await moSheet.click(); await pg.waitForTimeout(600); }
-        const nutDiff = pg.locator('[data-testid=sheet-xem-diff], [data-testid=goi-y-xem-diff]').first();
+        /* `:visible` BAT BUOC: ban desktop (`goi-y-xem-diff`) van nam trong DOM khi o
+           390px, chi bi an bang CSS. Khong loc thi `.first()` bat trung no roi cho
+           30 giay cho mot phan tu khong bao gio hien — bai do vi selector, khong vi ma. */
+        const nutDiff = pg.locator('[data-testid=sheet-xem-diff]:visible, [data-testid=goi-y-xem-diff]:visible').first();
         if (await nutDiff.count()) {
           await nutDiff.click();
           await pg.waitForTimeout(2000);
@@ -3134,8 +3158,12 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
           if (xd) {
             const co = await pg.locator('[data-testid=diff-noi-dung], [data-testid=diff-sach], [data-testid=diff-loi]').count();
             ok('khung diff luon noi ro trang thai (co/sach/loi)', co >= 1, 'khoi=' + co);
-            await pg.keyboard.press('Escape');
-            await pg.waitForTimeout(400);
+            /* Dong bang NUT, khong bang Escape: ba khung phu toan man (xem-diff,
+               quay-lai, compare-view) deu khong nghe Escape — dung tren dien thoai
+               von khong co phim do. Khong dong thi khung con phu len, moi click sau
+               treo 30 giay va bai do vi ly do khong lien quan. */
+            await pg.locator('[data-testid=diff-dong]').first().click().catch(() => {});
+            await pg.waitForTimeout(600);
           } else { ok('khung diff luon noi ro trang thai (co/sach/loi)', true, 'bo qua: khong mo duoc'); }
         } else {
           ok('nut "Xem diff" mo khung diff that', true, 'bo qua: khong thay nut');
@@ -3143,7 +3171,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
         }
 
         if (await moSheet.count()) { await moSheet.click(); await pg.waitForTimeout(600); }
-        const nutQl = pg.locator('[data-testid=sheet-quay-lai]').first();
+        const nutQl = pg.locator('[data-testid=sheet-quay-lai]:visible').first();
         if (await nutQl.count()) {
           await nutQl.click();
           await pg.waitForTimeout(2000);
@@ -3154,7 +3182,8 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
           if (q) {
             const rieng = await pg.locator('[data-testid=ql-moi-tao], [data-testid=ql-ve-cu], [data-testid=ql-khong-doi], [data-testid=ql-loi]').count();
             ok('quay lai tach rieng "se ve cu" va "Claude moi tao"', rieng >= 1, 'khoi=' + rieng);
-            await pg.keyboard.press('Escape');
+            await pg.locator('[data-testid=ql-dong]').first().click().catch(() => {});
+            await pg.waitForTimeout(600);
           } else { ok('quay lai tach rieng "se ve cu" va "Claude moi tao"', true, 'bo qua: khong mo duoc'); }
         } else {
           ok('khung "Quay lai luot truoc" mo duoc', true, 'bo qua: khong thay nut');
