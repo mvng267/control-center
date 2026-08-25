@@ -398,6 +398,59 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
     await page.click('[data-testid=nav-docker]');
     await page.waitForTimeout(2500);
 
+    /* ---------- Tab AGY ----------
+       Toàn bộ lưới an toàn cho AGY nằm ở `tests/e2e.js` — bộ viết cho GIAO DIỆN CŨ
+       (`#agy-status`, `#agy-accbar`). Đo được: e2e nhắc "agy" 56 lần, ui-new 0 lần.
+       Nhưng AGY có đủ 5 component ở giao diện mới, tức chức năng còn, chỉ là lưới test
+       nằm ở bản sắp bỏ. Chuyển sang đây trước, rồi mới xoá được web/legacy.
+
+       agy-proxy có thể KHÔNG chạy (đo trên máy này: cổng 7788 im). Server vẫn trả dữ
+       liệu và giao diện vẫn phải dựng — nên bài chốt "có nội dung HOẶC báo rõ đang
+       tắt", không đòi số liệu thật. Cùng khuôn với tab Docker ngay dưới. */
+    {
+      const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const pgA = await ctxA.newPage();
+      const loiJs = [];
+      pgA.on('pageerror', (e) => loiJs.push(e.message.slice(0, 70)));
+      await pgA.goto(URL, { waitUntil: 'networkidle' });
+      await pgA.click('[data-testid=nav-agy]');
+      // tab tải lười (next/dynamic) -> phải chờ component thật, không chỉ chờ tab
+      await pgA.waitForSelector('[data-testid=agy-status], [data-testid=agy-hero]', { timeout: 30000 })
+        .catch(() => {});
+      await pgA.waitForTimeout(1500);
+
+      const a = await pgA.evaluate(() => {
+        const q = (t) => document.querySelector(`[data-testid=${t}]`);
+        const co = (t) => !!q(t);
+        return {
+          status: co('agy-status'), hero: co('agy-hero'), accbar: co('agy-accbar'),
+          models: co('agy-models'), usage: co('agy-usage'), khongLuuLuong: co('agy-khong-luu-luong'),
+          config: co('agy-config'), log: co('agy-log'),
+          soAcc: document.querySelectorAll('[data-testid=agy-accbar] > *').length,
+          chuStatus: (q('agy-status')?.textContent || '').trim().slice(0, 40),
+          tran: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        };
+      });
+
+      ok('tab AGY: dựng được (không trắng, không lỗi JS)',
+        (a.status || a.hero) && loiJs.length === 0, loiJs[0] || a.chuStatus || '(không thấy status)');
+      ok('tab AGY: không tràn ngang ở 1440px', !a.tran);
+      /* Khối lưu lượng: có số liệu thì hiện biểu đồ, không đọc được state.db thì phải
+         hiện khối báo — KHÔNG được biến mất im lặng để người dùng tưởng hỏng. */
+      ok('tab AGY: có khối lưu lượng hoặc báo rõ không đọc được',
+        a.usage || a.khongLuuLuong, `usage=${a.usage} khongLuuLuong=${a.khongLuuLuong}`);
+      ok('tab AGY: có khối cấu hình và log', a.config && a.log,
+        `config=${a.config} log=${a.log}`);
+
+      /* Nút Restart đổi cấu hình agy — phải có vùng chạm đủ, và KHÔNG có nút xoá nào
+         (cùng lý do với tab Docker: dữ liệu thật nằm trong đó). */
+      const nutXoa = await pgA.evaluate(() =>
+        !!document.querySelector('[data-testid*=agy-rm], [data-testid*=agy-delete], [data-testid*=agy-xoa]'));
+      ok('tab AGY KHÔNG có nút xoá', !nutXoa);
+
+      await ctxA.close();
+    }
+
     const co = await page.locator('[data-testid=dk-row]').count();
     const loi = await page.locator('[data-testid=docker-loi]').count();
     ok('tab Docker: có bảng container hoặc báo Docker tắt', co > 0 || loi > 0, `hàng=${co}`);
@@ -1437,10 +1490,25 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       const pg = await cx.newPage();
       await pg.goto(URL, { waitUntil: 'networkidle' });
       await pg.locator('[data-testid=nav-agy]:visible').first().click();
-      await pg.waitForTimeout(4000);
+      /* CHỜ SELECTOR, không chờ thời gian. Tab AGY nay tải lười (next/dynamic vì nó
+         kéo recharts 1MB) nên 4 giây cứng có lúc chưa kịp mount — bài đỏ mà mã không
+         sai. Chờ đúng thứ cần rồi mới đếm. */
+      await pg.waitForSelector('[data-testid=agy-quota-history]', { timeout: 30000 }).catch(() => {});
+      await pg.waitForTimeout(1200);
 
-      const coKhoi = await pg.locator('[data-testid=agy-quota-history]').count();
-      ok('tab AGY co bieu do HAN MUC con lai', coKhoi === 1, coKhoi + ' khoi');
+      /* Khoi HAN MUC nam BEN TRONG bao cao luu luong, ma bao cao co nhanh som: agy-proxy
+         tat -> `!r.ok` -> tra ve chi mot the bao loi, khong render con nao. Doi khoi do
+         LUON co la doi agy phai dang chay — bai se do tren may khong bat agy.
+         Chot dung thu can chot: agy CHAY thi phai co bieu do; agy TAT thi phai bao ro. */
+      const tt = await pg.evaluate(() => ({
+        quota: document.querySelectorAll('[data-testid=agy-quota-history]').length,
+        report: document.querySelectorAll('[data-testid=agy-report]').length,
+        baoLoi: /không|khong|chưa|chua/i.test(
+          document.querySelector('[data-testid=agy-report]')?.innerText || ''),
+      }));
+      ok('tab AGY: co bieu do HAN MUC, hoac bao ro khi agy tat',
+        tt.quota === 1 || (tt.report === 1 && tt.baoLoi),
+        `quota=${tt.quota} report=${tt.report} baoLoi=${tt.baoLoi}`);
       if (coKhoi) {
         await pg.locator('[data-testid=agy-quota-history]').scrollIntoViewIfNeeded();
         await pg.waitForTimeout(1500);

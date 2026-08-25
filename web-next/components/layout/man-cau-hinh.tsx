@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { MoiTruong } from './moi-truong';
-import { ArrowLeft, Check, Loader2, X } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { TABS, type TabId } from './app-shell';
 import { NutCapNhat } from './nut-cap-nhat';
 import { useCauHinh, luuTabBat, chuDau } from '@/lib/use-cauhinh';

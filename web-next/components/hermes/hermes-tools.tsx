@@ -8,11 +8,9 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getToken } from '@/lib/api';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
 
 /* Lệnh Hermes bày thành nút — cùng danh sách whitelist ở server (HERMES_SAFE).
    Trước đây tab Hermes CHỈ chat được; muốn xem trạng thái hay chẩn đoán thì phải nhớ

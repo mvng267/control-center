@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import {
-  Container, Play, Square, RotateCw, ScrollText, HardDrive, Layers, Trash2, Loader2, X,
-} from 'lucide-react';
+  Container, Play, Square, RotateCw, ScrollText, HardDrive, Layers, Trash2, Loader2, } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/layout/app-shell';
 import { Card } from '@/components/ui/card';

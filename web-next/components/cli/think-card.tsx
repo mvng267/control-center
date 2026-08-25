@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { Markdown } from './markdown';
-import { cn } from '@/lib/utils';
 
 /* Khối "suy nghĩ" — trên terminal Claude in ra:
 
