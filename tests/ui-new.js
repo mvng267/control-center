@@ -3049,7 +3049,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
         if (await men.count()) {
           await men.click();
           await pg.waitForTimeout(500);
-          const mt = pg.locator('text=Tóm tắt phiên').first();
+          const mt = pg.locator('[data-testid=m-summary]').first();
           if (await mt.count()) {
             await mt.click();
             await pg.waitForTimeout(2500);
@@ -3274,7 +3274,7 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
         if (await men.count()) {
           await men.click();
           await pg.waitForTimeout(600);
-          const mucTen = pg.locator('text=Đổi tên').first();
+          const mucTen = pg.locator('[data-testid=m-rename]').first();
           if (await mucTen.count()) {
             await mucTen.click();
             await pg.waitForTimeout(700);
