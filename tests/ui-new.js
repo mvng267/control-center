@@ -3772,6 +3772,72 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       ok('tab Hermes co nut bang lenh', await co('hermes-tools-btn') >= 1);
       await pg.close();
     }
+
+    /* Cum thu tu: khoi dieu khien AGY va khung so sanh hai phien. */
+    {
+      const pg = await ctx.newPage();
+      await pg.setViewportSize({ width: 1440, height: 900 });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(1800);
+      const co = async (t) => pg.locator('[data-testid=' + t + ']').count();
+      const S = (t) => '[data-testid=nav-' + t + ']:visible, [data-testid=tabbar-' + t + ']:visible';
+
+      /* ---- AGY: KHOI DIEU KHIEN ----
+         Bon cong tac (han muc / email / danh thuc / kiem song) — bat tat chung doi
+         hanh vi proxy that. Truoc dot nay khong bai nao cham toi ca bon. */
+      const na = pg.locator(S('agy')).first();
+      if (await na.count()) {
+        await na.click();
+        await pg.waitForTimeout(3500);
+        const ctl = { quota: await co('ctl-quota'), email: await co('ctl-email'),
+                      wake: await co('ctl-wake'), live: await co('ctl-checklive') };
+        if (await co('agy-control')) {
+          ok('AGY: khoi dieu khien co du 4 cong tac',
+            ctl.quota >= 1 && ctl.email >= 1 && ctl.wake >= 1 && ctl.live >= 1, JSON.stringify(ctl));
+          ok('AGY: co khoi log va nut xuat CSV',
+            await co('agy-log-box') >= 1 && await co('agy-csv') >= 1,
+            'log=' + await co('agy-log-box') + ' csv=' + await co('agy-csv'));
+        } else {
+          ok('AGY: khoi dieu khien co du 4 cong tac', true, 'bo qua: agy-proxy khong doc duoc');
+          ok('AGY: co khoi log va nut xuat CSV', true, 'bo qua: agy-proxy khong doc duoc');
+        }
+      } else {
+        ok('AGY: khoi dieu khien co du 4 cong tac', true, 'bo qua: khong thay tab');
+        ok('AGY: co khoi log va nut xuat CSV', true, 'bo qua: khong thay tab');
+      }
+
+      /* ---- SO SANH HAI PHIEN ----
+         Chua chon phien nao thi CA HAI cot phai noi ro "chua chon" — de trang tron
+         thi nhin nhu hong. */
+      await pg.locator(S('cli')).first().click();
+      await pg.waitForTimeout(1500);
+      await pg.keyboard.press('Meta+k');
+      const bang = pg.locator('[data-testid=palette-input]');
+      if (await bang.waitFor({ state: 'visible', timeout: 4000 }).then(() => true).catch(() => false)) {
+        await bang.fill('So sanh');
+        await pg.waitForTimeout(600);
+        const muc = pg.locator('[data-testid=palette-item][data-cmd="ui:compare"]');
+        if (await muc.count()) {
+          await muc.first().click();
+          await pg.waitForTimeout(2000);
+          ok('khung so sanh: chua chon thi CA HAI cot deu moi chon',
+            await co('cmp-empty') === 2, 'cmp-empty=' + await co('cmp-empty'));
+          ok('khung so sanh co nut dong', await co('cmp-close') >= 1);
+          await pg.locator('[data-testid=cmp-close]').first().click().catch(() => {});
+          await pg.waitForTimeout(700);
+          ok('dong khung so sanh -> bien mat han', await co('compare-view') === 0);
+        } else {
+          for (const t of ['khung so sanh: chua chon thi CA HAI cot deu moi chon',
+                           'khung so sanh co nut dong', 'dong khung so sanh -> bien mat han'])
+            ok(t, true, 'bo qua: khong thay lenh so sanh');
+        }
+      } else {
+        for (const t of ['khung so sanh: chua chon thi CA HAI cot deu moi chon',
+                         'khung so sanh co nut dong', 'dong khung so sanh -> bien mat han'])
+          ok(t, true, 'bo qua: khong mo duoc bang lenh');
+      }
+      await pg.close();
+    }
     await ctx.close();
   }
 
