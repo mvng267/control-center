@@ -87,9 +87,22 @@ export function usePwa() {
     };
 
     navigator.serviceWorker.register('/sw.js').then(setupPush).catch(() => {});
+
+    /* THỬ LẠI vài lần. `_dangKyPush` kết bằng `catch { return false }` nên hỏng một
+       lần là im vĩnh viễn: không thông báo nào, mà cũng không báo gì.
+
+       Trước đây chỉ thử lại khi cửa sổ được `focus`. Trên iPhone thêm app vào màn hình
+       chính rồi mở thẳng thì sự kiện đó không nổ. 5 lần × 3 giây: đủ vượt lúc mạng
+       chập, không thành vòng lặp vô hạn. */
+    let lan = 0;
+    const hen = setInterval(() => {
+      if (done || ++lan > 5) { clearInterval(hen); return; }
+      setupPush();
+    }, 3000);
+
     // người dùng vừa bấm "Cho phép" ở lần tương tác nào đó -> thử lại
     const retry = () => setupPush();
     window.addEventListener('focus', retry);
-    return () => window.removeEventListener('focus', retry);
+    return () => { clearInterval(hen); window.removeEventListener('focus', retry); };
   }, []);
 }

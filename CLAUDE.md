@@ -164,6 +164,16 @@ như code hỏng trong khi chỉ sai môi trường.
 `test:ui` gọi Claude **thật** để kiểm luồng nhắn tin nên hơi lâu — thêm `SKIP_CHAT=1`
 để bỏ qua phần đó.
 
+**`pushManager.subscribe()` treo được, và treo thì im lặng.** Đo trên MacBook này:
+gọi thẳng `subscribe()` không resolve cũng không reject sau **40 giây** — headless lẫn
+có cửa sổ, profile mới lẫn profile cũ, khoá VAPID của server lẫn khoá tự sinh — trong
+khi `mtalk.google.com:5228` và `fcm.googleapis.com` đều thông. Bước hỏng nằm ở đăng ký
+GCM instance-ID của Chrome, không có gì trong dự án chạm tới. Mà `_dangKyPush()`
+(`use-pwa.ts`) kết bằng `catch { return false }` nên hỏng ở bước nào cũng im như nhau.
+`tests/push-browser.js` vì thế **vá `PushManager.prototype.subscribe`** để đếm số lần
+gọi: gọi 0 lần = lỗi mã, đỏ; gọi rồi mà treo = lỗi môi trường, bỏ qua kèm lý do. Đã
+kiểm cả hai chiều bằng cách phá `_dangKyPush` — bài đỏ đúng lúc.
+
 Vài bài đỏ vì **môi trường**, không phải lỗi code: Docker daemon tắt, agy-proxy chưa có
 request nào trong ngày, Postgres không chạy. `test-all` nói rõ điều đó.
 

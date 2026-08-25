@@ -41,7 +41,11 @@ function doiSan(cong, hetHan = 15000) {
 function chay(nhan, file, env) {
   return new Promise((done) => {
     execFile('node', [path.join(ROOT, file)],
-      { cwd: ROOT, env: { ...process.env, ...env }, maxBuffer: 8e6, timeout: 600000 },
+      /* 20 phút chứ không 10: bộ ui-new có 225 bài Playwright, chạy ~8 phút lúc máy
+         rảnh nhưng vượt 10 phút khi tải 15+ trên 8 core. Bị giết giữa chừng thì
+         execFile trả err mà KHÔNG có output nào — bảng in "HỎNG" trống trơn, không
+         cho biết bài nào, phải chạy lại riêng mới biết là nó vốn xanh. */
+      { cwd: ROOT, env: { ...process.env, ...env }, maxBuffer: 8e6, timeout: 1200000 },
       (err, out, errOut) => {
         const txt = String(out) + String(errOut);
         // Hai kiểu báo kết quả: bộ test in "N/N PASS", còn verify/dead-buttons chỉ
@@ -59,6 +63,15 @@ function chay(nhan, file, env) {
           const cuoi = txt.trim().split('\n')
             .filter((l) => /FAIL|Error|error|waiting for/.test(l)).slice(0, 5);
           cuoi.forEach((l) => console.log('        ' + l.trim().slice(0, 110)));
+          /* KHÔNG có dòng nào khớp = bộ bị GIẾT giữa chừng (chạm timeout), không phải
+             bài nào đỏ. Nói thẳng ra, đừng để bảng in "HỎNG" trống rồi người đọc đi
+             tìm bug không tồn tại. */
+          if (!cuoi.length) {
+            const quaHan = err && (err.killed || err.signal === 'SIGTERM');
+            console.log(quaHan
+              ? `        ^ bộ này bị GIẾT vì chạy quá ${Math.round((err.timeout || 1200000) / 60000)} phút — máy đang tải nặng?`
+              : '        ^ không có dòng lỗi nào; chạy riêng bộ này để xem chi tiết');
+          }
           // Vài bài đòi DỮ LIỆU THẬT phải có sẵn, không phải lỗi code. Nói rõ ra để
           // lần sau không mất công đi tìm bug không tồn tại.
           if (/agy lưu lượng/.test(txt) && /"reqs":"0"/.test(txt)) {
