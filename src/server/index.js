@@ -1102,16 +1102,26 @@ const BO_QUA = new Set(['node_modules', '.git', '.next', 'dist', 'build', 'out',
 const QUET_TRAN = 4000;
 const quetCache = new Map(); // root -> { at, files }
 
+/* Trả `{ files, catTran, catSau }` chứ không chỉ mảng file.
+
+   Hai chỗ cắt — chạm trần 4.000 file, và thư mục sâu quá 6 tầng — trước đây diễn ra
+   IM LẶNG: cây hiện thiếu file mà không nói gì, người dùng tưởng đó là toàn bộ dự án
+   rồi kết luận sai ("file đó bị xoá rồi à?"). Đúng loại hỏng-im-lặng mà dự án này
+   dính nhiều lần (khối lưu lượng AGY, nút Khôi phục 404).
+   Đo trên chính dự án control: 141 file, sâu nhất 3 tầng — nên bình thường không ai
+   chạm hai mốc này. Nhưng "bình thường không chạm" khác hẳn "chạm thì báo". */
 function quetFile(root) {
   const cu = quetCache.get(root);
-  if (cu && Date.now() - cu.at < 30000) return cu.files;
+  if (cu && Date.now() - cu.at < 30000) return cu.kq;
   const files = [];
+  let catTran = false, catSau = false;
   const di = (dir, sau) => {
-    if (files.length >= QUET_TRAN || sau > 6) return;
+    if (files.length >= QUET_TRAN) { catTran = true; return; }
+    if (sau > 6) { catSau = true; return; }
     let ds;
     try { ds = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of ds) {
-      if (files.length >= QUET_TRAN) return;
+      if (files.length >= QUET_TRAN) { catTran = true; return; }
       if (e.name.startsWith('.') && e.name !== '.env.example') continue;
       if (e.isDirectory()) {
         if (!BO_QUA.has(e.name)) di(path.join(dir, e.name), sau + 1);
@@ -1122,8 +1132,9 @@ function quetFile(root) {
   };
   di(root, 0);
   files.sort();
-  quetCache.set(root, { at: Date.now(), files });
-  return files;
+  const kq = { files, catTran, catSau };
+  quetCache.set(root, { at: Date.now(), kq });
+  return kq;
 }
 
 /* ---- mở file để ĐỌC, sau khi qua hết chốt chặn ----
@@ -3286,7 +3297,8 @@ const server = http.createServer(async (req, res) => {
     const root = sid ? sessionCwd(sid) : null;
     if (!root) return json(res, 200, { ok: true, root: null, files: [] });
     let ds;
-    try { ds = quetFile(root); } catch { return json(res, 200, { ok: true, root, files: [] }); }
+    // quetFile() giờ trả object; gợi ý `@` chỉ cần danh sách, không cần cờ cắt
+    try { ds = quetFile(root).files; } catch { return json(res, 200, { ok: true, root, files: [] }); }
     // Tên file khớp trước, rồi mới tới khớp ở giữa đường dẫn — gõ "chat" phải ra
     // chat-view.tsx trước components/cli/chat-toolbar.tsx.
     const dau = [], giua = [];
@@ -4026,9 +4038,14 @@ const server = http.createServer(async (req, res) => {
     if (gocQuaRong(root)) {
       return json(res, 200, { ok: true, root: gonNha(root), files: [], quaRong: true });
     }
-    let ds;
-    try { ds = quetFile(root); } catch { return json(res, 200, { ok: true, root, files: [] }); }
-    return json(res, 200, { ok: true, root: gonNha(root), files: ds });
+    let q;
+    try { q = quetFile(root); } catch { return json(res, 200, { ok: true, root, files: [] }); }
+    return json(res, 200, {
+      ok: true, root: gonNha(root), files: q.files,
+      // cây bị cắt -> giao diện phải nói ra, đừng để người dùng tưởng đây là toàn bộ
+      ...(q.catTran ? { catTran: QUET_TRAN } : {}),
+      ...(q.catSau ? { catSau: 6 } : {}),
+    });
   }
 
   /* Nội dung một file. BỐN lớp chặn, KHÔNG dựa vào danh sách quetFile trả về — người

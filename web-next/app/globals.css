@@ -81,12 +81,12 @@
   --tool-accent: oklch(0.56 0.2 292);
   /* Màu tô cú pháp (xem lib/to-mau.ts). Cùng hệ oklch với bảng màu chung để không
      lệch tông; độ sáng (L) giữ đủ thấp trên nền trắng cho tương phản đọc được. */
-  --ma-chu-thich: oklch(0.60 0.02 286);
+  --ma-chu-thich: oklch(0.56 0.02 286);
   --ma-chuoi: oklch(0.52 0.15 150);
   --ma-so: oklch(0.55 0.16 45);
   --ma-tu-khoa: oklch(0.52 0.20 292);
   --ma-ham: oklch(0.52 0.17 255);
-  --ma-kieu: oklch(0.54 0.14 195);
+  --ma-kieu: oklch(0.53 0.14 195);
   --ma-thuoc-tinh: oklch(0.50 0.12 25);
   --ma-the: oklch(0.52 0.17 340);
   --card: oklch(1 0 0);
@@ -133,7 +133,7 @@
   --tool-accent: oklch(0.66 0.19 295);
   /* Bản tối: nâng L lên ~0.75 và giảm C một chút — giữ nguyên L của bản sáng trên nền
      tối thì chữ tối thui, mà đẩy C cao quá thì màu rung mắt khi đọc dòng dài. */
-  --ma-chu-thich: oklch(0.58 0.02 286);
+  --ma-chu-thich: oklch(0.60 0.02 286);
   --ma-chuoi: oklch(0.78 0.14 150);
   --ma-so: oklch(0.80 0.13 60);
   --ma-tu-khoa: oklch(0.74 0.16 295);

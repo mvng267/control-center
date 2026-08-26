@@ -24,7 +24,13 @@ import { Markdown } from './markdown';
    Desktop: hai cột — cây trái 260px, nội dung phải. */
 
 interface Tep { ok: boolean; noiDung?: string; soDong?: number; kichThuoc?: number; laNhiPhan?: boolean; quaLon?: boolean; error?: string }
-interface Cay { ok: boolean; root: string | null; files: string[]; quaRong?: boolean }
+interface Cay {
+  ok: boolean; root: string | null; files: string[]; quaRong?: boolean;
+  /* Cây bị CẮT: chạm trần số file, hoặc thư mục sâu quá mức quét. Server trả chính con
+     số ngưỡng để giao diện nói được cụ thể — "cắt ở 4.000 file" hữu ích hơn "có thể
+     thiếu file". Trước đây cắt im lặng, người dùng tưởng đó là toàn bộ dự án. */
+  catTran?: number; catSau?: number;
+}
 
 function co(n?: number) {
   if (!n) return '';
@@ -228,6 +234,15 @@ export function XemFile({ sid, onClose }: { sid: string; onClose: () => void }) 
               <p className="p-3 text-[12px] leading-relaxed text-muted-foreground" data-testid="file-qua-rong">
                 Phiên này chạy thẳng ở <b className="font-mono">{cay.root}</b> — cả thư mục nhà,
                 nên không mở cây file. Mở phiên nào chạy trong thư mục dự án để xem mã.
+              </p>
+            )}
+            {cay && !cay.quaRong && (cay.catTran || cay.catSau) && (
+              <p className="mx-1 mb-1 rounded-md border border-status-run/30 bg-status-run/[0.08] px-2 py-1.5 text-[12px] leading-relaxed text-status-run"
+                data-testid="file-cay-cat">
+                {cay.catTran
+                  ? `Dự án quá nhiều file — cây dừng ở ${cay.catTran.toLocaleString('vi')} file đầu.`
+                  : `Có thư mục sâu hơn ${cay.catSau} tầng — phần sâu hơn không được liệt kê.`}
+                {' '}Dùng ô lọc để tìm thẳng theo tên.
               </p>
             )}
             {cay && !cay.quaRong && !cay.files.length && (
