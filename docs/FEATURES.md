@@ -145,6 +145,9 @@ Các mục dưới đây CHỈ có ở bản mới. Bản cũ (`NEW_UI=0`) khôn
 | 78l | REMOTE: quay lại lượt trước, liệt kê file Claude tạo mới | Khung chat → ⋯ → Quay lại lượt trước | du-an |
 | 78m | `!lệnh` chạy thẳng shell, không tốn lượt Claude | Gõ `!git status` → dưới 1 giây | du-an |
 | 78n | Nén gzip cho file tĩnh và dòng SSE | Đo 23/8: mở app 1.831→539 KB (-71%), SSE 149,8→25,2 KB mỗi nhịp (-83%) | du-an |
+| 78o | Cây file LỒNG nhiều cấp, mở/gập từng nhánh | `file-dir` thụt 10px mỗi cấp, server chặn ở 6 tầng | ui-new |
+| 78p | File `.md` mở ra bản dựng sẵn, có nút xem nguồn | `file-md` → `file-doi-che-do` → `file-content` | ui-new |
+| 78q | Tô màu cú pháp 9 họ ngôn ngữ, tên hàm khác từ khoá | `lib/to-mau.ts` tự viết, không thêm package | ui-new |
 | 79 | Badge % đổi màu theo NGHĨA (thẻ Lỗi tăng = đỏ) | Xem thẻ Lỗi ở tab AGY | ui-new |
 | 80 | Không còn nút chết | `node scripts/dead-buttons.js` | ui-new |
 | 81 | Thẻ tool mở ra KHÔNG tự đóng khi poll | mở thẻ, đợi 10s, `data-open` vẫn true | ui-new |

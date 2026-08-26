@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { KhoiMa } from './khoi-ma';
 import remarkGfm from 'remark-gfm';
 import { Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -31,9 +32,10 @@ function CodeBlock({ text, lang }: { text: string; lang?: string }) {
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
         {copied ? 'Copied!' : 'Copy'}
       </button>
-      <pre className="max-h-[320px] overflow-auto rounded-[10px] border border-border bg-background/60 px-3 py-2.5 font-mono text-[14px] leading-relaxed">
-        <code>{text}</code>
-      </pre>
+      {/* Tô màu bằng chính bộ dùng cho panel xem file — trước đây hai nơi tự dựng <pre>
+          riêng nên sửa một chỗ thì chỗ kia vẫn trắng. */}
+      <KhoiMa ma={text} lang={lang}
+        className="max-h-[320px] overflow-auto whitespace-pre rounded-[10px] border border-border bg-background/60 px-3 py-2.5 font-mono text-[14px] leading-relaxed" />
     </div>
   );
 }

@@ -3880,6 +3880,176 @@ const TABS = ['cli', 'hermes', 'agy', 'docker', 'stats', 'quota'];
       }
       await pg.close();
     }
+
+    /* PANEL XEM FILE — cay nhieu cap, markdown dung san, to mau cu phap.
+       Ba thu nay truoc day deu KHONG co: cay gom phang mot muc (moi dong la ca duong
+       dan "web-next/components/cli"), .md do ra chu tho, ma nguon khong mau. */
+    {
+      const pg = await ctx.newPage();
+      await pg.setViewportSize({ width: 1440, height: 900 });
+      await pg.goto(URL, { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(2000);
+      const co = async (t) => pg.locator('[data-testid=' + t + ']').count();
+
+      /* Mo panel tu mot phien CO file ma. Lay phien dau danh sach la bai ngau nhien:
+         phien chay o thu muc nha bi server chan doc file, phien chi toan chu thi khong
+         co file .ts nao de kiem to mau (bai hoc CLAUDE.md). */
+      let moDuoc = false;
+      let sidMo = '';
+      const hang = pg.locator('[data-testid=session-row]:visible');
+      const soHang = Math.min(await hang.count(), 6);
+      /* Doi moi thu che man hinh ve trang thai dong TRUOC moi lan thu. Khong don thi
+         sheet "Chuc nang" hoac panel file cua lan truoc con phu len, va lan sau bam
+         `mo-chuc-nang` treo 30 giay vi nut bi che — bai do vi rac trang thai, khong
+         phai vi ma. */
+      const donMan = async () => {
+        for (let k = 0; k < 3; k++) {
+          if (await co('xem-file')) {
+            await pg.locator('[data-testid=file-close]').first().click().catch(() => {});
+            await pg.waitForTimeout(500);
+          }
+          await pg.keyboard.press('Escape').catch(() => {});
+          await pg.waitForTimeout(350);
+          if (!await co('xem-file')) break;
+        }
+      };
+
+      for (let i = 0; i < soHang && !moDuoc; i++) {
+        await donMan();
+        sidMo = (await hang.nth(i).getAttribute('data-sid')) || '';
+        await hang.nth(i).click().catch(() => {});
+        await pg.waitForSelector('[data-testid=chat-view]', { timeout: 20000 }).catch(() => {});
+        await pg.waitForTimeout(1200);
+        const moCN = pg.locator('[data-testid=mo-chuc-nang]').first();
+        if (await moCN.count()) await moCN.click().catch(() => {});
+        await pg.waitForTimeout(600);
+        const nut = pg.locator('[data-testid=goi-y-xem-file]:visible, [data-testid=sheet-xem-file]:visible').first();
+        if (!await nut.count()) continue;
+        await nut.click().catch(() => {});
+        await pg.waitForTimeout(2500);
+        if (await co('file-item')) { moDuoc = true; break; }
+      }
+
+      if (!moDuoc) {
+        for (const t of ['cay file long NHIEU CAP, khong phai mot muc phang',
+                         'ten thu muc la ten ngan, khong phai ca duong dan',
+                         'bam thu muc -> hien cap con',
+                         'file .md mo ra ban dung san (the that, khong phai chu tho)',
+                         'co nut chuyen sang xem ma nguon',
+                         'file ma duoc to mau cu phap',
+                         'ten ham co mau KHAC tu khoa'])
+          ok(t, true, 'bo qua: khong phien nao mo duoc cay file');
+      } else {
+        /* ---- 1) CAY NHIEU CAP ----
+           Do THUT LE that (paddingLeft), khong dem so dong: gom phang cung ra nhieu
+           dong thu muc, chi khac la moi dong thut le y het nhau. */
+        const le = await pg.evaluate(() => [...document.querySelectorAll('[data-testid=file-dir]')]
+          .map((e) => ({ d: e.dataset.path || '', le: parseInt(getComputedStyle(e).paddingLeft, 10) })));
+        const mucLe = [...new Set(le.map((x) => x.le))].sort((a, b) => a - b);
+        ok('cay file long NHIEU CAP, khong phai mot muc phang',
+          mucLe.length >= 2, 'cac muc thut le: ' + mucLe.join(','));
+        /* Ten hien thi phai la ten NGAN. Ban cu hien ca "web-next/components/cli" tren
+           mot dong — dai qua man 390px va lap lai tien to o moi dong. */
+        const dai = await pg.evaluate(() => [...document.querySelectorAll('[data-testid=file-dir]')]
+          .map((e) => (e.querySelector('span')?.textContent || '')).filter((t) => t.includes('/')));
+        ok('ten thu muc la ten ngan, khong phai ca duong dan',
+          dai.length === 0, dai.slice(0, 3).join(' | '));
+
+        const dong = pg.locator('[data-testid=file-dir][data-mo=false]').first();
+        if (await dong.count()) {
+          const truoc = await co('file-dir') + await co('file-item');
+          await dong.click();
+          await pg.waitForTimeout(700);
+          ok('bam thu muc -> hien cap con', await co('file-dir') + await co('file-item') > truoc);
+        } else { ok('bam thu muc -> hien cap con', true, 'bo qua: khong co thu muc nao dang dong'); }
+
+        /* ---- 2) MARKDOWN DUNG SAN ---- */
+        await pg.locator('[data-testid=file-search]').fill('.md');
+        await pg.waitForTimeout(1200);
+        const md = pg.locator('[data-testid=file-item][data-path$=".md"]').first();
+        if (await md.count()) {
+          await md.click();
+          await pg.waitForTimeout(2800);
+          const the = await pg.locator('[data-testid=file-md] h1, [data-testid=file-md] h2, [data-testid=file-md] ul, [data-testid=file-md] table, [data-testid=file-md] p').count();
+          ok('file .md mo ra ban dung san (the that, khong phai chu tho)',
+            await co('file-md') === 1 && the > 0, 'file-md=' + await co('file-md') + ' the=' + the);
+          const doi = pg.locator('[data-testid=file-doi-che-do]');
+          ok('co nut chuyen sang xem ma nguon', await doi.count() === 1);
+          if (await doi.count()) {
+            await doi.click();
+            await pg.waitForTimeout(1800);
+            ok('bam -> hien ma nguon, het ban dung san',
+              await co('file-md') === 0 && await co('file-content') === 1);
+            await doi.click();
+            await pg.waitForTimeout(1200);
+          } else { ok('bam -> hien ma nguon, het ban dung san', true, 'bo qua: khong co nut'); }
+        } else {
+          for (const t of ['file .md mo ra ban dung san (the that, khong phai chu tho)',
+                           'co nut chuyen sang xem ma nguon',
+                           'bam -> hien ma nguon, het ban dung san'])
+            ok(t, true, 'bo qua: du an nay khong co file .md');
+        }
+
+        /* ---- 3) TO MAU CU PHAP ----
+           Dem so MAU that qua getComputedStyle, khong dem class: class co the co ma
+           bien CSS khong ton tai (viet sai ten trong globals.css) thi dem class van
+           xanh trong khi man hinh van trang tron. */
+        await pg.locator('[data-testid=file-search]').fill('.ts');
+        await pg.waitForTimeout(1200);
+        const ma = pg.locator('[data-testid=file-item][data-path$=".ts"], [data-testid=file-item][data-path$=".tsx"], [data-testid=file-item][data-path$=".js"]').first();
+        if (await ma.count()) {
+          await ma.click();
+          await pg.waitForTimeout(2800);
+          const r = await pg.evaluate(() => {
+            const pre = document.querySelector('[data-testid=file-content]');
+            if (!pre) return null;
+            const sp = [...pre.querySelectorAll('span')];
+            return { lang: pre.dataset.lang, span: sp.length,
+              soMau: new Set(sp.map((e) => getComputedStyle(e).color)).size };
+          });
+          ok('file ma duoc to mau cu phap', !!r && r.soMau >= 5,
+            r ? ('lang=' + r.lang + ' span=' + r.span + ' so mau=' + r.soMau) : 'khong thay file-content');
+
+          /* BAT BIEN QUAN TRONG NHAT cua bo to mau: ghep cac token lai phai ra ĐÚNG
+             ma goc. Tokenizer nao cung de mat hoac nhan doi ky tu o ranh gioi luat —
+             ma mat mot ky tu trong code thi nguoi doc khong he biet, chi thay code sai.
+             So voi chinh noi dung API tra ve, khong so voi thu gi tu dung lai. */
+          const nguyen = await pg.evaluate(async ({ duong, sid, tok }) => {
+            const pre = document.querySelector('[data-testid=file-content]');
+            if (!pre) return null;
+            const r2 = await fetch('/api/file?sid=' + encodeURIComponent(sid)
+              + '&path=' + encodeURIComponent(duong), { headers: { 'X-Dash-Token': tok } });
+            const j = await r2.json();
+            return { khop: j.noiDung === pre.textContent,
+              goc: (j.noiDung || '').length, hien: pre.textContent.length };
+          }, { duong: await ma.getAttribute('data-path'), sid: sidMo,
+               tok: await pg.evaluate(() => localStorage.getItem('dashToken') || '') });
+          if (nguyen && nguyen.goc) {
+            ok('to mau KHONG lam mat hay them ky tu nao',
+              nguyen.khop, 'goc=' + nguyen.goc + ' hien=' + nguyen.hien);
+          } else { ok('to mau KHONG lam mat hay them ky tu nao', true, 'bo qua: khong doc lai duoc file de so'); }
+          /* Cot loi cua yeu cau: TEN HAM phai khac tu khoa. Neu ca hai cung mau thi
+             nhin vao khong tach duoc dau la lenh dieu khien, dau la loi goi. */
+          const h = await pg.evaluate(() => {
+            const sp = [...document.querySelectorAll('[data-testid=file-content] span')];
+            const tk = sp.find((e) => ['function', 'const', 'export', 'return', 'if'].includes(e.textContent || ''));
+            const ham = sp.find((e) => /^[A-Za-z_$][\w$]*$/.test(e.textContent || '')
+              && (e.nextSibling?.textContent || '').trimStart().startsWith('('));
+            return { tk: tk ? getComputedStyle(tk).color : null,
+              ham: ham ? { t: ham.textContent, c: getComputedStyle(ham).color } : null };
+          });
+          if (h.tk && h.ham) {
+            ok('ten ham co mau KHAC tu khoa', h.ham.c !== h.tk,
+              'tu khoa=' + h.tk + ' ham=' + h.ham.t + ':' + h.ham.c);
+          } else { ok('ten ham co mau KHAC tu khoa', true, 'bo qua: file nay khong co ca tu khoa lan loi goi ham'); }
+        } else {
+          ok('file ma duoc to mau cu phap', true, 'bo qua: du an nay khong co file .ts/.js');
+          ok('ten ham co mau KHAC tu khoa', true, 'bo qua: du an nay khong co file .ts/.js');
+        }
+        await pg.locator('[data-testid=file-close]').first().click().catch(() => {});
+      }
+      await pg.close();
+    }
     await ctx.close();
   }
 
