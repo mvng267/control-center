@@ -169,9 +169,14 @@ export function ngonNgu(duong: string): string {
   return '';
 }
 
-/* Trần an toàn. Quét là O(n × số luật) nên file to vẫn chạy được, nhưng dựng vài chục
-   nghìn <span> mới là thứ làm treo trình duyệt — không phải phần quét. */
-const TRAN = 200_000;
+/* Trần bằng ĐÚNG trần của `/api/file` (512KB) — mọi file panel mở được đều tô màu.
+
+   Trần cũ 200KB đặt theo phỏng đoán "dựng vài chục nghìn <span> sẽ treo", và phỏng đoán
+   đó sai: đo thật trên `src/server/index.js` (218KB, 4.539 dòng) ra 4.165 token trong đó
+   chỉ 2.116 có màu — vì các đoạn chữ thường liền nhau được gộp thành MỘT token, không
+   phải mỗi ký tự một span. Quét hết file mất 9ms.
+   Hậu quả của trần cũ: file to nhất của chính dự án này không được tô màu. */
+const TRAN = 512 * 1024;
 
 /**
  * Cắt mã thành token để component tự dựng `<span>`.

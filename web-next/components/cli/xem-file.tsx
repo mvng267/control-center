@@ -271,7 +271,7 @@ export function XemFile({ sid, onClose }: { sid: string; onClose: () => void }) 
                   <Markdown>{tep.noiDung}</Markdown>
                 </div>
               )
-              : <KhoiMa ma={tep.noiDung} duong={chon} soDong />
+              : <KhoiMa ma={tep.noiDung} duong={chon} soDong testid="file-content" />
           )}
         </div>
       </div>

@@ -7,7 +7,7 @@ import { toMau, ngonNgu, LOP } from '@/lib/to-mau';
    trước đây hai nơi tự dựng <pre> riêng, nên sửa màu một chỗ thì chỗ kia vẫn trắng. */
 
 export function KhoiMa({
-  ma, duong, lang, soDong, className,
+  ma, duong, lang, soDong, className, testid = 'khoi-ma',
 }: {
   ma: string;
   /** đường dẫn file — dùng để đoán ngôn ngữ theo đuôi */
@@ -17,6 +17,10 @@ export function KhoiMa({
   /** hiện cột số dòng bên trái */
   soDong?: boolean;
   className?: string;
+  /* Testid phải KHAI TỪ NGOÀI, không gắn cứng: cùng một component dùng ở hai chỗ mang
+     nghĩa khác nhau — panel xem file là "nội dung file", khối trong chat là "khối mã".
+     Gắn cứng `file-content` thì bài test panel file bắt trúng khối mã trong chat. */
+  testid?: string;
 }) {
   const nn = lang ? chuanHoa(lang) : ngonNgu(duong || '');
 
@@ -38,7 +42,7 @@ export function KhoiMa({
 
   if (!soDong) {
     return (
-      <pre className={className} data-testid="file-content" data-lang={nn || 'thuong'}>
+      <pre className={className} data-testid={testid} data-lang={nn || 'thuong'}>
         {noiDung}
       </pre>
     );
@@ -52,7 +56,7 @@ export function KhoiMa({
         {dong.map((_, i) => <div key={i}>{i + 1}</div>)}
       </div>
       <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre px-3 py-2"
-        data-testid="file-content" data-lang={nn || 'thuong'}>
+        data-testid={testid} data-lang={nn || 'thuong'}>
         {noiDung}
       </pre>
     </div>
