@@ -16,14 +16,14 @@ màn 390×844 làm chuẩn, desktop là phần nới thêm.
 - Không dùng tương tác chỉ-có-khi-rê-chuột: điện thoại không có hover
 - Hộp thoại: toàn màn hoặc trượt từ đáy, đóng bằng nút X rõ ràng
 
-**Chỗ hẹp nhất là thanh tab dưới.** Ở 390px nó vừa đúng 5 tab; thêm nữa là tràn ngang.
-Tính năng mới nên mở dạng màn phủ (xem `man-cau-hinh.tsx`, `xem-file.tsx`), đừng thêm
+**Chỗ hẹp nhất là thanh tab dưới.** Ở 390px nó đang có 6 tab (mỗi tab 65px); thêm nữa là
+tụt dưới ngưỡng chạm 44px. Tính năng mới nên mở dạng màn phủ (xem `man-cau-hinh.tsx`, `xem-file.tsx`), đừng thêm
 tab.
 
 ## Desktop
 
-- Sidebar 256px cố định, không viền phải
-- Phím tắt: ⌘K bảng lệnh, ⌘1–5 chuyển tab, Esc thoát
+- Sidebar 256px, không viền phải; gập được xuống 56px (nhớ lựa chọn qua localStorage)
+- Phím tắt: ⌘K bảng lệnh, ⌘1–9 chuyển tab theo thứ tự, Esc thoát
 - Khung chat dùng TRỌN bề ngang — không kẹp giữa màn hình. Phần lớn nội dung là log
   tool và đường dẫn dài, bó lại thì xuống dòng liên tục còn hai bên bỏ trống
 
